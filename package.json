@@ -1,0 +1,41 @@
+{
+  "name": "atf-acmp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ATF AI-Challenge Management Platform",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "npm run dev:web & npm run dev:api",
+    "dev:web": "npm run dev -w @acmp/web",
+    "dev:api": "npm run dev -w @acmp/api",
+    "build": "npm run build -ws",
+    "build:web": "npm run build -w @acmp/web",
+    "build:api": "npm run build -w @acmp/api",
+    "lint": "npm run lint -ws --if-present",
+    "type-check": "npm run type-check -ws --if-present",
+    "test": "npm run test -ws --if-present",
+    "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules apps/*/.next apps/*/dist",
+    "prepare": "husky",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:build": "docker compose build"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "typescript": "^5.7.0"
+  },
+  "author": "ATF",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@nestjs/bullmq": "^11.0.4",
+    "bullmq": "^5.81.3"
+  }
+}

@@ -1,0 +1,21 @@
+# Production override - run with: docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+services:
+  web:
+    build:
+      target: production
+    environment:
+      NODE_ENV: production
+    volumes:
+      # Remove source mounts - use built files only
+      - web_node_modules:/app/node_modules
+      - web_app_node_modules:/app/apps/web/node_modules
+
+  api:
+    build:
+      target: production
+    environment:
+      NODE_ENV: production
+    volumes:
+      # Remove source mounts - use built files only
+      - api_node_modules:/app/node_modules
+      - api_app_node_modules:/app/apps/api/node_modules

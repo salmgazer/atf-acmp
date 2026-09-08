@@ -1,0 +1,24 @@
+{
+  "CacheClusterId": "acmp-redis-prod",
+  "CacheNodeType": "cache.t3.micro",
+  "Engine": "redis",
+  "EngineVersion": "7.0",
+  "NumCacheNodes": 1,
+  "Port": 6379,
+  "CacheSubnetGroupName": "default",
+  "SecurityGroupIds": ["sg-xxxxxxxxx"],
+  "PreferredMaintenanceWindow": "sun:05:00-sun:06:00",
+  "SnapshotRetentionLimit": 1,
+  "SnapshotWindow": "04:00-05:00",
+  "AutoMinorVersionUpgrade": true,
+  "Tags": [
+    {
+      "Key": "Environment",
+      "Value": "production"
+    },
+    {
+      "Key": "Project",
+      "Value": "acmp"
+    }
+  ]
+}

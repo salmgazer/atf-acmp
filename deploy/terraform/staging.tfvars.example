@@ -1,0 +1,19 @@
+# ==============================================================================
+# Staging Environment Configuration - EXAMPLE
+# Copy to staging.tfvars and fill in your values
+# ==============================================================================
+
+environment = "staging"
+aws_region  = "eu-central-1"
+
+github_org  = "your-github-org"  # Your GitHub org or username
+db_password = "YourSecurePassword"  # Min 8 chars, no @, ", or /
+
+# Staging uses minimal resources
+db_instance_class = "db.t3.micro"
+api_cpu           = 256
+api_memory        = 512
+web_cpu           = 256
+web_memory        = 512
+min_tasks         = 1
+max_tasks         = 2

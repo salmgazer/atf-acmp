@@ -1,0 +1,212 @@
+# ==============================================================================
+# ACMP Production Deployment - ECS Express Mode
+# Triggers on push to 'main' branch
+# ==============================================================================
+
+name: Deploy Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: eu-central-1
+  ECR_REPOSITORY_API: acmp/api
+  ECR_REPOSITORY_WEB: acmp/web
+  ECS_CLUSTER: acmp-production
+  ECS_SERVICE_API: acmp-api-production
+  ECS_SERVICE_WEB: acmp-web-production
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # Run Tests First
+  # ----------------------------------------------------------------------------
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linting
+        run: npm run lint
+
+      - name: Run type checking
+        run: npm run type-check
+
+      - name: Run tests
+        run: npm run test --if-present
+
+  # ----------------------------------------------------------------------------
+  # Build and Deploy API
+  # ----------------------------------------------------------------------------
+  deploy-api:
+    name: Deploy API
+    runs-on: ubuntu-latest
+    needs: test
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: GitHubActionsDeployProduction
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Get short commit hash
+        run: echo "IMAGE_TAG=${GITHUB_SHA:0:7}" >> $GITHUB_ENV
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./apps/api/Dockerfile
+          target: production
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:${{ env.IMAGE_TAG }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:production-latest
+
+      - name: Deploy API to ECS Express Mode
+        uses: aws-actions/amazon-ecs-deploy-express-service@v1
+        with:
+          service-name: ${{ env.ECS_SERVICE_API }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:${{ env.IMAGE_TAG }}
+          execution-role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/ecsTaskExecutionRole
+          infrastructure-role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/ecsInfrastructureRoleForExpressServices
+          container-port: 3000
+          cpu: '1024'
+          memory: '2048'
+          health-check-path: /health
+          min-task-count: 2
+          max-task-count: 10
+          auto-scaling-metric: AVERAGE_CPU
+          auto-scaling-target-value: 70
+          environment-variables: |
+            [
+              {"name": "NODE_ENV", "value": "production"},
+              {"name": "PORT", "value": "3000"},
+              {"name": "DATABASE_HOST", "value": "${{ vars.DATABASE_HOST }}"},
+              {"name": "DATABASE_PORT", "value": "5432"},
+              {"name": "DATABASE_USER", "value": "${{ vars.DATABASE_USER }}"},
+              {"name": "DATABASE_NAME", "value": "${{ vars.DATABASE_NAME }}"},
+              {"name": "DATABASE_SSL", "value": "true"},
+              {"name": "JWT_EXPIRES_IN", "value": "7d"},
+              {"name": "AWS_REGION", "value": "${{ env.AWS_REGION }}"},
+              {"name": "AWS_S3_BUCKET", "value": "${{ vars.AWS_S3_BUCKET }}"},
+              {"name": "CORS_ORIGIN", "value": "${{ vars.CORS_ORIGIN }}"},
+              {"name": "FRONTEND_URL", "value": "${{ vars.FRONTEND_URL }}"},
+              {"name": "MAILCHIMP_FROM_EMAIL", "value": "${{ vars.MAILCHIMP_FROM_EMAIL }}"},
+              {"name": "MAILCHIMP_FROM_NAME", "value": "${{ vars.MAILCHIMP_FROM_NAME }}"},
+              {"name": "REDIS_HOST", "value": "${{ vars.REDIS_HOST }}"},
+              {"name": "REDIS_PORT", "value": "6379"}
+            ]
+          secrets: |
+            [
+              {"name": "DATABASE_PASSWORD", "valueFrom": "${{ secrets.DATABASE_PASSWORD_ARN }}"},
+              {"name": "JWT_SECRET", "valueFrom": "${{ secrets.JWT_SECRET_ARN }}"},
+              {"name": "MAILCHIMP_API_KEY", "valueFrom": "${{ secrets.MAILCHIMP_API_KEY_ARN }}"}
+            ]
+
+  # ----------------------------------------------------------------------------
+  # Build and Deploy Web
+  # ----------------------------------------------------------------------------
+  deploy-web:
+    name: Deploy Web
+    runs-on: ubuntu-latest
+    needs: [test, deploy-api]
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: GitHubActionsDeployProduction
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Get short commit hash
+        run: echo "IMAGE_TAG=${GITHUB_SHA:0:7}" >> $GITHUB_ENV
+
+      - name: Build and push Web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./apps/web/Dockerfile
+          target: production
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_WS_URL=${{ vars.NEXT_PUBLIC_WS_URL }}
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_WEB }}:${{ env.IMAGE_TAG }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_WEB }}:production-latest
+
+      - name: Deploy Web to ECS Express Mode
+        uses: aws-actions/amazon-ecs-deploy-express-service@v1
+        with:
+          service-name: ${{ env.ECS_SERVICE_WEB }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_WEB }}:${{ env.IMAGE_TAG }}
+          execution-role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/ecsTaskExecutionRole
+          infrastructure-role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/ecsInfrastructureRoleForExpressServices
+          container-port: 3000
+          cpu: '512'
+          memory: '1024'
+          health-check-path: /api/health
+          min-task-count: 2
+          max-task-count: 6
+          auto-scaling-metric: AVERAGE_CPU
+          auto-scaling-target-value: 70
+
+  # ----------------------------------------------------------------------------
+  # Notify on completion
+  # ----------------------------------------------------------------------------
+  notify:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [deploy-api, deploy-web]
+    if: always()
+    steps:
+      - name: Summary
+        run: |
+          echo "## Production Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| API | ${{ needs.deploy-api.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Web | ${{ needs.deploy-web.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY

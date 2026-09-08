@@ -1,0 +1,18 @@
+{
+  "name": "@acmp/validators",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist node_modules"
+  },
+  "dependencies": {
+    "zod": "^3.25.23"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

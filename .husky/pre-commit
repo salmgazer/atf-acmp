@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+
+# Ensure npm is in PATH (for nvm/fnm users when running from IDE)
+[ -f "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh"
+[ -f "$HOME/.local/share/fnm/fnm" ] && eval "$("$HOME/.local/share/fnm/fnm" env)"
+export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+
+echo "🔍 Running pre-commit checks..."
+
+# Type checking
+echo "📝 Type checking..."
+npm run type-check || {
+  echo "❌ Type check failed. Fix the errors before committing."
+  exit 1
+}
+
+# Linting
+echo "🧹 Linting..."
+npm run lint || {
+  echo "❌ Linting failed. Fix the errors before committing."
+  exit 1
+}
+
+echo "✅ Pre-commit checks passed!"

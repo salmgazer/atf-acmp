@@ -1,0 +1,247 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-montserrat);
+  --font-mono: var(--font-geist-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Modern Playful Design with ATF Brand Colors */
+:root {
+  --radius: 0.75rem;
+  
+  /* ATF Brand - Primary Red */
+  --atf-red: #F70035;
+  --atf-red-light: #FFF0F3;
+  --atf-red-dark: #C5002A;
+  
+  /* Base - White background */
+  --background: #FFFFFF;
+  --foreground: #18181B;
+  
+  /* Cards & Surfaces - Pure white cards on soft background */
+  --card: #FFFFFF;
+  --card-foreground: #1a1a2e;
+  --popover: #FFFFFF;
+  --popover-foreground: #1a1a2e;
+  
+  /* Primary (ATF Red) */
+  --primary: #F70035;
+  --primary-foreground: #FFFFFF;
+  
+  /* Secondary */
+  --secondary: #F1F5F9;
+  --secondary-foreground: #334155;
+  
+  /* Muted */
+  --muted: #F1F5F9;
+  --muted-foreground: #64748B;
+  
+  /* Accent */
+  --accent: #FFF0F3;
+  --accent-foreground: #F70035;
+  
+  /* Destructive */
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+  
+  /* Border & Input - Subtle borders */
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --ring: #F70035;
+  
+  /* Sidebar - Clean white sidebar */
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #334155;
+  --sidebar-primary: #F70035;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #FFF0F3;
+  --sidebar-accent-foreground: #F70035;
+  --sidebar-border: #F1F5F9;
+  --sidebar-ring: #F70035;
+  
+  /* Chart Colors - Vibrant & Playful */
+  --chart-1: #F70035;
+  --chart-2: #3B82F6;
+  --chart-3: #22C55E;
+  --chart-4: #F59E0B;
+  --chart-5: #8B5CF6;
+  
+  /* Success, Warning, Info */
+  --success: #10B981;
+  --success-foreground: #FFFFFF;
+  --warning: #F59E0B;
+  --warning-foreground: #FFFFFF;
+  --info: #3B82F6;
+  --info-foreground: #FFFFFF;
+}
+
+.dark {
+  /* Layout background */
+  --background: #111315;
+  --foreground: #F8FAFC;
+  
+  /* Cards & Surfaces - #1A1C1E */
+  --card: #1A1C1E;
+  --card-foreground: #F8FAFC;
+  --popover: #1A1C1E;
+  --popover-foreground: #F8FAFC;
+  
+  /* Primary (ATF Red) */
+  --primary: #F70035;
+  --primary-foreground: #FFFFFF;
+  
+  /* Secondary */
+  --secondary: #252729;
+  --secondary-foreground: #F8FAFC;
+  
+  /* Muted */
+  --muted: #252729;
+  --muted-foreground: #9CA3AF;
+  
+  /* Accent */
+  --accent: #2D1519;
+  --accent-foreground: #F70035;
+  
+  /* Destructive */
+  --destructive: #DC2626;
+  --destructive-foreground: #FAFAFA;
+  
+  /* Border & Input */
+  --border: #2A2D30;
+  --input: #2A2D30;
+  --ring: #F70035;
+  
+  /* Sidebar - #1A1C1E to match cards */
+  --sidebar: #1A1C1E;
+  --sidebar-foreground: #F8FAFC;
+  --sidebar-primary: #F70035;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #2D1519;
+  --sidebar-accent-foreground: #F70035;
+  --sidebar-border: #2A2D30;
+  --sidebar-ring: #F70035;
+  
+  /* Chart colors */
+  --chart-1: #F70035;
+  --chart-2: #3B82F6;
+  --chart-3: #22C55E;
+  --chart-4: #F59E0B;
+  --chart-5: #8B5CF6;
+  
+  /* Success, Warning, Info */
+  --success: #34D399;
+  --warning: #FBBF24;
+  --info: #60A5FA;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  button,
+  [role="button"],
+  a {
+    cursor: pointer !important;
+  }
+  input[type="text"],
+  input[type="email"],
+  input[type="search"],
+  input[type="password"],
+  input[type="tel"],
+  input[type="number"],
+  textarea {
+    cursor: text !important;
+  }
+  button:disabled,
+  [role="button"]:disabled {
+    cursor: not-allowed !important;
+  }
+}
+
+/* Custom utility classes for the playful design */
+@layer utilities {
+  .gradient-primary {
+    background: linear-gradient(135deg, #F70035 0%, #FF4D6D 100%);
+  }
+  
+  .gradient-hero {
+    background: linear-gradient(135deg, #F70035 0%, #FF4D6D 50%, #FF8FA3 100%);
+  }
+  
+  .gradient-blue {
+    background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%);
+  }
+  
+  .gradient-green {
+    background: linear-gradient(135deg, #22C55E 0%, #4ADE80 100%);
+  }
+  
+  .gradient-orange {
+    background: linear-gradient(135deg, #F59E0B 0%, #FBBF24 100%);
+  }
+  
+  .gradient-purple {
+    background: linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%);
+  }
+  
+  .shadow-soft {
+    box-shadow: 0 2px 8px -2px rgba(247, 0, 53, 0.1), 0 4px 16px -4px rgba(247, 0, 53, 0.1);
+  }
+  
+  .shadow-card {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.04);
+  }
+  
+  .shadow-card-hover {
+    box-shadow: 0 4px 12px rgba(247, 0, 53, 0.08), 0 8px 24px rgba(247, 0, 53, 0.12);
+  }
+  
+  .text-gradient {
+    background: linear-gradient(135deg, #F70035 0%, #FF4D6D 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}

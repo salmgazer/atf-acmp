@@ -1,0 +1,28 @@
+{
+  "DBInstanceIdentifier": "acmp-staging",
+  "DBInstanceClass": "db.t3.micro",
+  "Engine": "postgres",
+  "EngineVersion": "15.4",
+  "MasterUsername": "acmp_admin",
+  "MasterUserPassword": "CHANGE_THIS_PASSWORD",
+  "AllocatedStorage": 20,
+  "StorageType": "gp2",
+  "DBName": "acmp_staging",
+  "VpcSecurityGroupIds": ["sg-xxxxxxxxx"],
+  "DBSubnetGroupName": "default",
+  "PubliclyAccessible": false,
+  "BackupRetentionPeriod": 1,
+  "MultiAZ": false,
+  "AutoMinorVersionUpgrade": true,
+  "DeletionProtection": false,
+  "Tags": [
+    {
+      "Key": "Environment",
+      "Value": "staging"
+    },
+    {
+      "Key": "Project",
+      "Value": "acmp"
+    }
+  ]
+}

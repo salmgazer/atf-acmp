@@ -1,0 +1,33 @@
+{
+  "DBInstanceIdentifier": "acmp-production",
+  "DBInstanceClass": "db.t3.medium",
+  "Engine": "postgres",
+  "EngineVersion": "15.4",
+  "MasterUsername": "acmp_admin",
+  "MasterUserPassword": "CHANGE_THIS_SECURE_PASSWORD",
+  "AllocatedStorage": 50,
+  "StorageType": "gp3",
+  "Iops": 3000,
+  "DBName": "acmp_production",
+  "VpcSecurityGroupIds": ["sg-xxxxxxxxx"],
+  "DBSubnetGroupName": "default",
+  "PubliclyAccessible": false,
+  "BackupRetentionPeriod": 7,
+  "PreferredBackupWindow": "03:00-04:00",
+  "PreferredMaintenanceWindow": "sun:04:00-sun:05:00",
+  "MultiAZ": false,
+  "AutoMinorVersionUpgrade": true,
+  "DeletionProtection": true,
+  "EnablePerformanceInsights": true,
+  "PerformanceInsightsRetentionPeriod": 7,
+  "Tags": [
+    {
+      "Key": "Environment",
+      "Value": "production"
+    },
+    {
+      "Key": "Project",
+      "Value": "acmp"
+    }
+  ]
+}
