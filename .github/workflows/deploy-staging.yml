@@ -94,9 +94,9 @@ jobs:
             ]
           secrets: |
             [
-              {"name": "DATABASE_PASSWORD", "valueFrom": "${{ secrets.DATABASE_PASSWORD_ARN }}"},
-              {"name": "JWT_SECRET", "valueFrom": "${{ secrets.JWT_SECRET_ARN }}"},
-              {"name": "MAILCHIMP_API_KEY", "valueFrom": "${{ secrets.MAILCHIMP_API_KEY_ARN }}"}
+              {"name": "DATABASE_PASSWORD", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-database-password-0ZwEXK"},
+              {"name": "JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-jwt-secret-gK3vud"},
+              {"name": "MAILCHIMP_API_KEY", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-mailchimp-api-key-Nfy935"}
             ]
 
   # ----------------------------------------------------------------------------
