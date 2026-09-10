@@ -40,7 +40,7 @@ COPY package*.json ./
 
 # Build the API
 WORKDIR /app/apps/api
-RUN npm run build && ls -la dist/ && ls -la dist/
+RUN npm run build
 
 # Prune dev dependencies after build
 WORKDIR /app
