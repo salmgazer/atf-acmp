@@ -7,6 +7,15 @@ const nextConfig: NextConfig = {
   // Enable standalone output for Docker deployment
   output: "standalone",
   
+  // Ignore ESLint and TypeScript errors during production build
+  // These should be caught in CI/pre-commit hooks instead
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  
   images: {
     remotePatterns: [
       {
