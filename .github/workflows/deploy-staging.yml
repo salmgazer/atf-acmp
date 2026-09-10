@@ -1,6 +1,7 @@
 # ==============================================================================
 # ACMP Staging Deployment - ECS Express Mode
-# Triggers on push to 'develop' branch
+# Triggers on push to 'staging' branch
+# Only deploys services that have changed
 # ==============================================================================
 
 name: Deploy Staging
@@ -9,6 +10,15 @@ on:
   push:
     branches: [staging]
   workflow_dispatch:
+    inputs:
+      deploy_api:
+        description: 'Deploy API'
+        type: boolean
+        default: true
+      deploy_web:
+        description: 'Deploy Web'
+        type: boolean
+        default: true
 
 env:
   AWS_REGION: eu-central-1
@@ -20,11 +30,42 @@ env:
 
 jobs:
   # ----------------------------------------------------------------------------
+  # Detect which services changed
+  # ----------------------------------------------------------------------------
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      web: ${{ steps.filter.outputs.web }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'apps/api/**'
+              - 'packages/shared/**'
+              - 'packages/validators/**'
+              - 'package-lock.json'
+            web:
+              - 'apps/web/**'
+              - 'packages/shared/**'
+              - 'packages/validators/**'
+              - 'package-lock.json'
+
+  # ----------------------------------------------------------------------------
   # Build and Deploy API
   # ----------------------------------------------------------------------------
   deploy-api:
     name: Deploy API
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ needs.changes.outputs.api == 'true' || github.event.inputs.deploy_api == 'true' }}
     environment: staging
     permissions:
       id-token: write
@@ -105,8 +146,9 @@ jobs:
   deploy-web:
     name: Deploy Web
     runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ needs.changes.outputs.web == 'true' || github.event.inputs.deploy_web == 'true' }}
     environment: staging
-    needs: deploy-api
     permissions:
       id-token: write
       contents: read
