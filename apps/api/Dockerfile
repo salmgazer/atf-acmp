@@ -59,7 +59,8 @@ COPY packages/validators/package*.json ./packages/validators/
 
 # Install only production dependencies, then rebuild native modules
 RUN npm ci --omit=dev --ignore-scripts && \
-    npm rebuild bcrypt sharp
+    npm rebuild bcrypt && \
+    cd apps/api && npm rebuild sharp
 
 # ------------------------------------------------------------------------------
 # Production stage - minimal runtime image
@@ -77,6 +78,7 @@ RUN apk add --no-cache ffmpeg dumb-init vips-dev
 
 # Copy only production node_modules from prod-deps stage
 COPY --from=prod-deps --chown=nestjs:nodejs /app/node_modules ./node_modules
+COPY --from=prod-deps --chown=nestjs:nodejs /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=builder --chown=nestjs:nodejs /app/apps/api/dist ./dist
 COPY --from=builder --chown=nestjs:nodejs /app/apps/api/package.json ./
 COPY --from=builder --chown=nestjs:nodejs /app/packages ./packages
