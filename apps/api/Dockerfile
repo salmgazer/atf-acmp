@@ -1,6 +1,6 @@
 # ==============================================================================
 # ACMP API - Multi-stage Dockerfile
-# Optimized for AWS App Runner deployment
+# Optimized for AWS ECS Express Mode deployment
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
@@ -11,7 +11,7 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 # ------------------------------------------------------------------------------
-# Dependencies stage - install only production deps for smaller final image
+# Dependencies stage - install all dependencies for build
 # ------------------------------------------------------------------------------
 FROM base AS deps
 
@@ -31,6 +31,7 @@ FROM base AS builder
 
 # Copy dependencies from deps stage
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
 
 # Copy source code
 COPY apps/api ./apps/api
@@ -40,7 +41,7 @@ COPY package*.json ./
 
 # Build the API
 WORKDIR /app/apps/api
-RUN npm run build
+RUN npm run build && ls -la dist/
 
 # Prune dev dependencies after build
 WORKDIR /app
@@ -73,7 +74,7 @@ ENV PORT=3000
 # Use non-root user
 USER nestjs
 
-# Expose port (App Runner expects 3000 by default)
+# Expose port
 EXPOSE 3000
 
 # Health check for container orchestration
