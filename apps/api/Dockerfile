@@ -57,8 +57,9 @@ COPY apps/api/package*.json ./apps/api/
 COPY packages/shared/package*.json ./packages/shared/
 COPY packages/validators/package*.json ./packages/validators/
 
-# Install only production dependencies (HUSKY=0 to skip husky, allow native builds)
-RUN HUSKY=0 npm ci --omit=dev
+# Install only production dependencies, then rebuild native modules
+RUN npm ci --omit=dev --ignore-scripts && \
+    npm rebuild bcrypt sharp
 
 # ------------------------------------------------------------------------------
 # Production stage - minimal runtime image
