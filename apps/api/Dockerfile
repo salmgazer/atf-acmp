@@ -41,11 +41,21 @@ COPY package*.json ./
 
 # Build the API - use npx to ensure nest CLI is found from workspace
 WORKDIR /app/apps/api
-RUN npx nest build && ls -la dist/
+RUN npx nest build && ls -la dist/ && ls -la dist/src/
 
-# Prune dev dependencies after build
-WORKDIR /app
-RUN npm prune --production
+# ------------------------------------------------------------------------------
+# Production dependencies stage - install only prod deps
+# ------------------------------------------------------------------------------
+FROM base AS prod-deps
+
+# Copy workspace package files
+COPY package*.json ./
+COPY apps/api/package*.json ./apps/api/
+COPY packages/shared/package*.json ./packages/shared/
+COPY packages/validators/package*.json ./packages/validators/
+
+# Install only production dependencies
+RUN npm ci --omit=dev
 
 # ------------------------------------------------------------------------------
 # Production stage - minimal runtime image
@@ -58,11 +68,11 @@ WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 
-# Install runtime dependencies
-RUN apk add --no-cache ffmpeg dumb-init
+# Install runtime dependencies (including sharp requirements)
+RUN apk add --no-cache ffmpeg dumb-init vips-dev
 
-# Copy only production node_modules
-COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
+# Copy only production node_modules from prod-deps stage
+COPY --from=prod-deps --chown=nestjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nestjs:nodejs /app/apps/api/dist ./dist
 COPY --from=builder --chown=nestjs:nodejs /app/apps/api/package.json ./
 COPY --from=builder --chown=nestjs:nodejs /app/packages ./packages
