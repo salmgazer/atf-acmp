@@ -112,7 +112,7 @@ jobs:
           container-port: 3000
           cpu: '256'
           memory: '512'
-          health-check-path: /health
+          health-check-path: /api/health
           min-task-count: 1
           max-task-count: 2
           auto-scaling-metric: AVERAGE_CPU
