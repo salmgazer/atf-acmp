@@ -39,9 +39,9 @@ COPY packages ./packages
 COPY tsconfig.base.json ./
 COPY package*.json ./
 
-# Build the API
+# Build the API - use npx to ensure nest CLI is found from workspace
 WORKDIR /app/apps/api
-RUN npm run build && ls -la dist/
+RUN npx nest build && ls -la dist/
 
 # Prune dev dependencies after build
 WORKDIR /app
