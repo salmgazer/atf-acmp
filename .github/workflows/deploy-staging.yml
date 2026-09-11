@@ -14,11 +14,11 @@ on:
       deploy_api:
         description: 'Deploy API'
         type: boolean
-        default: true
+        default: false
       deploy_web:
         description: 'Deploy Web'
         type: boolean
-        default: true
+        default: false
 
 env:
   AWS_REGION: eu-central-1
@@ -41,6 +41,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Check for changes
         uses: dorny/paths-filter@v3
@@ -51,12 +53,10 @@ jobs:
               - 'apps/api/**'
               - 'packages/shared/**'
               - 'packages/validators/**'
-              - 'package-lock.json'
             web:
               - 'apps/web/**'
               - 'packages/shared/**'
               - 'packages/validators/**'
-              - 'package-lock.json'
 
   # ----------------------------------------------------------------------------
   # Build and Deploy API
