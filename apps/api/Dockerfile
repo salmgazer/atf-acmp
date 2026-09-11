@@ -7,13 +7,13 @@
 # Base stage - shared between build and production
 # ------------------------------------------------------------------------------
 FROM node:22-alpine AS base
-RUN apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat python3 make g++ vips-dev
 WORKDIR /app
 
 # ------------------------------------------------------------------------------
-# Dependencies stage - install all dependencies for build
+# Builder stage - install deps, compile TypeScript, then prune
 # ------------------------------------------------------------------------------
-FROM base AS deps
+FROM base AS builder
 
 # Copy workspace package files
 COPY package*.json ./
@@ -22,45 +22,27 @@ COPY packages/shared/package*.json ./packages/shared/
 COPY packages/validators/package*.json ./packages/validators/
 
 # Install all dependencies (need devDeps for build)
-RUN npm ci
+RUN npm ci --ignore-scripts
 
-# ------------------------------------------------------------------------------
-# Builder stage - compile TypeScript
-# ------------------------------------------------------------------------------
-FROM base AS builder
-
-# Copy dependencies from deps stage
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
+# Rebuild native modules (bcrypt, sharp)
+RUN npm rebuild bcrypt && \
+    cd apps/api && npm rebuild sharp
 
 # Copy source code
 COPY apps/api ./apps/api
 COPY packages ./packages
 COPY tsconfig.base.json ./
-COPY package*.json ./
 
-# Build the API - use npx to ensure nest CLI is found from workspace
+# Build the API
 WORKDIR /app/apps/api
-RUN npx nest build && ls -la dist/ && ls -la dist/src/
+RUN npx nest build
 
-# ------------------------------------------------------------------------------
-# Production dependencies stage - install only prod deps
-# ------------------------------------------------------------------------------
-FROM base AS prod-deps
+# Go back to root and prune dev dependencies
+WORKDIR /app
+RUN npm prune --omit=dev
 
-# Install build tools for native modules (bcrypt, sharp)
-RUN apk add --no-cache python3 make g++ vips-dev
-
-# Copy workspace package files
-COPY package*.json ./
-COPY apps/api/package*.json ./apps/api/
-COPY packages/shared/package*.json ./packages/shared/
-COPY packages/validators/package*.json ./packages/validators/
-
-# Install only production dependencies, then rebuild native modules
-RUN npm ci --omit=dev --ignore-scripts && \
-    npm rebuild bcrypt && \
-    cd apps/api && npm rebuild sharp
+# Verify sharp exists after pruning
+RUN ls -la node_modules/sharp 2>/dev/null || ls -la apps/api/node_modules/sharp 2>/dev/null || echo "sharp location check"
 
 # ------------------------------------------------------------------------------
 # Production stage - minimal runtime image
@@ -73,19 +55,20 @@ WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 
-# Install runtime dependencies (including sharp requirements)
-RUN apk add --no-cache ffmpeg dumb-init vips-dev
+# Install runtime dependencies (vips for sharp)
+RUN apk add --no-cache ffmpeg dumb-init vips
 
-# Copy only production node_modules from prod-deps stage
-COPY --from=prod-deps --chown=nestjs:nodejs /app/node_modules ./node_modules
-COPY --from=prod-deps --chown=nestjs:nodejs /app/apps/api/node_modules ./apps/api/node_modules
+# Copy everything needed from builder
+COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nestjs:nodejs /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=builder --chown=nestjs:nodejs /app/apps/api/dist ./dist
 COPY --from=builder --chown=nestjs:nodejs /app/apps/api/package.json ./
 COPY --from=builder --chown=nestjs:nodejs /app/packages ./packages
 
-# Set environment
+# Set NODE_PATH to include all possible module locations
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV NODE_PATH=/app/node_modules:/app/apps/api/node_modules
 
 # Use non-root user
 USER nestjs
