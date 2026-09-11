@@ -54,8 +54,8 @@ COPY apps/api/package*.json ./apps/api/
 COPY packages/shared/package*.json ./packages/shared/
 COPY packages/validators/package*.json ./packages/validators/
 
-# Install only production dependencies
-RUN npm ci --omit=dev
+# Install only production dependencies (ignore-scripts to skip husky prepare)
+RUN npm ci --omit=dev --ignore-scripts
 
 # ------------------------------------------------------------------------------
 # Production stage - minimal runtime image
