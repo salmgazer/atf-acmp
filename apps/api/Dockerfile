@@ -48,14 +48,17 @@ RUN npx nest build && ls -la dist/ && ls -la dist/src/
 # ------------------------------------------------------------------------------
 FROM base AS prod-deps
 
+# Install build tools for native modules (bcrypt, sharp)
+RUN apk add --no-cache python3 make g++ vips-dev
+
 # Copy workspace package files
 COPY package*.json ./
 COPY apps/api/package*.json ./apps/api/
 COPY packages/shared/package*.json ./packages/shared/
 COPY packages/validators/package*.json ./packages/validators/
 
-# Install only production dependencies (ignore-scripts to skip husky prepare)
-RUN npm ci --omit=dev --ignore-scripts
+# Install only production dependencies (HUSKY=0 to skip husky, allow native builds)
+RUN HUSKY=0 npm ci --omit=dev
 
 # ------------------------------------------------------------------------------
 # Production stage - minimal runtime image
