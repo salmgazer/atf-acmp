@@ -202,32 +202,39 @@ jobs:
           
           echo "Registered task definition: $TASK_DEF_ARN"
           
-          # Run the migration task
+          # Run the migration task with ENABLED public IP to allow Secrets Manager access
+          # (needed if subnet doesn't have VPC endpoints for Secrets Manager)
           MIGRATION_TASK_ARN=$(aws ecs run-task \
             --cluster ${{ env.ECS_CLUSTER }} \
             --task-definition "$TASK_DEF_ARN" \
             --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[$SUBNET],securityGroups=[$SECURITY_GROUP],assignPublicIp=DISABLED}" \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNET],securityGroups=[$SECURITY_GROUP],assignPublicIp=ENABLED}" \
             --query 'tasks[0].taskArn' \
             --output text)
           
           echo "Started migration task: $MIGRATION_TASK_ARN"
           
-          # Wait for task to complete
+          # Wait for task to complete (timeout after 10 minutes)
           echo "Waiting for migration task to complete..."
           aws ecs wait tasks-stopped \
             --cluster ${{ env.ECS_CLUSTER }} \
             --tasks "$MIGRATION_TASK_ARN"
           
           # Check exit code
-          EXIT_CODE=$(aws ecs describe-tasks \
+          TASK_STATUS=$(aws ecs describe-tasks \
             --cluster ${{ env.ECS_CLUSTER }} \
             --tasks "$MIGRATION_TASK_ARN" \
-            --query 'tasks[0].containers[0].exitCode' \
-            --output text)
+            --query 'tasks[0].{exitCode:containers[0].exitCode,stoppedReason:stoppedReason}' \
+            --output json)
+          
+          EXIT_CODE=$(echo "$TASK_STATUS" | jq -r '.exitCode // "null"')
+          STOPPED_REASON=$(echo "$TASK_STATUS" | jq -r '.stoppedReason // "unknown"')
+          
+          echo "Task exit code: $EXIT_CODE"
+          echo "Stopped reason: $STOPPED_REASON"
           
           if [ "$EXIT_CODE" != "0" ]; then
-            echo "Migration failed with exit code: $EXIT_CODE"
+            echo "Migration failed!"
             echo "Check CloudWatch logs for details: /aws/ecs/acmp-staging/migrations"
             exit 1
           fi
