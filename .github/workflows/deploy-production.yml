@@ -155,7 +155,7 @@ jobs:
               {"name": "JWT_EXPIRES_IN", "value": "7d"},
               {"name": "AWS_REGION", "value": "${{ env.AWS_REGION }}"},
               {"name": "AWS_S3_BUCKET", "value": "${{ vars.AWS_S3_BUCKET }}"},
-              {"name": "CORS_ORIGIN", "value": "${{ vars.CORS_ORIGIN }}"},
+              {"name": "CORS_ORIGINS", "value": "${{ vars.CORS_ORIGIN }}"},
               {"name": "FRONTEND_URL", "value": "${{ vars.FRONTEND_URL }}"},
               {"name": "MAILCHIMP_FROM_EMAIL", "value": "${{ vars.MAILCHIMP_FROM_EMAIL }}"},
               {"name": "MAILCHIMP_FROM_NAME", "value": "${{ vars.MAILCHIMP_FROM_NAME }}"},
