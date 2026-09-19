@@ -1383,19 +1383,16 @@ CREATE TABLE public.message_reactions (
 );
 
 
-Schema: public; Owner: -
 --
 
 
 
 
-Schema: public; Owner: -
 --
 
 
 
 
-Schema: public; Owner: -
 --
 
 
@@ -1972,7 +1969,6 @@ CREATE TABLE public.verticals (
 );
 
 
-Schema: public; Owner: -
 --
 
 
@@ -2218,7 +2214,6 @@ ALTER TABLE ONLY public.mentor_payments
     ADD CONSTRAINT "PK_8b23c77599687ccbe931941826a" PRIMARY KEY (id);
 
 
-Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 
