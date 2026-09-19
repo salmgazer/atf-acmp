@@ -60,49 +60,7 @@ jobs:
               - 'packages/validators/**'
 
   # ----------------------------------------------------------------------------
-  # Run Database Migrations
-  # NOTE: Migrations are handled by TypeORM synchronize in staging
-  # The RDS database is in a private VPC not accessible from GitHub Actions
-  # ----------------------------------------------------------------------------
-  # run-migrations:
-  #   name: Run Migrations
-  #   runs-on: ubuntu-latest
-  #   needs: changes
-  #   if: ${{ needs.changes.outputs.api == 'true' || github.event.inputs.deploy_api == 'true' }}
-  #   environment: staging
-  #   permissions:
-  #     id-token: write
-  #     contents: read
-  #
-  #   steps:
-  #     - name: Checkout
-  #       uses: actions/checkout@v4
-  #
-  #     - name: Setup Node.js
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '22'
-  #         cache: 'npm'
-  #
-  #     - name: Install dependencies
-  #       run: npm ci
-  #
-  #     - name: Build API
-  #       run: npm run build -w @acmp/api
-  #
-  #     - name: Run migrations
-  #       working-directory: apps/api
-  #       env:
-  #         DATABASE_HOST: ${{ vars.DATABASE_HOST }}
-  #         DATABASE_PORT: 5432
-  #         DATABASE_USER: ${{ vars.DATABASE_USER }}
-  #         DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
-  #         DATABASE_NAME: ${{ vars.DATABASE_NAME }}
-  #         DATABASE_SSL: true
-  #       run: npx typeorm migration:run -d dist/src/database/data-source.js
-
-  # ----------------------------------------------------------------------------
-  # Build and Deploy API
+  # Build and Deploy API (with migrations run via ECS task)
   # ----------------------------------------------------------------------------
   deploy-api:
     name: Deploy API

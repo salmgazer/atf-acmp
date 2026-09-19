@@ -65,6 +65,10 @@ COPY --from=builder --chown=nestjs:nodejs /app/apps/api/dist ./dist
 COPY --from=builder --chown=nestjs:nodejs /app/apps/api/package.json ./
 COPY --from=builder --chown=nestjs:nodejs /app/packages ./packages
 
+# Copy the entrypoint script
+COPY --chown=nestjs:nodejs apps/api/docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
+
 # Set NODE_PATH to include all possible module locations
 ENV NODE_ENV=production
 ENV PORT=3000
@@ -82,7 +86,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "dist/src/main.js"]
+CMD ["./docker-entrypoint.sh"]
 
 # ------------------------------------------------------------------------------
 # Development stage - for local development with hot reload
