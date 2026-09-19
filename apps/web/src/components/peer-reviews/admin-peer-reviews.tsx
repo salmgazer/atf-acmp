@@ -5,23 +5,16 @@ import { format, isPast } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  AlertCircle,
-  Calendar,
-  CheckCircle,
-  Clock,
   Flag,
   Loader2,
   MoreHorizontal,
   Plus,
   Settings,
-  Trash2,
   Users,
-  BarChart3,
   FileText,
-  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -65,7 +58,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Progress } from "@/components/ui/progress";
 import {
   useAdminRubrics,
   useAdminAssignments,

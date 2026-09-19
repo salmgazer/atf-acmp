@@ -49,7 +49,6 @@ import {
   usePeerReviewAssignment,
   useRubricForStage,
   useSubmitPeerReview,
-  PeerReviewScore,
 } from "@/lib/api/hooks/use-peer-reviews";
 
 interface PeerReviewFormProps {
