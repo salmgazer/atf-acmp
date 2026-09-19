@@ -141,6 +141,40 @@ jobs:
               {"name": "MAILCHIMP_API_KEY", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-mailchimp-api-key-Nfy935"}
             ]
 
+      - name: Wait for service stability
+        run: |
+          echo "Waiting for ECS service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE_API }}
+
+      - name: Run database migrations
+        run: |
+          echo "Running database migrations via ECS Exec..."
+          
+          # Get the task ARN for the running service
+          TASK_ARN=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service-name ${{ env.ECS_SERVICE_API }} \
+            --desired-status RUNNING \
+            --query 'taskArns[0]' \
+            --output text)
+          
+          if [ "$TASK_ARN" == "None" ] || [ -z "$TASK_ARN" ]; then
+            echo "No running tasks found for service ${{ env.ECS_SERVICE_API }}"
+            exit 1
+          fi
+          
+          echo "Found task: $TASK_ARN"
+          
+          # Run migrations inside the container
+          aws ecs execute-command \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --task $TASK_ARN \
+            --container Main \
+            --interactive \
+            --command "npm run migration:run"
+
   # ----------------------------------------------------------------------------
   # Build and Deploy Web
   # ----------------------------------------------------------------------------

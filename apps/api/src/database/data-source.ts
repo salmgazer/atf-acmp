@@ -17,7 +17,6 @@ export const dataSourceOptions: DataSourceOptions = {
   entities: [path.join(baseDir, "/entities/**/*.entity{.ts,.js}")],
   migrations: [path.join(baseDir, "/migrations/**/*{.ts,.js}")],
   synchronize: process.env.NODE_ENV === "development",
-  migrationsRun: process.env.NODE_ENV !== "development", // Auto-run migrations in staging/production
   logging: process.env.NODE_ENV === "development",
   ssl: process.env.DATABASE_SSL === "true" ? { rejectUnauthorized: false } : false,
 };
