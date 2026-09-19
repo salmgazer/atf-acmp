@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { MentorLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   useMyMentorProfile,
   useUpdateMyMentorProfile,
+  useUploadMyMentorProfilePicture,
   type UpdateMentorDto,
 } from "@/lib/api/hooks/use-mentors";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -28,19 +30,23 @@ import {
   X,
   Plus,
   LogOut,
+  Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 
 function ProfileContent() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { logout } = useAuthStore();
   const [isEditing, setIsEditing] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [formData, setFormData] = useState<UpdateMentorDto>({});
   const [expertiseInput, setExpertiseInput] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: profile, isLoading } = useMyMentorProfile();
   const updateMutation = useUpdateMyMentorProfile();
+  const uploadPictureMutation = useUploadMyMentorProfilePicture();
 
   useEffect(() => {
     if (profile) {
@@ -48,7 +54,6 @@ function ProfileContent() {
         phone: profile.phone,
         bio: profile.bio,
         expertise: profile.expertise,
-        calendlyLink: profile.calendlyLink,
         linkedinUrl: profile.linkedinUrl,
       });
     }
@@ -81,10 +86,41 @@ function ProfileContent() {
     }));
   };
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
+    }
+
+    // Validate file size (10MB max)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Image must be less than 10MB");
+      return;
+    }
+
+    try {
+      await uploadPictureMutation.mutateAsync(file);
+      toast.success("Profile picture updated!");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to upload profile picture");
+    }
+
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
       await signOut();
+      // Clear all cached queries to prevent stale data on next login
+      queryClient.clear();
       logout();
       router.push("/mentor/login");
     } catch (error) {
@@ -135,9 +171,37 @@ function ProfileContent() {
         {/* Profile Card */}
         <div className="rounded-lg border bg-card p-6">
           <div className="flex items-start gap-4">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center text-white text-xl font-bold">
-              {profile?.firstName?.[0]}
-              {profile?.lastName?.[0]}
+            <div className="relative group">
+              {profile?.profileImageUrl ? (
+                <img
+                  src={profile.profileImageUrl}
+                  alt={`${profile.firstName} ${profile.lastName}`}
+                  className="w-16 h-16 rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center text-white text-xl font-bold">
+                  {profile?.firstName?.[0]}
+                  {profile?.lastName?.[0]}
+                </div>
+              )}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadPictureMutation.isPending}
+                className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              >
+                {uploadPictureMutation.isPending ? (
+                  <Loader2 className="h-5 w-5 text-white animate-spin" />
+                ) : (
+                  <Camera className="h-5 w-5 text-white" />
+                )}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
             </div>
             <div>
               <h2 className="text-lg font-semibold">
@@ -249,37 +313,6 @@ function ProfileContent() {
           <h3 className="font-semibold">Links</h3>
 
           <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <Label className="text-sm">Calendly Link</Label>
-              </div>
-              {isEditing ? (
-                <Input
-                  value={formData.calendlyLink || ""}
-                  onChange={(e) =>
-                    setFormData((f) => ({ ...f, calendlyLink: e.target.value }))
-                  }
-                  placeholder="https://calendly.com/your-link"
-                />
-              ) : profile?.calendlyLink ? (
-                <a
-                  href={profile.calendlyLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-primary hover:underline flex items-center gap-1"
-                >
-                  {profile.calendlyLink}
-                  <LinkIcon className="h-3 w-3" />
-                </a>
-              ) : (
-                <span className="text-sm text-muted-foreground">Not provided</span>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Teams will use this link to book sessions with you
-              </p>
-            </div>
-
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <Linkedin className="h-4 w-4 text-muted-foreground" />

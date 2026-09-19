@@ -14,13 +14,17 @@ import {
   TeamStatus,
   TeamRole,
   TeamMember,
+  TeamMemberStatus,
   TeamInvitation,
   InvitationStatus,
+  TeamMemberRemovalRequest,
+  RemovalRequestStatus,
 } from "@/database/entities/team.entity";
 import { Participant, ParticipantStatus } from "@/database/entities/participant.entity";
 import { Cohort } from "@/database/entities/cohort.entity";
 import { Brief } from "@/database/entities/brief.entity";
 import { ChatChannel, ChannelMember, ChannelType, SenderType } from "@/database/entities/chat.entity";
+import { ScheduledSession, ScheduledSessionStatus } from "@/database/entities/mentor.entity";
 import {
   CreateTeamDto,
   UpdateTeamDto,
@@ -31,6 +35,9 @@ import {
   TeamStatisticsDto,
   DisqualifyTeamDto,
 } from "./dto/team.dto";
+import { OneSignalService } from "@/modules/notifications/onesignal.service";
+import { NotificationTriggersService } from "@/modules/notifications/notification-triggers.service";
+import { User, Role } from "@/database/entities/user.entity";
 
 @Injectable()
 export class TeamsService {
@@ -43,6 +50,8 @@ export class TeamsService {
     private readonly memberRepository: Repository<TeamMember>,
     @InjectRepository(TeamInvitation)
     private readonly invitationRepository: Repository<TeamInvitation>,
+    @InjectRepository(TeamMemberRemovalRequest)
+    private readonly removalRequestRepository: Repository<TeamMemberRemovalRequest>,
     @InjectRepository(Participant)
     private readonly participantRepository: Repository<Participant>,
     @InjectRepository(Cohort)
@@ -53,6 +62,12 @@ export class TeamsService {
     private readonly chatChannelRepository: Repository<ChatChannel>,
     @InjectRepository(ChannelMember)
     private readonly channelMemberRepository: Repository<ChannelMember>,
+    @InjectRepository(ScheduledSession)
+    private readonly scheduledSessionRepository: Repository<ScheduledSession>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    private readonly oneSignalService: OneSignalService,
+    private readonly notificationTriggersService: NotificationTriggersService,
   ) {}
 
   // ============ Helper Methods ============
@@ -112,11 +127,13 @@ export class TeamsService {
 
     const savedTeam = await this.teamRepository.save(team);
 
-    // Add creator as team lead
+    // Add creator as team lead (CONFIRMED since they're the creator)
     const member = this.memberRepository.create({
       teamId: savedTeam.id,
       participantId: dto.creatorId,
       role: TeamRole.LEAD,
+      status: TeamMemberStatus.CONFIRMED,
+      confirmedAt: new Date(),
     });
     await this.memberRepository.save(member);
 
@@ -155,6 +172,10 @@ export class TeamsService {
 
     if (query.briefId) {
       qb.andWhere("team.briefId = :briefId", { briefId: query.briefId });
+    }
+
+    if (query.organizationId) {
+      qb.andWhere("brief.organizationId = :organizationId", { organizationId: query.organizationId });
     }
 
     if (query.hasbrief !== undefined) {
@@ -233,8 +254,11 @@ export class TeamsService {
       where: { id: team.cohortId },
     });
 
-    // Check team size
-    if (team.members.length >= (cohort?.teamSizeMax || 5)) {
+    // Check team size (count only confirmed members)
+    const confirmedMemberCount = team.members.filter(
+      (m) => m.status === TeamMemberStatus.CONFIRMED
+    ).length;
+    if (confirmedMemberCount >= (cohort?.teamSizeMax || 5)) {
       throw new BadRequestException("Team has reached maximum capacity");
     }
 
@@ -246,28 +270,510 @@ export class TeamsService {
       throw new NotFoundException("Participant not found in this cohort");
     }
 
-    // Check if participant is already in a team
+    // Check if participant is already in a team (confirmed or pending)
     const existingMembership = await this.memberRepository.findOne({
       where: { participantId },
     });
     if (existingMembership) {
+      if (existingMembership.status === TeamMemberStatus.PENDING) {
+        throw new ConflictException("You already have a pending join request");
+      }
       throw new ConflictException("You are already in a team");
     }
 
-    // Add as member
+    // Add as PENDING member (requires team lead approval)
     const member = this.memberRepository.create({
       teamId: team.id,
       participantId,
       role: TeamRole.MEMBER,
+      status: TeamMemberStatus.PENDING,
     });
     await this.memberRepository.save(member);
 
-    // Update participant status
-    await this.participantRepository.update(participantId, {
+    // Note: DO NOT update participant status yet - they're still not confirmed
+    // DO NOT add to chat channel yet - they need to be confirmed first
+
+    // Send push notification and in-app notification to team lead about the join request
+    const teamLead = team.members.find((m) => m.role === TeamRole.LEAD && m.status === TeamMemberStatus.CONFIRMED);
+    if (teamLead) {
+      const participantName = `${participant.firstName} ${participant.lastName}`;
+      
+      // Push notification
+      this.oneSignalService.sendToExternalUserIds(
+        [`participant:${teamLead.participantId}`],
+        {
+          title: "New Join Request",
+          body: `${participantName} wants to join "${team.name}". Review their request.`,
+          data: {
+            type: "team_join_request",
+            teamId: team.id,
+            teamName: team.name,
+            participantId: participant.id,
+            participantName,
+          },
+          url: "/app/team",
+        }
+      ).catch((err) => this.logger.warn(`Failed to send join request push: ${err.message}`));
+
+      // In-app notification
+      this.notificationTriggersService.onTeamJoinRequest({
+        teamLeaderId: teamLead.participantId,
+        teamId: team.id,
+        teamName: team.name,
+        requesterName: participantName,
+        requesterId: participant.id,
+      }).catch((err) => this.logger.warn(`Failed to send join request in-app notification: ${err.message}`));
+    }
+
+    return this.findOne(team.id);
+  }
+
+  /**
+   * Confirm a pending member (called by team lead/co-lead)
+   */
+  async confirmPendingMember(teamId: string, memberId: string, confirmedBy: string): Promise<TeamMember> {
+    const team = await this.findOne(teamId);
+
+    // Verify confirmer is team lead or co-lead
+    const confirmerMember = team.members.find((m) => m.participantId === confirmedBy);
+    if (!confirmerMember || ![TeamRole.LEAD, TeamRole.CO_LEAD].includes(confirmerMember.role)) {
+      throw new ForbiddenException("Only team leads or co-leads can confirm members");
+    }
+
+    // Find the pending member
+    const pendingMember = team.members.find(
+      (m) => m.id === memberId && m.status === TeamMemberStatus.PENDING
+    );
+    if (!pendingMember) {
+      throw new NotFoundException("Pending member not found");
+    }
+
+    // Get cohort for team size limits
+    const cohort = await this.cohortRepository.findOne({
+      where: { id: team.cohortId },
+    });
+
+    // Check team size (count only confirmed members)
+    const confirmedMemberCount = team.members.filter(
+      (m) => m.status === TeamMemberStatus.CONFIRMED
+    ).length;
+    if (confirmedMemberCount >= (cohort?.teamSizeMax || 5)) {
+      throw new BadRequestException("Team has reached maximum capacity");
+    }
+
+    // Update member status to CONFIRMED
+    pendingMember.status = TeamMemberStatus.CONFIRMED;
+    pendingMember.confirmedAt = new Date();
+    pendingMember.confirmedBy = confirmedBy;
+    await this.memberRepository.save(pendingMember);
+
+    // Now update participant status to ASSIGNED
+    await this.participantRepository.update(pendingMember.participantId, {
       status: ParticipantStatus.ASSIGNED,
     });
 
-    return this.findOne(team.id);
+    // Add member to team chat channel
+    const participant = await this.participantRepository.findOne({
+      where: { id: pendingMember.participantId },
+    });
+    if (participant) {
+      await this.addMemberToTeamChat(teamId, participant);
+    }
+
+    // Cancel any other pending memberships this participant might have
+    await this.memberRepository.delete({
+      participantId: pendingMember.participantId,
+      status: TeamMemberStatus.PENDING,
+      id: Not(pendingMember.id),
+    });
+
+    // Send push notification and in-app notification to the confirmed member
+    if (participant) {
+      // Push notification
+      this.oneSignalService.sendToExternalUserIds(
+        [`participant:${participant.id}`],
+        {
+          title: "You're In! 🎉",
+          body: `Your request to join "${team.name}" has been approved!`,
+          data: {
+            type: "team_join_confirmed",
+            teamId: team.id,
+            teamName: team.name,
+          },
+          url: "/app/team",
+        }
+      ).catch((err) => this.logger.warn(`Failed to send confirmation push: ${err.message}`));
+
+      // In-app notification
+      this.notificationTriggersService.onTeamJoinConfirmed({
+        participantId: participant.id,
+        teamId: team.id,
+        teamName: team.name,
+      }).catch((err) => this.logger.warn(`Failed to send confirmation in-app notification: ${err.message}`));
+    }
+
+    return pendingMember;
+  }
+
+  /**
+   * Decline a pending member (called by team lead/co-lead)
+   */
+  async declinePendingMember(teamId: string, memberId: string, declinedBy: string): Promise<void> {
+    const team = await this.findOne(teamId);
+
+    // Verify decliner is team lead or co-lead
+    const declinerMember = team.members.find((m) => m.participantId === declinedBy);
+    if (!declinerMember || ![TeamRole.LEAD, TeamRole.CO_LEAD].includes(declinerMember.role)) {
+      throw new ForbiddenException("Only team leads or co-leads can decline members");
+    }
+
+    // Find the pending member
+    const pendingMember = team.members.find(
+      (m) => m.id === memberId && m.status === TeamMemberStatus.PENDING
+    );
+    if (!pendingMember) {
+      throw new NotFoundException("Pending member not found");
+    }
+
+    // Get participant info before removing
+    const participant = await this.participantRepository.findOne({
+      where: { id: pendingMember.participantId },
+    });
+
+    // Remove the pending membership
+    await this.memberRepository.remove(pendingMember);
+
+    // Send push notification and in-app notification to the declined member
+    if (participant) {
+      // Push notification
+      this.oneSignalService.sendToExternalUserIds(
+        [`participant:${participant.id}`],
+        {
+          title: "Join Request Declined",
+          body: `Your request to join "${team.name}" was not accepted. You can try joining other teams.`,
+          data: {
+            type: "team_join_declined",
+            teamId: team.id,
+            teamName: team.name,
+          },
+          url: "/app/team",
+        }
+      ).catch((err) => this.logger.warn(`Failed to send decline push: ${err.message}`));
+
+      // In-app notification
+      this.notificationTriggersService.onTeamJoinDeclined({
+        participantId: participant.id,
+        teamId: team.id,
+        teamName: team.name,
+      }).catch((err) => this.logger.warn(`Failed to send decline in-app notification: ${err.message}`));
+    }
+  }
+
+  /**
+   * Get pending members for a team (for team lead view)
+   */
+  async getPendingMembers(teamId: string): Promise<TeamMember[]> {
+    return this.memberRepository.find({
+      where: { teamId, status: TeamMemberStatus.PENDING },
+      relations: ["participant"],
+      order: { joinedAt: "ASC" },
+    });
+  }
+
+  // ============ Member Removal Requests ============
+
+  /**
+   * Request to remove a member from the team (called by team lead/co-lead)
+   * - For PENDING members: immediate removal (no approval needed)
+   * - For CONFIRMED members: creates removal request for staff approval
+   */
+  async requestMemberRemoval(
+    teamId: string,
+    participantId: string,
+    requestedBy: string,
+    reason?: string
+  ): Promise<{ immediate: boolean; request?: TeamMemberRemovalRequest }> {
+    const team = await this.findOne(teamId);
+
+    // Verify requester is team lead or co-lead
+    const requesterMember = team.members.find((m) => m.participantId === requestedBy);
+    if (!requesterMember || ![TeamRole.LEAD, TeamRole.CO_LEAD].includes(requesterMember.role)) {
+      throw new ForbiddenException("Only team leads or co-leads can request member removal");
+    }
+
+    // Find the member to remove
+    const memberToRemove = team.members.find((m) => m.participantId === participantId);
+    if (!memberToRemove) {
+      throw new NotFoundException("Member not found in team");
+    }
+
+    // Cannot remove yourself
+    if (participantId === requestedBy) {
+      throw new BadRequestException("You cannot remove yourself. Use the leave team function instead.");
+    }
+
+    // Cannot remove the team lead
+    if (memberToRemove.role === TeamRole.LEAD) {
+      throw new BadRequestException("Cannot remove the team lead");
+    }
+
+    // For PENDING members: immediate removal (no approval needed)
+    if (memberToRemove.status === TeamMemberStatus.PENDING) {
+      await this.memberRepository.remove(memberToRemove);
+      
+      // Notify the declined member
+      const participant = await this.participantRepository.findOne({
+        where: { id: participantId },
+      });
+      if (participant) {
+        this.oneSignalService.sendToExternalUserIds(
+          [`participant:${participant.id}`],
+          {
+            title: "Join Request Removed",
+            body: `Your request to join "${team.name}" was declined.`,
+            data: {
+              type: "team_join_declined",
+              teamId: team.id,
+              teamName: team.name,
+            },
+            url: "/app/team",
+          }
+        ).catch((err) => this.logger.warn(`Failed to send removal push: ${err.message}`));
+      }
+
+      return { immediate: true };
+    }
+
+    // For CONFIRMED members: create removal request for staff approval
+    // Check if there's already a pending removal request
+    const existingRequest = await this.removalRequestRepository.findOne({
+      where: {
+        teamId,
+        participantId,
+        status: RemovalRequestStatus.PENDING,
+      },
+    });
+    if (existingRequest) {
+      throw new ConflictException("A removal request for this member is already pending");
+    }
+
+    const removalRequest = this.removalRequestRepository.create({
+      teamId,
+      memberId: memberToRemove.id,
+      participantId,
+      requestedBy,
+      reason,
+      status: RemovalRequestStatus.PENDING,
+    });
+
+    const savedRequest = await this.removalRequestRepository.save(removalRequest);
+
+    // Get requester info for notification
+    const requester = await this.participantRepository.findOne({
+      where: { id: requestedBy },
+    });
+    const memberParticipant = await this.participantRepository.findOne({
+      where: { id: participantId },
+    });
+
+    // Notify staff about the removal request (Program Managers)
+    const staffUsers = await this.userRepository.find({
+      where: { role: In([Role.PROGRAM_MANAGER, Role.SUPER_ADMIN]), isActive: true },
+      select: ["id"],
+    });
+    
+    if (staffUsers.length > 0) {
+      const staffUserIds = staffUsers.map((u) => u.id);
+      const requesterName = requester 
+        ? `${requester.firstName} ${requester.lastName}` 
+        : "A team lead";
+      const memberName = memberParticipant 
+        ? `${memberParticipant.firstName} ${memberParticipant.lastName}` 
+        : "a member";
+
+      this.notificationTriggersService.onTeamMemberRemovalRequested({
+        staffUserIds,
+        teamId,
+        teamName: team.name,
+        memberName,
+        requesterName,
+        requestId: savedRequest.id,
+        reason,
+      }).catch((err) => this.logger.warn(`Failed to send removal request notification: ${err.message}`));
+
+      this.logger.log(
+        `Member removal request created: ${requesterName} ` +
+        `requested to remove ${memberName} ` +
+        `from team "${team.name}". Notified ${staffUserIds.length} staff members.`
+      );
+    }
+
+    return { immediate: false, request: savedRequest };
+  }
+
+  /**
+   * Get pending removal requests for a team
+   */
+  async getPendingRemovalRequests(teamId: string): Promise<TeamMemberRemovalRequest[]> {
+    return this.removalRequestRepository.find({
+      where: { teamId, status: RemovalRequestStatus.PENDING },
+      relations: ["participant", "requester", "member"],
+      order: { requestedAt: "ASC" },
+    });
+  }
+
+  /**
+   * Get all pending removal requests (for staff view)
+   */
+  async getAllPendingRemovalRequests(cohortId?: string): Promise<TeamMemberRemovalRequest[]> {
+    const queryBuilder = this.removalRequestRepository
+      .createQueryBuilder("request")
+      .leftJoinAndSelect("request.team", "team")
+      .leftJoinAndSelect("request.participant", "participant")
+      .leftJoinAndSelect("request.requester", "requester")
+      .where("request.status = :status", { status: RemovalRequestStatus.PENDING });
+
+    if (cohortId) {
+      queryBuilder.andWhere("team.cohortId = :cohortId", { cohortId });
+    }
+
+    return queryBuilder.orderBy("request.requestedAt", "ASC").getMany();
+  }
+
+  /**
+   * Approve a member removal request (staff only)
+   */
+  async approveRemovalRequest(
+    requestId: string,
+    approvedBy: string,
+    notes?: string
+  ): Promise<TeamMemberRemovalRequest> {
+    const request = await this.removalRequestRepository.findOne({
+      where: { id: requestId },
+      relations: ["team", "participant", "requester", "member"],
+    });
+
+    if (!request) {
+      throw new NotFoundException("Removal request not found");
+    }
+
+    if (request.status !== RemovalRequestStatus.PENDING) {
+      throw new BadRequestException("Request has already been processed");
+    }
+
+    // Remove the member from the team
+    if (request.member) {
+      await this.memberRepository.remove(request.member);
+
+      // Clear the member reference since the member no longer exists
+      request.memberId = null;
+      request.member = null;
+
+      // Update participant status
+      await this.participantRepository.update(request.participantId, {
+        status: ParticipantStatus.READY,
+      });
+
+      // Remove from chat channel
+      await this.removeMemberFromTeamChat(request.teamId, request.participantId);
+    }
+
+    // Update the request
+    request.status = RemovalRequestStatus.APPROVED;
+    request.resolvedAt = new Date();
+    request.resolvedBy = approvedBy;
+    request.resolutionNotes = notes;
+
+    const savedRequest = await this.removalRequestRepository.save(request);
+
+    // Notify the removed member
+    if (request.participant) {
+      this.oneSignalService.sendToExternalUserIds(
+        [`participant:${request.participantId}`],
+        {
+          title: "Removed from Team",
+          body: `You have been removed from "${request.team?.name}".`,
+          data: {
+            type: "team_member_removed",
+            teamId: request.teamId,
+            teamName: request.team?.name,
+          },
+          url: "/app/team",
+        }
+      ).catch((err) => this.logger.warn(`Failed to send removal notification: ${err.message}`));
+    }
+
+    // Notify the team lead about the approved removal
+    const team = await this.findOne(request.teamId);
+    const teamLead = team.members.find((m) => m.role === TeamRole.LEAD);
+    if (teamLead) {
+      this.oneSignalService.sendToExternalUserIds(
+        [`participant:${teamLead.participantId}`],
+        {
+          title: "Removal Request Approved",
+          body: `${request.participant?.firstName} ${request.participant?.lastName} has been removed from your team.`,
+          data: {
+            type: "removal_request_approved",
+            teamId: request.teamId,
+            participantId: request.participantId,
+          },
+          url: "/app/team",
+        }
+      ).catch((err) => this.logger.warn(`Failed to send approval notification: ${err.message}`));
+    }
+
+    return savedRequest;
+  }
+
+  /**
+   * Reject a member removal request (staff only)
+   */
+  async rejectRemovalRequest(
+    requestId: string,
+    rejectedBy: string,
+    notes?: string
+  ): Promise<TeamMemberRemovalRequest> {
+    const request = await this.removalRequestRepository.findOne({
+      where: { id: requestId },
+      relations: ["team", "participant", "requester"],
+    });
+
+    if (!request) {
+      throw new NotFoundException("Removal request not found");
+    }
+
+    if (request.status !== RemovalRequestStatus.PENDING) {
+      throw new BadRequestException("Request has already been processed");
+    }
+
+    // Update the request
+    request.status = RemovalRequestStatus.REJECTED;
+    request.resolvedAt = new Date();
+    request.resolvedBy = rejectedBy;
+    request.resolutionNotes = notes;
+
+    const savedRequest = await this.removalRequestRepository.save(request);
+
+    // Notify the team lead about the rejected removal
+    const team = await this.findOne(request.teamId);
+    const teamLead = team.members.find((m) => m.role === TeamRole.LEAD);
+    if (teamLead) {
+      this.oneSignalService.sendToExternalUserIds(
+        [`participant:${teamLead.participantId}`],
+        {
+          title: "Removal Request Rejected",
+          body: `Your request to remove ${request.participant?.firstName} ${request.participant?.lastName} was not approved.${notes ? ` Reason: ${notes}` : ""}`,
+          data: {
+            type: "removal_request_rejected",
+            teamId: request.teamId,
+            participantId: request.participantId,
+          },
+          url: "/app/team",
+        }
+      ).catch((err) => this.logger.warn(`Failed to send rejection notification: ${err.message}`));
+    }
+
+    return savedRequest;
   }
 
   async findOpenTeams(cohortId: string, search?: string): Promise<Team[]> {
@@ -293,8 +799,13 @@ export class TeamsService {
 
     const teams = await queryBuilder.getMany();
 
-    // Filter to only teams with available spots
-    return teams.filter((team) => team.members.length < maxTeamSize);
+    // Filter to only teams with available spots (count only confirmed members)
+    return teams.filter((team) => {
+      const confirmedCount = team.members.filter(
+        (m) => m.status === TeamMemberStatus.CONFIRMED
+      ).length;
+      return confirmedCount < maxTeamSize;
+    });
   }
 
   async findParticipantTeam(participantId: string): Promise<Team | null> {
@@ -458,6 +969,8 @@ export class TeamsService {
       teamId,
       participantId: dto.participantId,
       role: dto.role || TeamRole.MEMBER,
+      status: TeamMemberStatus.CONFIRMED, // Staff-added members are auto-confirmed
+      confirmedAt: new Date(),
     });
 
     await this.memberRepository.save(member);
@@ -481,8 +994,9 @@ export class TeamsService {
       throw new NotFoundException("Member not found in team");
     }
 
-    // Cannot remove lead if there are other members
-    if (member.role === TeamRole.LEAD && team.members.length > 1) {
+    // Cannot remove lead if there are other confirmed members
+    const confirmedMembers = team.members.filter((m) => m.status === TeamMemberStatus.CONFIRMED);
+    if (member.role === TeamRole.LEAD && confirmedMembers.length > 1) {
       throw new BadRequestException(
         "Cannot remove team lead. Transfer leadership first or remove all other members."
       );
@@ -490,16 +1004,18 @@ export class TeamsService {
 
     await this.memberRepository.remove(member);
 
-    // Update participant status back to READY
-    await this.participantRepository.update(participantId, {
-      status: ParticipantStatus.READY,
-    });
+    // Only update participant status if they were confirmed
+    if (member.status === TeamMemberStatus.CONFIRMED) {
+      await this.participantRepository.update(participantId, {
+        status: ParticipantStatus.READY,
+      });
 
-    // Remove member from team chat channel
-    await this.removeMemberFromTeamChat(teamId, participantId);
+      // Remove member from team chat channel
+      await this.removeMemberFromTeamChat(teamId, participantId);
+    }
 
-    // If team is empty, delete it (and archive the chat)
-    if (team.members.length === 1) {
+    // If team is empty (no confirmed members), delete it (and archive the chat)
+    if (confirmedMembers.length === 1 && member.status === TeamMemberStatus.CONFIRMED) {
       await this.archiveTeamChat(teamId);
       await this.teamRepository.softRemove(team);
     }
@@ -589,7 +1105,30 @@ export class TeamsService {
       expiresAt,
     });
 
-    return this.invitationRepository.save(invitation);
+    const savedInvitation = await this.invitationRepository.save(invitation);
+
+    // Send push notification to invited participant
+    const inviter = await this.participantRepository.findOne({
+      where: { id: dto.invitedBy },
+    });
+    const inviterName = inviter ? `${inviter.firstName} ${inviter.lastName}` : "Someone";
+
+    this.oneSignalService.sendToExternalUserIds(
+      [`participant:${dto.participantId}`],
+      {
+        title: "Team Invitation",
+        body: `${inviterName} invited you to join "${team.name}"`,
+        data: {
+          type: "team_invitation",
+          invitationId: savedInvitation.id,
+          teamId: team.id,
+          teamName: team.name,
+        },
+        url: "/app/team",
+      }
+    ).catch((err) => this.logger.warn(`Failed to send invitation push: ${err.message}`));
+
+    return savedInvitation;
   }
 
   async getParticipantInvitations(
@@ -619,7 +1158,7 @@ export class TeamsService {
   async acceptInvitation(invitationId: string): Promise<Team> {
     const invitation = await this.invitationRepository.findOne({
       where: { id: invitationId },
-      relations: ["team", "team.members"],
+      relations: ["team", "team.members", "participant"],
     });
 
     if (!invitation) {
@@ -654,11 +1193,14 @@ export class TeamsService {
     invitation.respondedAt = new Date();
     await this.invitationRepository.save(invitation);
 
-    // Add as team member
+    // Add as team member (CONFIRMED since invitation was from team lead)
     const member = this.memberRepository.create({
       teamId: invitation.teamId,
       participantId: invitation.participantId,
       role: TeamRole.MEMBER,
+      status: TeamMemberStatus.CONFIRMED,
+      confirmedAt: new Date(),
+      confirmedBy: invitation.invitedBy, // Team lead who sent the invitation
     });
     await this.memberRepository.save(member);
 
@@ -677,12 +1219,36 @@ export class TeamsService {
       { status: InvitationStatus.CANCELLED }
     );
 
+    // Send push notification to team leader about accepted invitation
+    const teamLead = invitation.team.members.find((m) => m.role === TeamRole.LEAD);
+    if (teamLead) {
+      const acceptingParticipant = invitation.participant;
+      const participantName = acceptingParticipant 
+        ? `${acceptingParticipant.firstName} ${acceptingParticipant.lastName}`
+        : "Someone";
+
+      this.oneSignalService.sendToExternalUserIds(
+        [`participant:${teamLead.participantId}`],
+        {
+          title: "Invitation Accepted!",
+          body: `${participantName} has joined your team "${invitation.team.name}"`,
+          data: {
+            type: "invitation_accepted",
+            teamId: invitation.teamId,
+            participantId: invitation.participantId,
+          },
+          url: "/app/team",
+        }
+      ).catch((err) => this.logger.warn(`Failed to send acceptance push: ${err.message}`));
+    }
+
     return this.findOne(invitation.teamId);
   }
 
   async declineInvitation(invitationId: string): Promise<TeamInvitation> {
     const invitation = await this.invitationRepository.findOne({
       where: { id: invitationId },
+      relations: ["team", "team.members", "participant"],
     });
 
     if (!invitation) {
@@ -696,7 +1262,32 @@ export class TeamsService {
     invitation.status = InvitationStatus.DECLINED;
     invitation.respondedAt = new Date();
 
-    return this.invitationRepository.save(invitation);
+    const savedInvitation = await this.invitationRepository.save(invitation);
+
+    // Send push notification to team leader about declined invitation
+    const teamLead = invitation.team.members.find((m) => m.role === TeamRole.LEAD);
+    if (teamLead) {
+      const decliningParticipant = invitation.participant;
+      const participantName = decliningParticipant 
+        ? `${decliningParticipant.firstName} ${decliningParticipant.lastName}`
+        : "Someone";
+
+      this.oneSignalService.sendToExternalUserIds(
+        [`participant:${teamLead.participantId}`],
+        {
+          title: "Invitation Declined",
+          body: `${participantName} declined to join "${invitation.team.name}"`,
+          data: {
+            type: "invitation_declined",
+            teamId: invitation.teamId,
+            participantId: invitation.participantId,
+          },
+          url: "/app/team",
+        }
+      ).catch((err) => this.logger.warn(`Failed to send decline push: ${err.message}`));
+    }
+
+    return savedInvitation;
   }
 
   async cancelInvitation(invitationId: string, cancelledBy: string): Promise<void> {
@@ -973,5 +1564,41 @@ export class TeamsService {
 
     this.logger.log(`Initialized chat channel for team ${teamId} with ${membersAdded} members`);
     return { channelCreated: true, membersAdded };
+  }
+
+  /**
+   * Get all scheduled mentor sessions for a team
+   * Returns upcoming and past sessions with mentor details
+   */
+  async getTeamSessions(teamId: string): Promise<{
+    upcoming: ScheduledSession[];
+    past: ScheduledSession[];
+  }> {
+    // Verify team exists
+    await this.findOne(teamId);
+
+    const now = new Date();
+
+    // Get all sessions for this team
+    const sessions = await this.scheduledSessionRepository.find({
+      where: { teamId },
+      relations: ["mentor"],
+      order: { scheduledAt: "ASC" },
+    });
+
+    // Split into upcoming and past
+    const upcoming = sessions.filter(
+      (s) => 
+        new Date(s.scheduledAt) >= now && 
+        ![ScheduledSessionStatus.CANCELLED, ScheduledSessionStatus.COMPLETED].includes(s.status)
+    );
+
+    const past = sessions.filter(
+      (s) => 
+        new Date(s.scheduledAt) < now || 
+        [ScheduledSessionStatus.COMPLETED, ScheduledSessionStatus.CANCELLED].includes(s.status)
+    ).sort((a, b) => new Date(b.scheduledAt).getTime() - new Date(a.scheduledAt).getTime());
+
+    return { upcoming, past };
   }
 }

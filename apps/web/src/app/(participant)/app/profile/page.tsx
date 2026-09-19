@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useTheme } from "next-themes";
 import { ParticipantLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Button } from "@/components/ui/button";
@@ -27,10 +29,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useCurrentParticipant,
   useUpdateParticipant,
+  useParticipantPreferences,
+  useUploadMyProfilePicture,
 } from "@/lib/api/hooks/use-participants";
+import { useMyTeam } from "@/lib/api/hooks/use-teams";
+import { useApprovedBriefs } from "@/lib/api/hooks/use-briefs";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { signOut, changePassword } from "@/lib/auth";
 import {
@@ -51,6 +58,11 @@ import {
   Lock,
   Eye,
   EyeOff,
+  Trophy,
+  FileText,
+  Sun,
+  Moon,
+  Camera,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -112,7 +124,9 @@ type PasswordFormData = z.infer<typeof passwordSchema>;
 
 function ProfileContent() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { logout } = useAuthStore();
+  const { theme, setTheme } = useTheme();
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showSkillsDialog, setShowSkillsDialog] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
@@ -121,9 +135,24 @@ function ProfileContent() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: participant, isLoading } = useCurrentParticipant();
+  const { data: team } = useMyTeam(participant?.id || "");
+  const { data: preferences, isLoading: preferencesLoading } = useParticipantPreferences(participant?.id || "");
+  const { data: briefs, isLoading: briefsLoading } = useApprovedBriefs(participant?.cohortId || "");
   const updateMutation = useUpdateParticipant();
+  const uploadPictureMutation = useUploadMyProfilePicture();
+
+  // Check if team has a brief assigned
+  const hasBrief = !!team?.briefId;
+
+  // Get ranked briefs with their details
+  const briefRankingIds = preferences?.briefRankings || [];
+  const rankedBriefs = briefRankingIds
+    .slice(0, 5)
+    .map((briefId) => briefs?.find((b) => b.id === briefId))
+    .filter((b): b is NonNullable<typeof b> => b !== undefined);
 
   const form = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -189,6 +218,8 @@ function ProfileContent() {
     setIsLoggingOut(true);
     try {
       await signOut();
+      // Clear all cached queries to prevent stale data on next login
+      queryClient.clear();
       logout();
       router.push("/app/login");
     } catch (error) {
@@ -202,6 +233,35 @@ function ProfileContent() {
     setSelectedSkills(participant?.skills || []);
     setSelectedInterests(participant?.interests || []);
     setShowSkillsDialog(true);
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select an image file");
+      return;
+    }
+
+    // Validate file size (10MB max)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Image must be less than 10MB");
+      return;
+    }
+
+    try {
+      await uploadPictureMutation.mutateAsync(file);
+      toast.success("Profile picture updated!");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to upload profile picture");
+    }
+
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
   const handleChangePassword = async (data: PasswordFormData) => {
@@ -241,10 +301,38 @@ function ProfileContent() {
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-start gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-              <span className="text-2xl font-bold text-primary">
-                {participant.firstName?.[0]}{participant.lastName?.[0]}
-              </span>
+            <div className="relative group">
+              {participant.profileImageUrl ? (
+                <img
+                  src={participant.profileImageUrl}
+                  alt={`${participant.firstName} ${participant.lastName}`}
+                  className="h-16 w-16 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+                  <span className="text-2xl font-bold text-primary">
+                    {participant.firstName?.[0]}{participant.lastName?.[0]}
+                  </span>
+                </div>
+              )}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadPictureMutation.isPending}
+                className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              >
+                {uploadPictureMutation.isPending ? (
+                  <Loader2 className="h-5 w-5 text-white animate-spin" />
+                ) : (
+                  <Camera className="h-5 w-5 text-white" />
+                )}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
             </div>
             <div className="flex-1">
               <h2 className="text-xl font-bold">
@@ -366,6 +454,90 @@ function ProfileContent() {
         </CardContent>
       </Card>
 
+      {/* Brief Rankings - show rankings if any exist */}
+      {briefRankingIds.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Trophy className="h-4 w-4 text-yellow-500" />
+              Brief Rankings
+            </CardTitle>
+            {!hasBrief && (
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/app/briefs/rank">
+                  <Pencil className="h-4 w-4 mr-1" />
+                  Edit
+                </Link>
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent>
+            {briefsLoading ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : rankedBriefs.length > 0 ? (
+              <div className="space-y-2">
+                {rankedBriefs.map((brief, index) => (
+                  <div
+                    key={brief.id}
+                    className="flex items-center gap-3 p-2 rounded-lg bg-muted/50"
+                  >
+                    <div
+                      className={cn(
+                        "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                        index === 0
+                          ? "bg-yellow-500 text-white"
+                          : index === 1
+                          ? "bg-gray-400 text-white"
+                          : index === 2
+                          ? "bg-amber-600 text-white"
+                          : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      {index + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium line-clamp-1">{brief.title}</p>
+                      {brief.organization?.name && (
+                        <p className="text-xs text-muted-foreground line-clamp-1">
+                          {brief.organization.name}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-2">
+                {briefRankingIds.length} brief{briefRankingIds.length !== 1 ? 's' : ''} ranked
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Show prompt to rank briefs if no rankings and team doesn't have brief */}
+      {rankedBriefs.length === 0 && !hasBrief && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Trophy className="h-4 w-4 text-yellow-500" />
+              Brief Rankings
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-center py-4">
+              <FileText className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+              <p className="text-sm text-muted-foreground">No briefs ranked yet</p>
+              <Button variant="link" size="sm" asChild className="mt-1">
+                <Link href="/app/briefs/rank">Rank your preferred briefs</Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Settings */}
       <Card>
         <CardHeader>
@@ -375,6 +547,23 @@ function ProfileContent() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-1">
+          <button
+            className="flex items-center justify-between w-full py-3 px-2 rounded-lg hover:bg-muted transition-colors"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          >
+            <div className="flex items-center gap-3">
+              {theme === "dark" ? (
+                <Moon className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <Sun className="h-4 w-4 text-muted-foreground" />
+              )}
+              <span className="text-sm">Appearance</span>
+            </div>
+            <span className="text-sm text-muted-foreground capitalize">
+              {theme === "dark" ? "Dark" : "Light"}
+            </span>
+          </button>
+
           <button
             className="flex items-center justify-between w-full py-3 px-2 rounded-lg hover:bg-muted transition-colors"
             onClick={() => router.push("/app/notifications")}

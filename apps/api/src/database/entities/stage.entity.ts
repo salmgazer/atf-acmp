@@ -22,6 +22,9 @@ export enum SubmissionStatus {
   DRAFT = "draft",
   SUBMITTED = "submitted",
   LATE = "late",
+  PENDING_APPROVAL = "pending_approval",
+  APPROVED = "approved",
+  REJECTED = "rejected",
   EVALUATED = "evaluated",
 }
 
@@ -97,6 +100,12 @@ export class Stage extends BaseEntity {
 
   @Column({ name: "sort_order", default: 0 })
   sortOrder: number;
+
+  @Column({ name: "unlocks_mentor_claim", default: false })
+  unlocksMentorClaim: boolean; // When this stage is completed & evaluated, teams can claim mentors
+
+  @Column({ name: "requires_manual_approval", default: false })
+  requiresManualApproval: boolean; // Staff must manually approve submissions before they count as evaluated
 
   @OneToMany(() => Submission, (submission) => submission.stage)
   submissions: Submission[];
@@ -190,6 +199,25 @@ export class Submission extends BaseEntity {
     improvements?: string[];
     comments?: string;
   };
+
+  // Approval fields (for stages with requiresManualApproval)
+  @Column({ name: "approved_at", type: "timestamp", nullable: true })
+  approvedAt?: Date;
+
+  @Column({ name: "approved_by", nullable: true })
+  approvedBy?: string;
+
+  @Column({ name: "approval_notes", type: "text", nullable: true })
+  approvalNotes?: string;
+
+  @Column({ name: "rejected_at", type: "timestamp", nullable: true })
+  rejectedAt?: Date;
+
+  @Column({ name: "rejected_by", nullable: true })
+  rejectedBy?: string;
+
+  @Column({ name: "rejection_reason", type: "text", nullable: true })
+  rejectionReason?: string;
 
   @Column({ name: "version", default: 1 })
   version: number;

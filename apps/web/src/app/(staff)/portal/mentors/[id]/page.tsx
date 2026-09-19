@@ -1,17 +1,13 @@
 "use client";
 
 import { use, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { StaffLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
 import {
   Dialog,
   DialogContent,
@@ -31,35 +27,35 @@ import {
   useMentor,
   useMentorTeams,
   useMentorSessions,
+  useMentorEarnings,
+  useMentorPayments,
   useUpdateMentor,
-  useAssignMentor,
-  useUnassignMentor,
   useDeleteMentor,
   type MentorStatus,
+  type MentorPaymentStatus,
 } from "@/lib/api/hooks/use-mentors";
-import { useTeams } from "@/lib/api/hooks/use-teams";
 import {
   ArrowLeft,
   Users,
   Mail,
   Phone,
-  Building2,
-  Briefcase,
   Calendar,
   Clock,
   Loader2,
   Edit2,
   Trash2,
-  UserPlus,
-  UserMinus,
   ExternalLink,
   Linkedin,
-  CheckCircle,
-  XCircle,
   FileText,
   Crown,
   Star,
   User,
+  DollarSign,
+  TrendingUp,
+  CheckCircle,
+  AlertCircle,
+  XCircle,
+  Wallet,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -74,37 +70,43 @@ const statusConfig: Record<
   inactive: { label: "Inactive", variant: "destructive" },
 };
 
+const paymentStatusConfig: Record<
+  MentorPaymentStatus,
+  { label: string; bgClass: string; textClass: string; icon: typeof CheckCircle }
+> = {
+  pending: { label: "Pending", bgClass: "bg-yellow-500/15", textClass: "text-yellow-600", icon: Clock },
+  completed: { label: "Completed", bgClass: "bg-emerald-500/15", textClass: "text-emerald-600", icon: CheckCircle },
+  failed: { label: "Failed", bgClass: "bg-red-500/15", textClass: "text-red-600", icon: XCircle },
+  cancelled: { label: "Cancelled", bgClass: "bg-muted", textClass: "text-muted-foreground", icon: AlertCircle },
+};
+
 const roleIcons = {
   lead: Crown,
   co_lead: Star,
   member: User,
 };
 
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
 function MentorDetailContent({ id }: { id: string }) {
   const router = useRouter();
-  const [showAssignDialog, setShowAssignDialog] = useState(false);
-  const [showUnassignDialog, setShowUnassignDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showStatusDialog, setShowStatusDialog] = useState(false);
-  const [selectedTeamId, setSelectedTeamId] = useState("");
-  const [assignNotes, setAssignNotes] = useState("");
-  const [unassignReason, setUnassignReason] = useState("");
-  const [unassignTeamId, setUnassignTeamId] = useState("");
   const [newStatus, setNewStatus] = useState<MentorStatus>("active");
 
   const { data: mentor, isLoading, error } = useMentor(id);
   const { data: teams } = useMentorTeams(id);
   const { data: sessions } = useMentorSessions(id);
+  const { data: earnings, isLoading: isLoadingEarnings } = useMentorEarnings(id);
+  const { data: payments, isLoading: isLoadingPayments } = useMentorPayments(id);
 
-  // Get teams without mentors for assignment
-  const { data: availableTeamsData } = useTeams({
-    cohortId: mentor?.cohortId,
-    status: "active",
-    limit: 100,
-  });
-
-  const assignMutation = useAssignMentor();
-  const unassignMutation = useUnassignMentor();
   const updateMutation = useUpdateMentor();
   const deleteMutation = useDeleteMentor();
 
@@ -132,48 +134,7 @@ function MentorDetailContent({ id }: { id: string }) {
   }
 
   const config = statusConfig[mentor.status];
-  const assignedCount = mentor.assignments?.filter((a) => a.isActive)?.length || 0;
-  const capacityPercent = (assignedCount / mentor.maxTeams) * 100;
-  const hasCapacity = assignedCount < mentor.maxTeams;
-
-  // Filter teams that don't have a mentor assigned
-  const availableTeams = availableTeamsData?.data?.filter(
-    (t: any) => !t.mentorId && mentor.cohortId === t.cohortId
-  ) || [];
-
-  const handleAssign = async () => {
-    if (!selectedTeamId) return;
-    try {
-      await assignMutation.mutateAsync({
-        mentorId: id,
-        teamId: selectedTeamId,
-        notes: assignNotes,
-      });
-      toast.success("Team assigned successfully");
-      setShowAssignDialog(false);
-      setSelectedTeamId("");
-      setAssignNotes("");
-    } catch (error: any) {
-      toast.error(error.message || "Failed to assign team");
-    }
-  };
-
-  const handleUnassign = async () => {
-    if (!unassignTeamId) return;
-    try {
-      await unassignMutation.mutateAsync({
-        mentorId: id,
-        teamId: unassignTeamId,
-        reason: unassignReason,
-      });
-      toast.success("Team unassigned successfully");
-      setShowUnassignDialog(false);
-      setUnassignTeamId("");
-      setUnassignReason("");
-    } catch (error: any) {
-      toast.error(error.message || "Failed to unassign team");
-    }
-  };
+  const claimedTeamsCount = teams?.length || 0;
 
   const handleStatusChange = async () => {
     try {
@@ -213,12 +174,11 @@ function MentorDetailContent({ id }: { id: string }) {
             </Button>
             <div className="flex items-center gap-4">
               {mentor.profileImageUrl ? (
-                <div className="relative w-16 h-16 rounded-full overflow-hidden">
-                  <Image
+                <div className="w-16 h-16 rounded-full overflow-hidden">
+                  <img
                     src={mentor.profileImageUrl}
                     alt={`${mentor.firstName} ${mentor.lastName}`}
-                    fill
-                    className="object-cover"
+                    className="w-full h-full object-cover"
                   />
                 </div>
               ) : (
@@ -265,57 +225,162 @@ function MentorDetailContent({ id }: { id: string }) {
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Capacity Card */}
-            <div className="rounded-lg border bg-card p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">Team Capacity</h2>
-                {hasCapacity && (
-                  <Button onClick={() => setShowAssignDialog(true)}>
-                    <UserPlus className="mr-2 h-4 w-4" />
-                    Assign Team
-                  </Button>
-                )}
+            {/* Earnings Overview */}
+            <div className="rounded-lg border bg-card">
+              <div className="p-4 border-b">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-emerald-600" />
+                  Earnings Overview
+                </h2>
               </div>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    {assignedCount} of {mentor.maxTeams} teams assigned
-                  </span>
-                  <span className="text-sm font-medium">
-                    {Math.round(capacityPercent)}%
-                  </span>
+              {isLoadingEarnings ? (
+                <div className="p-6 flex items-center justify-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-                <Progress value={capacityPercent} className="h-3" />
-                {!hasCapacity && (
-                  <p className="text-sm text-amber-600 dark:text-amber-400">
-                    Mentor is at full capacity
-                  </p>
-                )}
-              </div>
+              ) : earnings ? (
+                <div className="p-4">
+                  {/* Earnings Stats Grid */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div className="rounded-lg border border-border p-3 bg-muted/30">
+                      <div className="text-xs text-muted-foreground mb-1">Session Rate</div>
+                      <div className="text-lg font-semibold text-foreground">
+                        {formatCurrency(earnings.sessionRate)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-border p-3 bg-muted/30">
+                      <div className="text-xs text-muted-foreground mb-1">Completed Sessions</div>
+                      <div className="text-lg font-semibold text-foreground">
+                        {earnings.completedSessions}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-border p-3 bg-emerald-500/10">
+                      <div className="text-xs text-emerald-600 mb-1">Total Earned</div>
+                      <div className="text-lg font-semibold text-emerald-600">
+                        {formatCurrency(earnings.totalEarned)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-border p-3 bg-amber-500/10">
+                      <div className="text-xs text-amber-600 mb-1">Unpaid Balance</div>
+                      <div className="text-lg font-semibold text-amber-600">
+                        {formatCurrency(earnings.unpaidAmount)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Current Month */}
+                  <div className="rounded-lg border border-border p-4 bg-blue-500/5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <TrendingUp className="h-4 w-4 text-blue-600" />
+                      <span className="text-sm font-medium text-blue-600">This Month</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <div className="text-xs text-muted-foreground">Earned</div>
+                        <div className="text-base font-semibold">{formatCurrency(earnings.currentMonthEarned)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Paid</div>
+                        <div className="text-base font-semibold text-emerald-600">{formatCurrency(earnings.currentMonthPaid)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Unpaid</div>
+                        <div className="text-base font-semibold text-amber-600">{formatCurrency(earnings.currentMonthUnpaid)}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6 text-center">
+                  <Wallet className="mx-auto h-10 w-10 text-muted-foreground/50" />
+                  <p className="mt-2 text-sm text-muted-foreground">No earnings data available</p>
+                </div>
+              )}
             </div>
 
-            {/* Assigned Teams */}
+            {/* Payment History */}
+            <div className="rounded-lg border bg-card">
+              <div className="p-4 border-b flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Payment History</h2>
+                <span className="text-sm text-muted-foreground">
+                  {payments?.length || 0} payments
+                </span>
+              </div>
+              {isLoadingPayments ? (
+                <div className="p-6 flex items-center justify-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : !payments || payments.length === 0 ? (
+                <div className="p-6 text-center">
+                  <DollarSign className="mx-auto h-10 w-10 text-muted-foreground/50" />
+                  <p className="mt-2 text-sm text-muted-foreground">No payments recorded yet</p>
+                </div>
+              ) : (
+                <div className="divide-y max-h-[300px] overflow-y-auto">
+                  {payments.map((payment) => {
+                    const statusConf = paymentStatusConfig[payment.status];
+                    const StatusIcon = statusConf.icon;
+                    return (
+                      <div key={payment.id} className="p-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-foreground">
+                                {formatCurrency(payment.amount)}
+                              </span>
+                              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${statusConf.bgClass} ${statusConf.textClass}`}>
+                                <StatusIcon className="h-3 w-3" />
+                                {statusConf.label}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-sm text-muted-foreground">
+                              {payment.sessionsCount} sessions
+                              {payment.periodStart && payment.periodEnd && (
+                                <span className="ml-2">
+                                  ({format(new Date(payment.periodStart), "MMM d")} - {format(new Date(payment.periodEnd), "MMM d, yyyy")})
+                                </span>
+                              )}
+                            </div>
+                            {payment.paymentReference && (
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                Ref: {payment.paymentReference}
+                                {payment.paymentMethod && ` • ${payment.paymentMethod}`}
+                              </div>
+                            )}
+                            {payment.notes && (
+                              <p className="mt-1 text-xs text-muted-foreground line-clamp-1">{payment.notes}</p>
+                            )}
+                          </div>
+                          <div className="text-right text-xs text-muted-foreground">
+                            {payment.paidAt ? (
+                              <div>Paid {format(new Date(payment.paidAt), "MMM d, yyyy")}</div>
+                            ) : (
+                              <div>Created {format(new Date(payment.createdAt), "MMM d, yyyy")}</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Claimed Teams */}
             <div className="rounded-lg border bg-card">
               <div className="p-4 border-b">
                 <h2 className="text-lg font-semibold">
-                  Assigned Teams ({teams?.length || 0})
+                  Teams with Active Claims ({claimedTeamsCount})
                 </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Teams that have claimed this mentor through the participant portal
+                </p>
               </div>
               {teams?.length === 0 ? (
                 <div className="p-6 text-center">
                   <Users className="mx-auto h-10 w-10 text-muted-foreground/50" />
                   <p className="mt-2 text-sm text-muted-foreground">
-                    No teams assigned yet
+                    No teams have claimed this mentor yet
                   </p>
-                  {hasCapacity && (
-                    <Button
-                      variant="outline"
-                      className="mt-3"
-                      onClick={() => setShowAssignDialog(true)}
-                    >
-                      Assign First Team
-                    </Button>
-                  )}
                 </div>
               ) : (
                 <div className="divide-y">
@@ -344,17 +409,6 @@ function MentorDetailContent({ id }: { id: string }) {
                             </span>
                           </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive"
-                          onClick={() => {
-                            setUnassignTeamId(team.id);
-                            setShowUnassignDialog(true);
-                          }}
-                        >
-                          <UserMinus className="h-4 w-4" />
-                        </Button>
                       </div>
                     </div>
                   ))}
@@ -441,21 +495,6 @@ function MentorDetailContent({ id }: { id: string }) {
                     </dd>
                   </div>
                 )}
-                {mentor.calendlyLink && (
-                  <div className="flex items-center gap-3">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <dd className="text-sm">
-                      <a
-                        href={mentor.calendlyLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline flex items-center gap-1"
-                      >
-                        Calendly <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </dd>
-                  </div>
-                )}
               </dl>
             </div>
 
@@ -504,100 +543,6 @@ function MentorDetailContent({ id }: { id: string }) {
           </div>
         </div>
       </div>
-
-      {/* Assign Team Dialog */}
-      <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Assign Team to Mentor</DialogTitle>
-            <DialogDescription>
-              Select a team to assign to {mentor.firstName} {mentor.lastName}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Select Team</Label>
-              <Select value={selectedTeamId} onValueChange={setSelectedTeamId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose a team" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableTeams.length === 0 ? (
-                    <div className="p-2 text-sm text-muted-foreground">
-                      No teams available for assignment
-                    </div>
-                  ) : (
-                    availableTeams.map((team: any) => (
-                      <SelectItem key={team.id} value={team.id}>
-                        {team.name}
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Notes (optional)</Label>
-              <Textarea
-                value={assignNotes}
-                onChange={(e) => setAssignNotes(e.target.value)}
-                placeholder="Any notes about this assignment..."
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAssignDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleAssign}
-              disabled={!selectedTeamId || assignMutation.isPending}
-            >
-              {assignMutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Assign
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Unassign Team Dialog */}
-      <Dialog open={showUnassignDialog} onOpenChange={setShowUnassignDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Unassign Team</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to remove this team assignment?
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Reason (optional)</Label>
-              <Textarea
-                value={unassignReason}
-                onChange={(e) => setUnassignReason(e.target.value)}
-                placeholder="Reason for unassigning..."
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowUnassignDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleUnassign}
-              disabled={unassignMutation.isPending}
-            >
-              {unassignMutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Unassign
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Status Dialog */}
       <Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>

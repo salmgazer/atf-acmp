@@ -18,11 +18,20 @@ export enum NotificationType {
   TEAM_INVITATION_DECLINED = "team_invitation_declined",
   TEAM_MEMBER_JOINED = "team_member_joined",
   TEAM_MEMBER_LEFT = "team_member_left",
+  TEAM_JOIN_REQUEST = "team_join_request",
+  TEAM_JOIN_CONFIRMED = "team_join_confirmed",
+  TEAM_JOIN_DECLINED = "team_join_declined",
+  TEAM_MEMBER_REMOVAL_REQUESTED = "team_member_removal_requested",
+  TEAM_MEMBER_REMOVAL_APPROVED = "team_member_removal_approved",
+  TEAM_MEMBER_REMOVAL_REJECTED = "team_member_removal_rejected",
 
   // Mentor related
   MENTOR_ASSIGNED = "mentor_assigned",
   MENTOR_SESSION_SCHEDULED = "mentor_session_scheduled",
   MENTOR_SESSION_REMINDER = "mentor_session_reminder",
+  MENTOR_SESSION_REQUESTED = "mentor_session_requested",
+  MENTOR_SESSION_CONFIRMED = "mentor_session_confirmed",
+  MENTOR_SESSION_DECLINED = "mentor_session_declined",
 
   // Brief related
   BRIEF_STATUS_CHANGED = "brief_status_changed",
@@ -32,6 +41,9 @@ export enum NotificationType {
   // Submission related
   SUBMISSION_RECEIVED = "submission_received",
   SUBMISSION_DEADLINE = "submission_deadline",
+  SUBMISSION_NEEDS_APPROVAL = "submission_needs_approval",
+  SUBMISSION_APPROVED = "submission_approved",
+  SUBMISSION_REJECTED = "submission_rejected",
   EVALUATION_COMPLETE = "evaluation_complete",
 
   // Chat related

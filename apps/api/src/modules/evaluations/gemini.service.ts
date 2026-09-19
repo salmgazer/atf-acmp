@@ -149,9 +149,10 @@ export class GeminiService implements OnModuleInit {
       )
       .join("\n");
 
-    const documentsText = submission.documents
-      ?.map((d) => `### ${d.name} (${d.type})\n${d.content}`)
-      .join("\n\n") || "No documents provided";
+    // DEMO MODE: Focus on code only
+    // const documentsText = submission.documents
+    //   ?.map((d) => `### ${d.name} (${d.type})\n${d.content}`)
+    //   .join("\n\n") || "No documents provided";
 
     const codeText = codeAnalysis
       ? `
@@ -164,9 +165,9 @@ ${codeAnalysis.readmeContent ? `\n### README\n${codeAnalysis.readmeContent.slice
 ${codeAnalysis.structure ? `\n### Project Structure\n${codeAnalysis.structure}` : ""}
 ${codeAnalysis.sampleCode?.length ? `\n### Sample Code\n${codeAnalysis.sampleCode.slice(0, 3).join("\n\n---\n\n")}` : ""}
 `
-      : "";
+      : "No code repository provided";
 
-    return `You are an expert evaluator for an innovation challenge program. Evaluate the following team submission for Stage ${submission.stageNumber}: ${submission.stageName}.
+    return `You are an expert evaluator for an innovation challenge program. Evaluate the following team's code submission for Stage ${submission.stageNumber}: ${submission.stageName}.
 
 ## Team Information
 - Team Name: ${submission.teamName}
@@ -175,14 +176,18 @@ ${submission.projectName ? `- Project: ${submission.projectName}` : ""}
 ## Evaluation Rubric
 ${rubricText}
 
-## Submission Content
-${documentsText}
+## Code Submission
 ${codeText}
-${submission.videoUrl ? `\n### Video Submission: ${submission.videoUrl}` : ""}
-${submission.additionalContent ? `\n### Additional Content\n${JSON.stringify(submission.additionalContent, null, 2)}` : ""}
 
 ## Instructions
-Evaluate this submission against each criterion in the rubric. Be fair, constructive, and specific in your feedback.
+Evaluate this code submission against each criterion in the rubric. Focus on:
+- Code quality and organization
+- Technical implementation
+- Innovation in approach
+- Documentation and README quality
+- Commit history and development practices
+
+Be fair, constructive, and specific in your feedback.
 
 Return a JSON object with this exact structure:
 {
@@ -202,7 +207,7 @@ Return a JSON object with this exact structure:
   "overallConfidence": number (0.0-1.0)
 }
 
-Be objective and consistent. Score based on evidence in the submission.`;
+Be objective and consistent. Score based on evidence in the code repository.`;
   }
 
 

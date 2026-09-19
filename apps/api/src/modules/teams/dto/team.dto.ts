@@ -19,6 +19,8 @@ import {
   TeamMember,
   TeamInvitation,
   InvitationStatus,
+  TeamMemberRemovalRequest,
+  RemovalRequestStatus,
 } from "@/database/entities/team.entity";
 
 // ============ Query DTOs ============
@@ -50,6 +52,11 @@ export class TeamQueryDto {
   @IsOptional()
   @IsUUID()
   briefId?: string;
+
+  @ApiPropertyOptional({ description: "Filter by organization (teams assigned to any of the org's briefs)" })
+  @IsOptional()
+  @IsUUID()
+  organizationId?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -117,6 +124,12 @@ export class UpdateTeamDto {
   @IsString()
   @MaxLength(500)
   description?: string;
+
+  @ApiPropertyOptional({ description: "GitHub repository URL for the team" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  githubRepoUrl?: string;
 }
 
 export class AssignBriefDto {
@@ -268,4 +281,46 @@ export class InvitationWithDetailsDto extends TeamInvitation {
 
   @ApiProperty()
   declare inviter: any; // Participant
+}
+
+// ============ Member Removal DTOs ============
+
+export class RequestMemberRemovalDto {
+  @ApiProperty({ description: "Participant ID of the member to remove" })
+  @IsUUID()
+  participantId: string;
+
+  @ApiProperty({ description: "Participant ID of the requester (team lead/co-lead)" })
+  @IsUUID()
+  requestedBy: string;
+
+  @ApiPropertyOptional({ description: "Reason for removal request" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
+export class ResolveRemovalRequestDto {
+  @ApiProperty({ description: "ID of the staff user resolving the request" })
+  @IsUUID()
+  resolvedBy: string;
+
+  @ApiPropertyOptional({ description: "Notes about the resolution" })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  notes?: string;
+}
+
+export class RemovalRequestQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  cohortId?: string;
+
+  @ApiPropertyOptional({ enum: RemovalRequestStatus })
+  @IsOptional()
+  @IsEnum(RemovalRequestStatus)
+  status?: RemovalRequestStatus;
 }

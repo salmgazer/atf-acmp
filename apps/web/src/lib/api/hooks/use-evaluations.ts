@@ -200,6 +200,7 @@ export function useEvaluationJobs(params?: {
         `/admin/evaluations/jobs${query ? `?${query}` : ""}`
       );
     },
+    refetchInterval: 2000, // Refresh every 2 seconds for live updates
   });
 }
 

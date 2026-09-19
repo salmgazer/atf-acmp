@@ -14,6 +14,7 @@ import {
 } from "@/database/entities/chat.entity";
 import { Team } from "@/database/entities/team.entity";
 import { MentorsModule } from "@/modules/mentors/mentors.module";
+import { NotificationsModule } from "@/modules/notifications/notifications.module";
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { MentorsModule } from "@/modules/mentors/mentors.module";
       inject: [ConfigService],
     }),
     forwardRef(() => MentorsModule),
+    NotificationsModule,
   ],
   controllers: [ChannelsController],
   providers: [ChatGateway, ChatService],

@@ -12,6 +12,7 @@ import {
   type Brief,
 } from "@/lib/api/hooks/use-briefs";
 import { useCurrentParticipant } from "@/lib/api/hooks/use-participants";
+import { useMyTeam } from "@/lib/api/hooks/use-teams";
 import { useVerticals, type Vertical } from "@/lib/api/hooks/use-verticals";
 import {
   Select,
@@ -30,6 +31,7 @@ import {
   ChevronRight,
   Loader2,
   Filter,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDebounce } from "@/lib/hooks/use-debounce";
@@ -138,6 +140,7 @@ function BriefsContent() {
   const debouncedSearch = useDebounce(search, 300);
 
   const { data: participant, isLoading: participantLoading } = useCurrentParticipant();
+  const { data: team, isLoading: teamLoading } = useMyTeam(participant?.id || "");
   const { data: verticals, isLoading: verticalsLoading } = useVerticals(participant?.cohortId);
   const { data: briefs, isLoading: briefsLoading } = useApprovedBriefs(
     participant?.cohortId || "",
@@ -145,7 +148,10 @@ function BriefsContent() {
     debouncedSearch || undefined
   );
 
-  const isLoading = participantLoading || (briefsLoading && !briefs);
+  const isLoading = participantLoading || teamLoading || (briefsLoading && !briefs);
+
+  // Check if team already has a brief assigned
+  const hasBrief = !!team?.briefId;
 
   // Get active verticals for the filter
   const activeVerticals = useMemo(() => 
@@ -154,7 +160,7 @@ function BriefsContent() {
   );
 
   // Show loading only on initial load, not during search
-  if (participantLoading) {
+  if (participantLoading || teamLoading) {
     return (
       <ParticipantLayout>
         <div className="flex items-center justify-center py-12">
@@ -215,7 +221,7 @@ function BriefsContent() {
 
         {/* Briefs Grid */}
         {briefs && briefs.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {briefs.map((brief) => (
               <BriefCard
                 key={brief.id}
@@ -236,23 +242,25 @@ function BriefsContent() {
           </div>
         )}
 
-        {/* Ranking CTA */}
-        <div className="rounded-lg border bg-primary/5 p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-medium">Ready to rank your favorites?</h3>
-              <p className="text-sm text-muted-foreground">
-                Select up to 5 briefs you're interested in
-              </p>
+        {/* Ranking CTA - only show if team doesn't have a brief assigned */}
+        {!hasBrief && (
+          <div className="rounded-lg border bg-primary/5 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-medium">Ready to rank your favorites?</h3>
+                <p className="text-sm text-muted-foreground">
+                  Select up to 5 briefs you're interested in
+                </p>
+              </div>
+              <Button asChild size="sm">
+                <Link href="/app/briefs/rank">
+                  Rank Briefs
+                  <ChevronRight className="ml-1 h-4 w-4" />
+                </Link>
+              </Button>
             </div>
-            <Button asChild size="sm">
-              <Link href="/app/briefs/rank">
-                Rank Briefs
-                <ChevronRight className="ml-1 h-4 w-4" />
-              </Link>
-            </Button>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Brief Detail Modal */}
@@ -273,21 +281,23 @@ function BriefDetailModal({
   brief: Brief;
   onClose: () => void;
 }) {
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const spotsLeft = brief.maxTeams - brief.teamsCount;
   const isFull = spotsLeft <= 0;
 
   return (
-    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm">
-      <div className="fixed inset-x-0 bottom-0 top-12 overflow-auto bg-background rounded-t-2xl shadow-xl">
-        {/* Header */}
-        <div className="sticky top-0 z-10 bg-background border-b px-4 py-3 flex items-center justify-between">
-          <h2 className="font-semibold truncate pr-4">{brief.title}</h2>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Close
-          </Button>
-        </div>
+    <>
+      <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm">
+        <div className="fixed inset-x-0 bottom-0 top-12 overflow-auto bg-background rounded-t-2xl shadow-xl">
+          {/* Header */}
+          <div className="sticky top-0 z-10 bg-background border-b px-4 py-3 flex items-center justify-between">
+            <h2 className="font-semibold truncate pr-4">{brief.title}</h2>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Close
+            </Button>
+          </div>
 
-        <div className="p-4 space-y-6 pb-24">
+          <div className="p-4 space-y-6 pb-24">
           {/* Video/Image */}
           {brief.videoUrl ? (
             <div className="aspect-video rounded-lg overflow-hidden bg-muted">
@@ -295,7 +305,7 @@ function BriefDetailModal({
                 src={brief.videoUrl}
                 controls
                 className="w-full h-full object-cover"
-                poster={brief.imageUrls?.[0]}
+                poster={brief.videoThumbnailUrl || brief.imageUrls?.[0]}
               />
             </div>
           ) : brief.imageUrls?.[0] ? (
@@ -307,6 +317,28 @@ function BriefDetailModal({
               />
             </div>
           ) : null}
+
+          {/* Image Gallery */}
+          {brief.imageUrls && brief.imageUrls.length > 1 && (
+            <div>
+              <h3 className="font-semibold mb-2">Gallery</h3>
+              <div className="grid grid-cols-3 gap-2">
+                {brief.imageUrls.map((url, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setSelectedImage(url)}
+                    className="aspect-square rounded-lg overflow-hidden bg-muted hover:opacity-90 transition-opacity"
+                  >
+                    <img
+                      src={url}
+                      alt={`Gallery ${index + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Organization */}
           {brief.organization && (
@@ -414,6 +446,45 @@ function BriefDetailModal({
         </div>
       </div>
     </div>
+
+    {/* Image Preview Modal */}
+    {selectedImage && (
+      <div 
+        className="fixed inset-0 z-[60] bg-black/90 flex items-center justify-center p-4"
+        onClick={() => setSelectedImage(null)}
+      >
+        <div className="relative max-w-4xl max-h-[90vh] w-full">
+          <img
+            src={selectedImage}
+            alt="Preview"
+            className="w-full h-full object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.open(selectedImage, '_blank');
+              }}
+            >
+              <ExternalLink className="h-4 w-4 mr-2" />
+              Open in New Tab
+            </Button>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="absolute top-4 right-4 text-white hover:bg-white/20"
+            onClick={() => setSelectedImage(null)}
+          >
+            Close
+          </Button>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

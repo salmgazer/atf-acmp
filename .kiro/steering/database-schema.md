@@ -5,6 +5,21 @@ fileMatchPattern: "**/*.entity.ts,**/entities/**/*.ts,**/migrations/**/*.ts"
 
 # Database Schema & TypeORM Conventions
 
+## ⚠️ CRITICAL RULE: Schema Changes via Migrations ONLY
+
+**NEVER modify entity files directly to add, remove, or alter database columns.**
+
+All database schema changes MUST follow this process:
+1. **Create migration first**: Write SQL in `up()` and `down()` methods
+2. **Run migration**: Apply changes to database
+3. **Update entity**: Then update the TypeScript entity to match
+
+Why: Entity decorators don't modify the actual database. Production has existing data.
+
+See also: `.kiro/steering/database-rules.md`
+
+---
+
 ## Entity Base Class
 
 All entities extend a common base:

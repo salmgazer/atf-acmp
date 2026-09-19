@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Building2, ArrowRight, Loader2, CheckCircle } from "lucide-react";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { PhoneInput } from "@/components/ui/phone-input";
 import { useRegisterOrganization } from "@/lib/api/hooks/use-organizations";
 
 const INDUSTRIES = [
@@ -54,6 +55,32 @@ const AFRICAN_COUNTRIES = [
   "Namibia",
 ];
 
+// Map country names to ISO codes for phone input
+const COUNTRY_CODE_MAP: Record<string, string> = {
+  Nigeria: "ng",
+  Kenya: "ke",
+  "South Africa": "za",
+  Ghana: "gh",
+  Egypt: "eg",
+  Rwanda: "rw",
+  Ethiopia: "et",
+  Tanzania: "tz",
+  Uganda: "ug",
+  Morocco: "ma",
+  Senegal: "sn",
+  Cameroon: "cm",
+  "Cote d'Ivoire": "ci",
+  Zimbabwe: "zw",
+  Zambia: "zm",
+  Botswana: "bw",
+  Mauritius: "mu",
+  Tunisia: "tn",
+  Algeria: "dz",
+  Namibia: "na",
+};
+
+const getCountryCode = (country: string): string => COUNTRY_CODE_MAP[country] || "gh";
+
 const registerSchema = z.object({
   name: z.string().min(2, "Organization name is required").max(200),
   email: z.string().email("Please enter a valid email"),
@@ -75,6 +102,8 @@ export default function OrganizationRegisterPage() {
   const {
     register,
     handleSubmit,
+    control,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
@@ -89,6 +118,8 @@ export default function OrganizationRegisterPage() {
       contactPhone: "",
     },
   });
+
+  const selectedCountry = watch("country");
 
   const onSubmit = async (data: RegisterFormData) => {
     try {
@@ -245,11 +276,18 @@ export default function OrganizationRegisterPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="contactPhone">Phone Number *</Label>
-                  <Input
-                    id="contactPhone"
-                    type="tel"
-                    placeholder="+234..."
-                    {...register("contactPhone")}
+                  <Controller
+                    name="contactPhone"
+                    control={control}
+                    render={({ field }) => (
+                      <PhoneInput
+                        id="contactPhone"
+                        value={field.value}
+                        onChange={field.onChange}
+                        defaultCountry={getCountryCode(selectedCountry)}
+                        error={!!errors.contactPhone}
+                      />
+                    )}
                   />
                   {errors.contactPhone && (
                     <p className="text-sm text-destructive">{errors.contactPhone.message}</p>

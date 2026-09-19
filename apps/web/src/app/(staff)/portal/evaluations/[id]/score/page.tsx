@@ -13,7 +13,7 @@ export default function HumanScoringPage({ params }: PageProps) {
   const { id } = use(params);
 
   return (
-    <ProtectedRoute requiredRole="admin">
+    <ProtectedRoute portal="staff">
       <StaffLayout>
         <div className="container py-6">
           <HumanScoringForm evaluationId={id} />

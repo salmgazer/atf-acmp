@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
+  UseInterceptors,
 } from "@nestjs/common";
 import {
   ApiTags,
@@ -33,17 +34,31 @@ import {
   DisqualifyTeamDto,
   SearchParticipantsDto,
   TeamStatisticsDto,
+  RequestMemberRemovalDto,
+  ResolveRemovalRequestDto,
+  RemovalRequestQueryDto,
 } from "./dto/team.dto";
 import { TeamStatus, InvitationStatus } from "@/database/entities/team.entity";
+import { Audit } from "@/common/decorators/audit.decorator";
+import { AuditInterceptor } from "@/common/interceptors/audit.interceptor";
+import { AuditAction } from "@/database/entities/audit-log.entity";
 
 @ApiTags("teams")
 @Controller("teams")
+@UseInterceptors(AuditInterceptor)
 export class TeamsController {
   constructor(private readonly teamsService: TeamsService) {}
 
   // ============ Team CRUD ============
 
   @Post()
+  @Audit({
+    action: AuditAction.CREATE,
+    entityType: "Team",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.name,
+    getDescription: (result) => `Created team: ${result?.name}`,
+  })
   @ApiOperation({ summary: "Create a new team" })
   @ApiResponse({ status: 201, description: "Team created successfully" })
   async create(@Body() dto: CreateTeamDto) {
@@ -100,6 +115,51 @@ export class TeamsController {
     return this.teamsService.findOpenTeams(cohortId, search);
   }
 
+  // ============ Staff: Removal Request Management ============
+  // NOTE: These routes must be defined BEFORE the :id route to avoid conflicts
+
+  @Get("admin/removal-requests")
+  @ApiOperation({ summary: "Get all pending removal requests (staff only)" })
+  @ApiQuery({ name: "cohortId", required: false })
+  @ApiResponse({ status: 200, description: "List of pending removal requests" })
+  async getAllRemovalRequests(@Query("cohortId") cohortId?: string) {
+    return this.teamsService.getAllPendingRemovalRequests(cohortId);
+  }
+
+  @Post("admin/removal-requests/:requestId/approve")
+  @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: AuditAction.APPROVAL,
+    entityType: "TeamMemberRemovalRequest",
+    getEntityId: (result) => result?.id,
+    getDescription: (result) => `Approved member removal request`,
+  })
+  @ApiOperation({ summary: "Approve a member removal request (staff only)" })
+  @ApiParam({ name: "requestId", description: "Removal Request ID" })
+  async approveRemovalRequest(
+    @Param("requestId", ParseUUIDPipe) requestId: string,
+    @Body() dto: ResolveRemovalRequestDto
+  ) {
+    return this.teamsService.approveRemovalRequest(requestId, dto.resolvedBy, dto.notes);
+  }
+
+  @Post("admin/removal-requests/:requestId/reject")
+  @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: AuditAction.REJECTION,
+    entityType: "TeamMemberRemovalRequest",
+    getEntityId: (result) => result?.id,
+    getDescription: (result) => `Rejected member removal request`,
+  })
+  @ApiOperation({ summary: "Reject a member removal request (staff only)" })
+  @ApiParam({ name: "requestId", description: "Removal Request ID" })
+  async rejectRemovalRequest(
+    @Param("requestId", ParseUUIDPipe) requestId: string,
+    @Body() dto: ResolveRemovalRequestDto
+  ) {
+    return this.teamsService.rejectRemovalRequest(requestId, dto.resolvedBy, dto.notes);
+  }
+
   @Get(":id")
   @ApiOperation({ summary: "Get team by ID" })
   @ApiParam({ name: "id", type: "string" })
@@ -108,6 +168,13 @@ export class TeamsController {
   }
 
   @Patch(":id")
+  @Audit({
+    action: AuditAction.UPDATE,
+    entityType: "Team",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.name,
+    getDescription: (result) => `Updated team: ${result?.name}`,
+  })
   @ApiOperation({ summary: "Update team" })
   @ApiParam({ name: "id", type: "string" })
   async update(
@@ -118,6 +185,13 @@ export class TeamsController {
   }
 
   @Patch(":id/status")
+  @Audit({
+    action: AuditAction.STATUS_CHANGE,
+    entityType: "Team",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.name,
+    getDescription: (result) => `Changed team status: ${result?.name} to ${result?.status}`,
+  })
   @ApiOperation({ summary: "Update team status" })
   @ApiParam({ name: "id", type: "string" })
   async updateStatus(
@@ -129,6 +203,13 @@ export class TeamsController {
 
   @Post(":id/assign-brief")
   @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: AuditAction.ASSIGNMENT,
+    entityType: "Team",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.name,
+    getDescription: (result) => `Assigned brief to team: ${result?.name}`,
+  })
   @ApiOperation({ summary: "Assign brief to team" })
   @ApiParam({ name: "id", type: "string" })
   async assignBrief(
@@ -140,6 +221,13 @@ export class TeamsController {
 
   @Post(":id/unassign-brief")
   @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: AuditAction.ASSIGNMENT,
+    entityType: "Team",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.name,
+    getDescription: (result) => `Unassigned brief from team: ${result?.name}`,
+  })
   @ApiOperation({ summary: "Unassign brief from team" })
   @ApiParam({ name: "id", type: "string" })
   async unassignBrief(@Param("id", ParseUUIDPipe) id: string) {
@@ -148,6 +236,13 @@ export class TeamsController {
 
   @Post(":id/disqualify")
   @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: AuditAction.STATUS_CHANGE,
+    entityType: "Team",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.name,
+    getDescription: (result) => `Disqualified team: ${result?.name}`,
+  })
   @ApiOperation({ summary: "Disqualify team" })
   @ApiParam({ name: "id", type: "string" })
   async disqualify(
@@ -159,6 +254,12 @@ export class TeamsController {
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Audit({
+    action: AuditAction.DELETE,
+    entityType: "Team",
+    getEntityId: (_, args) => args[0]?.id,
+    getDescription: (_, args) => `Deleted team: ${args[0]?.id}`,
+  })
   @ApiOperation({ summary: "Delete team (only FORMING status)" })
   @ApiParam({ name: "id", type: "string" })
   async delete(@Param("id", ParseUUIDPipe) id: string) {
@@ -168,6 +269,12 @@ export class TeamsController {
   // ============ Member Management ============
 
   @Post(":id/members")
+  @Audit({
+    action: AuditAction.ASSIGNMENT,
+    entityType: "TeamMember",
+    getEntityId: (result) => result?.id,
+    getDescription: (result) => `Added member to team: ${result?.name}`,
+  })
   @ApiOperation({ summary: "Add member to team" })
   @ApiParam({ name: "id", type: "string" })
   async addMember(
@@ -179,6 +286,11 @@ export class TeamsController {
 
   @Delete(":id/members/:participantId")
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Audit({
+    action: AuditAction.ASSIGNMENT,
+    entityType: "TeamMember",
+    getDescription: () => `Removed member from team`,
+  })
   @ApiOperation({ summary: "Remove member from team" })
   @ApiParam({ name: "id", type: "string" })
   @ApiParam({ name: "participantId", type: "string" })
@@ -199,6 +311,84 @@ export class TeamsController {
     @Body() dto: UpdateMemberRoleDto
   ) {
     return this.teamsService.updateMemberRole(id, participantId, dto.role);
+  }
+
+  // ============ Pending Member Management ============
+
+  @Get(":id/pending-members")
+  @ApiOperation({ summary: "Get pending members awaiting approval" })
+  @ApiParam({ name: "id", type: "string" })
+  @ApiResponse({ status: 200, description: "List of pending members" })
+  async getPendingMembers(@Param("id", ParseUUIDPipe) id: string) {
+    return this.teamsService.getPendingMembers(id);
+  }
+
+  @Post(":id/members/:memberId/confirm")
+  @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: AuditAction.APPROVAL,
+    entityType: "TeamMember",
+    getEntityId: (result) => result?.id,
+    getDescription: (result) => `Confirmed pending team member`,
+  })
+  @ApiOperation({ summary: "Confirm a pending member (team lead/co-lead only)" })
+  @ApiParam({ name: "id", description: "Team ID" })
+  @ApiParam({ name: "memberId", description: "Team Member ID" })
+  async confirmPendingMember(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("memberId", ParseUUIDPipe) memberId: string,
+    @Body("confirmedBy", ParseUUIDPipe) confirmedBy: string
+  ) {
+    return this.teamsService.confirmPendingMember(id, memberId, confirmedBy);
+  }
+
+  @Post(":id/members/:memberId/decline")
+  @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: AuditAction.REJECTION,
+    entityType: "TeamMember",
+    getDescription: () => `Declined pending team member`,
+  })
+  @ApiOperation({ summary: "Decline a pending member (team lead/co-lead only)" })
+  @ApiParam({ name: "id", description: "Team ID" })
+  @ApiParam({ name: "memberId", description: "Team Member ID" })
+  async declinePendingMember(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("memberId", ParseUUIDPipe) memberId: string,
+    @Body("declinedBy", ParseUUIDPipe) declinedBy: string
+  ) {
+    return this.teamsService.declinePendingMember(id, memberId, declinedBy);
+  }
+
+  // ============ Member Removal Requests ============
+
+  @Post(":id/removal-requests")
+  @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: AuditAction.CREATE,
+    entityType: "TeamMemberRemovalRequest",
+    getDescription: () => `Requested member removal from team`,
+  })
+  @ApiOperation({ summary: "Request to remove a member from team (team lead/co-lead only)" })
+  @ApiParam({ name: "id", description: "Team ID" })
+  @ApiResponse({ status: 200, description: "For pending members: immediate removal. For confirmed members: removal request created." })
+  async requestMemberRemoval(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() dto: RequestMemberRemovalDto
+  ) {
+    return this.teamsService.requestMemberRemoval(
+      id,
+      dto.participantId,
+      dto.requestedBy,
+      dto.reason
+    );
+  }
+
+  @Get(":id/removal-requests")
+  @ApiOperation({ summary: "Get pending removal requests for a team" })
+  @ApiParam({ name: "id", description: "Team ID" })
+  async getTeamRemovalRequests(@Param("id", ParseUUIDPipe) id: string) {
+    return this.teamsService.getPendingRemovalRequests(id);
   }
 
   // ============ Invitations ============
@@ -239,6 +429,14 @@ export class TeamsController {
   @ApiResponse({ status: 200, description: "Chat initialized" })
   async initializeTeamChat(@Param("id", ParseUUIDPipe) id: string) {
     return this.teamsService.initializeTeamChat(id);
+  }
+
+  @Get(":id/sessions")
+  @ApiOperation({ summary: "Get mentor sessions for a team" })
+  @ApiParam({ name: "id", description: "Team ID" })
+  @ApiResponse({ status: 200, description: "Upcoming and past mentor sessions" })
+  async getTeamSessions(@Param("id", ParseUUIDPipe) id: string) {
+    return this.teamsService.getTeamSessions(id);
   }
 }
 

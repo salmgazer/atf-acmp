@@ -32,18 +32,14 @@ import {
   useUnassignBrief,
   useDisqualifyTeam,
   useUpdateMemberRole,
+  useTeamSessions,
   type Team,
   type TeamMember,
   type TeamStatus,
   type TeamRole,
+  type TeamScheduledSession,
 } from "@/lib/api/hooks/use-teams";
 import { useApprovedBriefs } from "@/lib/api/hooks/use-briefs";
-import {
-  useMentors,
-  useAssignMentor,
-  useUnassignMentor,
-  type Mentor,
-} from "@/lib/api/hooks/use-mentors";
 import {
   ArrowLeft,
   Users,
@@ -68,6 +64,7 @@ import {
   UserCircle,
   Briefcase,
   ExternalLink,
+  Video,
 } from "lucide-react";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -206,26 +203,16 @@ function TeamDetailContent({ id }: { id: string }) {
   const [showAssignBriefDialog, setShowAssignBriefDialog] = useState(false);
   const [showUnassignDialog, setShowUnassignDialog] = useState(false);
   const [showDisqualifyDialog, setShowDisqualifyDialog] = useState(false);
-  const [showAssignMentorDialog, setShowAssignMentorDialog] = useState(false);
-  const [showUnassignMentorDialog, setShowUnassignMentorDialog] = useState(false);
   const [disqualifyReason, setDisqualifyReason] = useState("");
   const [selectedBriefId, setSelectedBriefId] = useState("");
-  const [selectedMentorId, setSelectedMentorId] = useState("");
-  const [unassignMentorReason, setUnassignMentorReason] = useState("");
 
   const { data: team, isLoading, error } = useTeam(id);
+  const { data: sessions } = useTeamSessions(id);
   const { data: briefs } = useApprovedBriefs(team?.cohortId || "");
-  const { data: mentorsData } = useMentors({ 
-    cohortId: team?.cohortId || "", 
-    hasCapacity: true,
-    limit: 100 
-  });
 
   const assignBriefMutation = useAssignBrief();
   const unassignBriefMutation = useUnassignBrief();
   const disqualifyMutation = useDisqualifyTeam();
-  const assignMentorMutation = useAssignMentor();
-  const unassignMentorMutation = useUnassignMentor();
 
   if (isLoading) {
     return (
@@ -261,13 +248,6 @@ function TeamDetailContent({ id }: { id: string }) {
     return assignedCount < b.maxTeams || b.id === team.briefId;
   });
 
-  // Get available mentors (with capacity) for assignment
-  const availableMentors = mentorsData?.data?.filter((m) => {
-    const assignedCount = m.assignments?.filter(a => a.isActive)?.length || 0;
-    // Include if has capacity OR is the currently assigned mentor
-    return assignedCount < m.maxTeams || m.id === team.mentorId;
-  }) || [];
-
   const copyInviteCode = () => {
     navigator.clipboard.writeText(team.inviteCode);
     toast.success("Invite code copied!");
@@ -293,29 +273,6 @@ function TeamDetailContent({ id }: { id: string }) {
       disqualifiedBy: "staff", // TODO: Get actual staff user ID
     });
     setShowDisqualifyDialog(false);
-  };
-
-  const handleAssignMentor = async () => {
-    if (!selectedMentorId) return;
-    await assignMentorMutation.mutateAsync({ 
-      mentorId: selectedMentorId, 
-      teamId: team.id 
-    });
-    setShowAssignMentorDialog(false);
-    setSelectedMentorId("");
-    toast.success("Mentor assigned successfully");
-  };
-
-  const handleUnassignMentor = async () => {
-    if (!team.mentorId) return;
-    await unassignMentorMutation.mutateAsync({ 
-      mentorId: team.mentorId, 
-      teamId: team.id,
-      reason: unassignMentorReason || undefined
-    });
-    setShowUnassignMentorDialog(false);
-    setUnassignMentorReason("");
-    toast.success("Mentor unassigned successfully");
   };
 
   return (
@@ -458,106 +415,123 @@ function TeamDetailContent({ id }: { id: string }) {
               )}
             </div>
 
-            {/* Assigned Mentor */}
+            {/* Mentor Sessions */}
             <div className="rounded-lg border bg-card p-6">
-              <h2 className="text-lg font-semibold mb-4">Assigned Mentor</h2>
-              {team.mentor ? (
-                <div>
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center overflow-hidden">
-                      {team.mentor.profileImageUrl ? (
-                        <img 
-                          src={team.mentor.profileImageUrl} 
-                          alt="" 
-                          className="w-full h-full object-cover" 
-                        />
-                      ) : (
-                        <UserCircle className="h-6 w-6 text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <Link
-                        href={`/portal/mentors/${team.mentor.id}`}
-                        className="font-medium hover:text-primary hover:underline"
-                      >
-                        {team.mentor.firstName} {team.mentor.lastName}
-                      </Link>
-                      {(team.mentor.title || team.mentor.company) && (
-                        <div className="flex items-center gap-1 mt-1 text-sm text-muted-foreground">
-                          <Briefcase className="h-3 w-3" />
-                          <span>
-                            {team.mentor.title}
-                            {team.mentor.title && team.mentor.company && " at "}
-                            {team.mentor.company}
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex items-center gap-1 mt-1 text-sm text-muted-foreground">
-                        <Mail className="h-3 w-3" />
-                        <span>{team.mentor.email}</span>
+              <h2 className="text-lg font-semibold mb-4">Mentor Sessions</h2>
+              {sessions && (sessions.upcoming.length > 0 || sessions.past.length > 0) ? (
+                <div className="space-y-6">
+                  {/* Upcoming Sessions */}
+                  {sessions.upcoming.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-medium text-muted-foreground mb-3">Upcoming</h3>
+                      <div className="space-y-3">
+                        {sessions.upcoming.map((session) => (
+                          <div key={session.id} className="flex items-start gap-4 p-3 rounded-lg border bg-muted/30">
+                            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
+                              {session.mentor.profileImageUrl ? (
+                                <img 
+                                  src={session.mentor.profileImageUrl} 
+                                  alt="" 
+                                  className="w-full h-full object-cover" 
+                                />
+                              ) : (
+                                <UserCircle className="h-5 w-5 text-muted-foreground" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <Link
+                                  href={`/portal/mentors/${session.mentor.id}`}
+                                  className="font-medium hover:text-primary hover:underline truncate"
+                                >
+                                  {session.mentor.firstName} {session.mentor.lastName}
+                                </Link>
+                                <Badge variant="outline" className="text-xs flex-shrink-0">
+                                  Session {session.sessionNumber}
+                                </Badge>
+                              </div>
+                              <div className="flex items-center gap-1 mt-1 text-sm text-muted-foreground">
+                                <Calendar className="h-3 w-3" />
+                                <span>{format(new Date(session.scheduledAt), "MMM d, yyyy 'at' h:mm a")}</span>
+                              </div>
+                              <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{session.question}</p>
+                              {session.googleMeetLink && (
+                                <a
+                                  href={session.googleMeetLink}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 mt-2 text-xs text-primary hover:underline"
+                                >
+                                  <Video className="h-3 w-3" />
+                                  Join Meeting
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      {team.mentor.expertise && team.mentor.expertise.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {team.mentor.expertise.slice(0, 3).map((skill) => (
-                            <Badge key={skill} variant="outline" className="text-xs">
-                              {skill}
-                            </Badge>
-                          ))}
-                          {team.mentor.expertise.length > 3 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{team.mentor.expertise.length - 3}
-                            </Badge>
-                          )}
-                        </div>
-                      )}
-                      {team.mentor.calendlyLink && (
-                        <a
-                          href={team.mentor.calendlyLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 mt-2 text-sm text-primary hover:underline"
-                        >
-                          <Calendar className="h-3 w-3" />
-                          Schedule Meeting
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                      )}
                     </div>
-                  </div>
-                  {!isDisqualified && (
-                    <div className="flex gap-2 mt-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowAssignMentorDialog(true)}
-                      >
-                        Change Mentor
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => setShowUnassignMentorDialog(true)}
-                      >
-                        Unassign
-                      </Button>
+                  )}
+
+                  {/* Past Sessions */}
+                  {sessions.past.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-medium text-muted-foreground mb-3">Past Sessions</h3>
+                      <div className="space-y-3">
+                        {sessions.past.slice(0, 5).map((session) => (
+                          <div key={session.id} className="flex items-start gap-4 p-3 rounded-lg border">
+                            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
+                              {session.mentor.profileImageUrl ? (
+                                <img 
+                                  src={session.mentor.profileImageUrl} 
+                                  alt="" 
+                                  className="w-full h-full object-cover" 
+                                />
+                              ) : (
+                                <UserCircle className="h-5 w-5 text-muted-foreground" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <Link
+                                  href={`/portal/mentors/${session.mentor.id}`}
+                                  className="font-medium hover:text-primary hover:underline truncate"
+                                >
+                                  {session.mentor.firstName} {session.mentor.lastName}
+                                </Link>
+                                <Badge 
+                                  variant={session.status === "completed" ? "default" : "secondary"} 
+                                  className="text-xs flex-shrink-0"
+                                >
+                                  {session.status === "completed" ? "Completed" : session.status === "cancelled" ? "Cancelled" : session.status}
+                                </Badge>
+                              </div>
+                              <div className="flex items-center gap-1 mt-1 text-sm text-muted-foreground">
+                                <Calendar className="h-3 w-3" />
+                                <span>{format(new Date(session.scheduledAt), "MMM d, yyyy")}</span>
+                              </div>
+                              {session.notes && (
+                                <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{session.notes}</p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        {sessions.past.length > 5 && (
+                          <p className="text-xs text-muted-foreground text-center">
+                            +{sessions.past.length - 5} more sessions
+                          </p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
               ) : (
                 <div className="text-center py-6">
                   <UserCircle className="mx-auto h-10 w-10 text-muted-foreground/50" />
-                  <p className="mt-2 text-sm text-muted-foreground">No mentor assigned</p>
-                  {!isDisqualified && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-4"
-                      onClick={() => setShowAssignMentorDialog(true)}
-                    >
-                      Assign Mentor
-                    </Button>
-                  )}
+                  <p className="mt-2 text-sm text-muted-foreground">No mentor sessions</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Sessions appear here when the team books time with mentors
+                  </p>
                 </div>
               )}
             </div>
@@ -752,96 +726,6 @@ function TeamDetailContent({ id }: { id: string }) {
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Unassign Brief
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Assign Mentor Dialog */}
-      <Dialog open={showAssignMentorDialog} onOpenChange={setShowAssignMentorDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Assign Mentor to Team</DialogTitle>
-            <DialogDescription>
-              Select a mentor to assign to "{team.name}"
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Select Mentor</Label>
-              <Select value={selectedMentorId} onValueChange={setSelectedMentorId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choose a mentor" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableMentors.map((mentor) => {
-                    const assignedCount = mentor.assignments?.filter(a => a.isActive)?.length || 0;
-                    return (
-                      <SelectItem key={mentor.id} value={mentor.id}>
-                        <div>
-                          <div>{mentor.firstName} {mentor.lastName}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {mentor.company && `${mentor.company} • `}
-                            {assignedCount}/{mentor.maxTeams} teams
-                          </div>
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAssignMentorDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleAssignMentor}
-              disabled={!selectedMentorId || assignMentorMutation.isPending}
-            >
-              {assignMentorMutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Assign
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Unassign Mentor Dialog */}
-      <Dialog open={showUnassignMentorDialog} onOpenChange={setShowUnassignMentorDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Unassign Mentor</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to unassign the mentor from "{team.name}"?
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Reason (optional)</Label>
-              <Textarea
-                placeholder="Explain why the mentor is being unassigned..."
-                value={unassignMentorReason}
-                onChange={(e) => setUnassignMentorReason(e.target.value)}
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowUnassignMentorDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleUnassignMentor}
-              disabled={unassignMentorMutation.isPending}
-            >
-              {unassignMentorMutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              Unassign Mentor
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -57,10 +57,10 @@ export function ResourceList() {
     tag: tag === "all" ? undefined : tag,
   });
   const { data: tags } = useResourceTags();
-  const { trigger: trackDownload } = useTrackDownload();
+  const { mutateAsync: trackDownload } = useTrackDownload();
 
   const handleDownload = async (resource: Resource) => {
-    await trackDownload({ id: resource.id });
+    await trackDownload(resource.id);
     if (resource.accessUrl) {
       window.open(resource.accessUrl, "_blank");
     }

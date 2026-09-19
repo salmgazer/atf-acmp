@@ -17,6 +17,7 @@ import {
   MessageType,
 } from "@/database/entities/chat.entity";
 import { Team } from "@/database/entities/team.entity";
+import { OneSignalService } from "@/modules/notifications/onesignal.service";
 
 export interface CreateChannelDto {
   name: string;
@@ -64,7 +65,8 @@ export class ChatService {
     @InjectRepository(MessageReaction)
     private readonly reactionRepository: Repository<MessageReaction>,
     @InjectRepository(Team)
-    private readonly teamRepository: Repository<Team>
+    private readonly teamRepository: Repository<Team>,
+    private readonly oneSignalService: OneSignalService
   ) {}
 
   // ============ Channel Operations ============
@@ -104,7 +106,8 @@ export class ChatService {
 
   async getUserChannels(
     userId: string,
-    userType: SenderType
+    userType: SenderType,
+    cohortId?: string
   ): Promise<ChatChannel[]> {
     // Staff can see all non-private channels (or all channels they're members of)
     if (userType === SenderType.STAFF) {
@@ -120,19 +123,27 @@ export class ChatService {
       
       const memberChannelIds = memberships.map(m => m.channel?.id).filter(Boolean);
       
-      // Also get all non-archived channels (staff can view all)
+      // Build where conditions for fetching channels
+      const whereConditions: any = { isArchived: false };
+      if (cohortId) {
+        whereConditions.cohortId = cohortId;
+      }
+      
+      // Also get all non-archived channels (staff can view all), optionally filtered by cohort
       const allChannels = await this.channelRepository.find({
-        where: { isArchived: false },
+        where: whereConditions,
         order: { createdAt: "DESC" },
       });
       
       // Combine: staff member channels + all non-archived channels they can view
       const channelMap = new Map<string, ChatChannel>();
       
-      // First add member channels
+      // First add member channels (only if they match cohort filter or no filter)
       memberships.forEach(m => {
         if (m.channel) {
-          channelMap.set(m.channel.id, m.channel);
+          if (!cohortId || m.channel.cohortId === cohortId) {
+            channelMap.set(m.channel.id, m.channel);
+          }
         }
       });
       
@@ -155,6 +166,14 @@ export class ChatService {
       },
       relations: ["channel"],
     });
+
+    // Apply cohort filter if specified (for non-staff)
+    if (cohortId) {
+      return memberships
+        .map((m) => m.channel)
+        .filter(Boolean)
+        .filter((c) => c.cohortId === cohortId);
+    }
 
     return memberships.map((m) => m.channel).filter(Boolean);
   }
@@ -356,7 +375,79 @@ export class ChatService {
     // Update sender's last read
     await this.markChannelAsRead(dto.channelId, dto.senderId, dto.senderType, saved.id);
 
+    // Send push notifications to other channel members (for team/mentor channels)
+    await this.sendMessagePushNotifications(saved, dto);
+
     return saved;
+  }
+
+  /**
+   * Send push notifications to channel members when a new message is sent
+   * Only sends to team and mentor-team channels
+   */
+  private async sendMessagePushNotifications(
+    message: ChatMessage,
+    dto: CreateMessageDto
+  ): Promise<void> {
+    try {
+      // Get the channel to check its type
+      const channel = await this.channelRepository.findOne({
+        where: { id: message.channelId },
+      });
+
+      if (!channel) return;
+
+      // Only send push for team and mentor-team channels
+      if (channel.type !== ChannelType.TEAM && channel.type !== ChannelType.MENTOR_TEAM) {
+        return;
+      }
+
+      // Get all channel members except the sender
+      const members = await this.memberRepository.find({
+        where: {
+          channelId: message.channelId,
+          leftAt: null as any,
+        },
+      });
+
+      // Filter out the sender
+      const recipients = members.filter(
+        (m) => !(m.memberId === dto.senderId && m.memberType === dto.senderType)
+      );
+
+      if (recipients.length === 0) return;
+
+      // Build external user IDs for OneSignal (format: memberType:memberId)
+      const externalUserIds = recipients.map(
+        (m) => `${m.memberType}:${m.memberId}`
+      );
+
+      // Truncate message content for notification
+      const truncatedContent =
+        dto.content.length > 100
+          ? dto.content.substring(0, 100) + "..."
+          : dto.content;
+
+      // Send push notification
+      await this.oneSignalService.sendToExternalUserIds(externalUserIds, {
+        title: `${dto.senderName} in ${channel.name}`,
+        body: truncatedContent,
+        data: {
+          type: "chat_message",
+          channelId: message.channelId,
+          messageId: message.id,
+          channelType: channel.type,
+        },
+        url: `/app/chat?channel=${encodeURIComponent(channel.name.toLowerCase().replace(/\s+/g, "-"))}`,
+      });
+
+      this.logger.debug(
+        `Push notification sent for message in channel ${channel.name} to ${externalUserIds.length} recipients`
+      );
+    } catch (error) {
+      // Don't fail message creation if push notification fails
+      this.logger.warn(`Failed to send push notification for message: ${error.message}`);
+    }
   }
 
   async getMessages(
@@ -627,7 +718,8 @@ export class ChatService {
 
   async getUserChannelsWithUnread(
     userId: string,
-    userType: SenderType
+    userType: SenderType,
+    cohortId?: string
   ): Promise<
     Array<{
       channel: ChatChannel;
@@ -635,7 +727,7 @@ export class ChatService {
       unreadCount: number;
     }>
   > {
-    const channels = await this.getUserChannels(userId, userType);
+    const channels = await this.getUserChannels(userId, userType, cohortId);
 
     return Promise.all(
       channels.map(async (channel) => {

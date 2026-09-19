@@ -163,7 +163,7 @@ export class CohortsService {
     this.logger.log(`Created ${stages.length} default stages for cohort ${cohortId}`);
   }
 
-  private async createDefaultForumCategories(cohortId: string): Promise<void> {
+  private async createDefaultForumCategories(cohortId: string, isActive: boolean = false): Promise<void> {
     const categories = this.defaultForumCategories.map((category) =>
       this.forumCategoryRepository.create({
         cohortId,
@@ -172,20 +172,21 @@ export class CohortsService {
         iconName: category.iconName,
         sortOrder: category.sortOrder,
         staffOnly: category.staffOnly || false,
-        isActive: true,
-        isLocked: false,
+        isActive, // Only active when cohort is active
+        isLocked: !isActive, // Locked until cohort is active
       })
     );
 
     await this.forumCategoryRepository.save(categories);
-    this.logger.log(`Created ${categories.length} default forum categories for cohort ${cohortId}`);
+    this.logger.log(`Created ${categories.length} default forum categories for cohort ${cohortId} (active: ${isActive})`);
   }
 
   /**
    * Create default forum chat channels for a cohort
    * These are cohort-wide channels accessible by all participants
+   * Channels start archived and are unarchived when cohort becomes active
    */
-  private async createDefaultForumChannels(cohortId: string, cohortName: string): Promise<void> {
+  private async createDefaultForumChannels(cohortId: string, cohortName: string, isActive: boolean = false): Promise<void> {
     const forumChannelConfigs = [
       {
         name: "General Discussion",
@@ -213,7 +214,7 @@ export class CohortsService {
         type: ChannelType.ANNOUNCEMENT, // Using announcement type for cohort-wide forums
         cohortId,
         isPrivate: false,
-        isArchived: false,
+        isArchived: !isActive, // Archived until cohort is active
       });
       channels.push(channel);
     }
@@ -280,34 +281,37 @@ export class CohortsService {
 
   /**
    * Update forum chat channels when cohort status changes
-   * - COMPLETED/ARCHIVED: Archive all forum channels
    * - ACTIVE: Unarchive all forum channels
+   * - Other statuses: Archive all forum channels
    */
   private async updateForumChannelsStatus(cohortId: string, cohortStatus: CohortStatus): Promise<void> {
-    const shouldArchive = [CohortStatus.COMPLETED, CohortStatus.ARCHIVED].includes(cohortStatus);
+    const isActive = cohortStatus === CohortStatus.ACTIVE;
     
     await this.chatChannelRepository.update(
       { cohortId, type: ChannelType.ANNOUNCEMENT },
-      { isArchived: shouldArchive }
+      { isArchived: !isActive }
     );
 
-    this.logger.log(`${shouldArchive ? 'Archived' : 'Unarchived'} forum channels for cohort ${cohortId}`);
+    this.logger.log(`Forum channels for cohort ${cohortId}: isArchived=${!isActive}`);
   }
 
   /**
    * Update forum categories when cohort status changes
-   * - COMPLETED/ARCHIVED: Lock all categories (no new posts, but can still view)
-   * - ACTIVE: Unlock all categories
+   * - ACTIVE: Activate and unlock all categories
+   * - Other statuses: Deactivate and lock all categories
    */
   private async updateForumCategoriesStatus(cohortId: string, cohortStatus: CohortStatus): Promise<void> {
-    const shouldLock = [CohortStatus.COMPLETED, CohortStatus.ARCHIVED].includes(cohortStatus);
+    const isActive = cohortStatus === CohortStatus.ACTIVE;
     
     await this.forumCategoryRepository.update(
       { cohortId },
-      { isLocked: shouldLock }
+      { 
+        isActive,
+        isLocked: !isActive,
+      }
     );
 
-    this.logger.log(`${shouldLock ? 'Locked' : 'Unlocked'} forum categories for cohort ${cohortId}`);
+    this.logger.log(`Forum categories for cohort ${cohortId}: isActive=${isActive}, isLocked=${!isActive}`);
   }
 
   private async getStageCount(cohortId: string): Promise<number> {

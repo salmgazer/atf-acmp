@@ -30,7 +30,7 @@ export const DEFAULT_JOB_OPTIONS = {
 };
 
 export const AI_EVALUATION_CONFIG = {
-  defaultModel: "gemini-1.5-flash",
+  defaultModel: "gemini-3.6-flash",
   maxTokens: 4096,
   temperature: 0.3, // Lower temperature for more consistent scoring
   retryDelay: 1000,

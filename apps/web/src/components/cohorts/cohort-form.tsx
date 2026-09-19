@@ -45,6 +45,7 @@ const cohortFormSchema = z.object({
   teamSizeMax: z.coerce.number().min(1).max(15),
   briefCap: z.coerce.number().min(1).max(500),
   maxTeamsPerBrief: z.coerce.number().min(1).max(100),
+  sessionRate: z.coerce.number().min(0).optional(),
   countries: z.array(z.string()).min(1, "Select at least one country"),
   deadlines: z.object({
     registrationEnd: z.string().optional(),
@@ -93,6 +94,7 @@ export function CohortForm({ cohort, onSubmit, onCancel, isLoading }: CohortForm
       teamSizeMax: cohort?.teamSizeMax || 5,
       briefCap: cohort?.briefCap || 50,
       maxTeamsPerBrief: cohort?.maxTeamsPerBrief || 25,
+      sessionRate: cohort?.sessionRate || 0,
       countries: cohort?.countries || [],
       deadlines: {
         registrationEnd: cohort?.deadlines?.registrationEnd?.split("T")[0] || "",
@@ -240,6 +242,22 @@ export function CohortForm({ cohort, onSubmit, onCancel, isLoading }: CohortForm
               {...register("maxTeamsPerBrief")}
             />
             <p className="text-xs text-muted-foreground">Max teams assigned to each brief</p>
+          </div>
+        </div>
+
+        {/* Mentor Session Rate */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mt-4">
+          <div className="space-y-2">
+            <Label htmlFor="sessionRate">Mentor Session Rate ($)</Label>
+            <Input
+              id="sessionRate"
+              type="number"
+              min={0}
+              step="0.01"
+              placeholder="0.00"
+              {...register("sessionRate")}
+            />
+            <p className="text-xs text-muted-foreground">Default payment per mentor session</p>
           </div>
         </div>
       </div>

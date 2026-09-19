@@ -72,6 +72,13 @@ export class EmailService {
     await this.sendEmail(to, subject, html);
   }
 
+  /**
+   * Send a custom email with provided subject and HTML content
+   */
+  async sendCustomEmail(to: string, subject: string, html: string, text?: string): Promise<void> {
+    await this.sendEmail(to, subject, html, text);
+  }
+
   private async sendEmail(to: string, subject: string, html: string, text?: string): Promise<void> {
     // Try SMTP first (for local development with Mailpit)
     if (this.smtpTransporter) {

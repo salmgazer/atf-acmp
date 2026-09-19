@@ -385,6 +385,14 @@ function CohortDetailContent({ id }: { id: string }) {
                 <dd className="font-medium">{cohort.maxTeamsPerBrief}</dd>
               </div>
               <div className="flex justify-between">
+                <dt className="text-muted-foreground">Mentor Session Fee</dt>
+                <dd className="font-medium">
+                  {cohort.sessionRate 
+                    ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cohort.sessionRate)
+                    : "Not set"}
+                </dd>
+              </div>
+              <div className="flex justify-between">
                 <dt className="text-muted-foreground">Created</dt>
                 <dd className="font-medium">{format(new Date(cohort.createdAt), "MMM d, yyyy")}</dd>
               </div>

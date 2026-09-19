@@ -13,7 +13,11 @@ import {
   HttpCode,
   HttpStatus,
   Request,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import {
   ApiTags,
   ApiOperation,
@@ -21,6 +25,8 @@ import {
   ApiBearerAuth,
   ApiParam,
   ApiQuery,
+  ApiConsumes,
+  ApiBody,
 } from "@nestjs/swagger";
 import { ParticipantsService } from "./participants.service";
 import {
@@ -37,11 +43,20 @@ import {
 import { ParticipantStatus } from "@/database/entities/participant.entity";
 import { JwtAuthGuard } from "@/auth/guards/jwt-auth.guard";
 import { CurrentUser } from "@/common/decorators/current-user.decorator";
+import { UploadService } from "@/common/services/upload.service";
+import { UploadThrottle } from "@/common/decorators/throttle.decorator";
+import { Audit } from "@/common/decorators/audit.decorator";
+import { AuditInterceptor } from "@/common/interceptors/audit.interceptor";
+import { AuditAction } from "@/database/entities/audit-log.entity";
 
 @ApiTags("participants")
 @Controller("participants")
+@UseInterceptors(AuditInterceptor)
 export class ParticipantsController {
-  constructor(private readonly participantsService: ParticipantsService) {}
+  constructor(
+    private readonly participantsService: ParticipantsService,
+    private readonly uploadService: UploadService,
+  ) {}
 
   // ============ Current Participant Endpoint ============
   
@@ -60,9 +75,65 @@ export class ParticipantsController {
     return this.participantsService.findOne(user.id);
   }
 
+  @Post("me/profile-picture")
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @UseInterceptors(FileInterceptor("file"))
+  @UploadThrottle()
+  @ApiOperation({ summary: "Upload profile picture for current participant" })
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        file: {
+          type: "string",
+          format: "binary",
+          description: "Profile picture image (JPEG, PNG, WebP)",
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: "Profile picture uploaded" })
+  async uploadMyProfilePicture(
+    @CurrentUser() user: any,
+    @UploadedFile() file: Express.Multer.File
+  ) {
+    if (user.role !== "participant") {
+      throw new BadRequestException("Only participants can upload profile pictures");
+    }
+
+    if (!file) {
+      throw new BadRequestException("No file uploaded");
+    }
+
+    const participant = await this.participantsService.findOne(user.id);
+
+    // Delete old profile picture if exists
+    if (participant.profileImageUrl) {
+      const oldKey = this.uploadService.extractKeyFromUrl(participant.profileImageUrl);
+      if (oldKey) {
+        await this.uploadService.deleteFile(oldKey);
+      }
+    }
+
+    // Upload new image
+    const result = await this.uploadService.uploadProfilePicture(file, "participants", participant.id);
+
+    // Update participant with new URL
+    return this.participantsService.update(participant.id, { profileImageUrl: result.url });
+  }
+
   // ============ Admin/Staff Endpoints ============
 
   @Post()
+  @Audit({
+    action: AuditAction.CREATE,
+    entityType: "Participant",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => `${result?.firstName} ${result?.lastName}`,
+    getDescription: (result) => `Created participant: ${result?.firstName} ${result?.lastName}`,
+  })
   @ApiOperation({ summary: "Create a new participant" })
   @ApiResponse({ status: 201, description: "Participant created successfully" })
   @ApiResponse({ status: 409, description: "Participant already exists" })
@@ -101,6 +172,13 @@ export class ParticipantsController {
   }
 
   @Patch(":id")
+  @Audit({
+    action: AuditAction.UPDATE,
+    entityType: "Participant",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => `${result?.firstName} ${result?.lastName}`,
+    getDescription: (result) => `Updated participant: ${result?.firstName} ${result?.lastName}`,
+  })
   @ApiOperation({ summary: "Update participant" })
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({ status: 200, description: "Participant updated" })
@@ -112,6 +190,13 @@ export class ParticipantsController {
   }
 
   @Patch(":id/status")
+  @Audit({
+    action: AuditAction.STATUS_CHANGE,
+    entityType: "Participant",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => `${result?.firstName} ${result?.lastName}`,
+    getDescription: (result) => `Changed participant status: ${result?.firstName} ${result?.lastName} to ${result?.status}`,
+  })
   @ApiOperation({ summary: "Update participant status" })
   @ApiParam({ name: "id", type: "string" })
   async updateStatus(
@@ -123,6 +208,12 @@ export class ParticipantsController {
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Audit({
+    action: AuditAction.DELETE,
+    entityType: "Participant",
+    getEntityId: (_, args) => args[0]?.id,
+    getDescription: (_, args) => `Deleted participant: ${args[0]?.id}`,
+  })
   @ApiOperation({ summary: "Delete participant" })
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({ status: 204, description: "Participant deleted" })
@@ -133,6 +224,11 @@ export class ParticipantsController {
   // ============ Bulk Import Endpoints ============
 
   @Post("bulk-import")
+  @Audit({
+    action: AuditAction.BULK_IMPORT,
+    entityType: "Participant",
+    getDescription: (result) => `Bulk imported ${result?.created || 0} participants`,
+  })
   @ApiOperation({ summary: "Bulk import participants from CSV data" })
   @ApiResponse({ status: 201, type: BulkImportResultDto })
   async bulkImport(@Body() dto: BulkImportParticipantsDto) {

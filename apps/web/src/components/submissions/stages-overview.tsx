@@ -7,9 +7,11 @@ import {
   Calendar,
   CheckCircle,
   Clock,
+  ClipboardCheck,
   FileText,
   AlertCircle,
   ChevronRight,
+  XCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -36,7 +38,7 @@ export function StagesOverview({ cohortId }: { cohortId: string }) {
   }, [stages, submissions]);
 
   const completedCount = stagesWithSubmissions.filter(
-    (s) => s.submission?.status && ["submitted", "late", "evaluated"].includes(s.submission.status)
+    (s) => s.submission?.status && ["submitted", "late", "pending_approval", "approved", "evaluated"].includes(s.submission.status)
   ).length;
 
   const isLoading = stagesLoading || submissionsLoading;
@@ -69,7 +71,7 @@ export function StagesOverview({ cohortId }: { cohortId: string }) {
 
   // Find current stage (first non-submitted stage with open deadline)
   const currentStage = stagesWithSubmissions.find((s) => {
-    const isSubmitted = s.submission?.status && ["submitted", "late", "evaluated"].includes(s.submission.status);
+    const isSubmitted = s.submission?.status && ["submitted", "late", "pending_approval", "approved", "evaluated"].includes(s.submission.status);
     return !isSubmitted && s.isOpen;
   });
 
@@ -96,37 +98,38 @@ export function StagesOverview({ cohortId }: { cohortId: string }) {
       {/* Current Stage Highlight */}
       {currentStage && (
         <Card className="border-primary">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <Badge variant="default">Current Stage</Badge>
+          <CardContent className="p-4">
+            {/* Header with badges */}
+            <div className="flex items-center justify-between mb-3">
+              <Badge variant="outline" className="text-primary border-primary">Current Stage</Badge>
               <DeadlineCountdown deadline={currentStage.deadline} />
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-xl font-semibold flex items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground text-sm font-bold">
-                    {currentStage.number}
-                  </span>
-                  {currentStage.name}
-                </h3>
+            
+            {/* Stage info */}
+            <div className="flex items-start gap-3 mb-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground font-bold">
+                {currentStage.number}
+              </span>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg font-semibold">{currentStage.name}</h3>
                 {currentStage.description && (
-                  <p className="text-muted-foreground mt-2">
+                  <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">
                     {currentStage.description}
                   </p>
                 )}
-                <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="h-4 w-4" />
-                    Due: {format(new Date(currentStage.deadline), "MMM d, yyyy 'at' h:mm a")}
-                  </span>
-                </div>
               </div>
-              <Button asChild>
+            </div>
+            
+            {/* Footer with date and action */}
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Calendar className="h-4 w-4 shrink-0" />
+                <span>Due: {format(new Date(currentStage.deadline), "MMM d, yyyy 'at' h:mm a")}</span>
+              </span>
+              <Button asChild size="sm">
                 <Link href={`/app/submissions/${currentStage.id}`}>
                   {currentStage.submission?.status === "draft" ? "Continue Draft" : "Start Submission"}
-                  <ChevronRight className="ml-2 h-4 w-4" />
+                  <ChevronRight className="ml-1 h-4 w-4" />
                 </Link>
               </Button>
             </div>
@@ -137,9 +140,11 @@ export function StagesOverview({ cohortId }: { cohortId: string }) {
       {/* All Stages Timeline */}
       <div className="space-y-3">
         <h2 className="text-lg font-semibold">All Stages</h2>
-        {stagesWithSubmissions.map((stage) => (
-          <StageCard key={stage.id} stage={stage} isCurrent={stage.id === currentStage?.id} />
-        ))}
+        <div className="space-y-3">
+          {stagesWithSubmissions.map((stage) => (
+            <StageCard key={stage.id} stage={stage} isCurrent={stage.id === currentStage?.id} />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -152,6 +157,9 @@ function StageCard({ stage, isCurrent }: { stage: StageWithSubmission; isCurrent
   
   const getStatus = () => {
     if (submission?.status === "evaluated") return { label: "Evaluated", variant: "default" as const, icon: CheckCircle };
+    if (submission?.status === "approved") return { label: "Approved", variant: "default" as const, icon: CheckCircle };
+    if (submission?.status === "pending_approval") return { label: "Pending Approval", variant: "outline" as const, icon: ClipboardCheck };
+    if (submission?.status === "rejected") return { label: "Rejected", variant: "destructive" as const, icon: XCircle };
     if (submission?.status === "submitted") return { label: "Submitted", variant: "default" as const, icon: CheckCircle };
     if (submission?.status === "late") return { label: "Late Submission", variant: "secondary" as const, icon: AlertCircle };
     if (submission?.status === "draft") return { label: "Draft", variant: "outline" as const, icon: FileText };
@@ -164,15 +172,15 @@ function StageCard({ stage, isCurrent }: { stage: StageWithSubmission; isCurrent
   const status = getStatus();
   const StatusIcon = status.icon;
   const canSubmit = stage.isOpen || (isDeadlinePast && stage.allowLateSubmissions);
-  const isSubmitted = submission?.status && ["submitted", "late", "evaluated"].includes(submission.status);
+  const isSubmitted = submission?.status && ["submitted", "late", "pending_approval", "approved", "evaluated"].includes(submission.status);
 
   return (
-    <Card className={isCurrent ? "border-primary" : ""}>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
+    <Link href={`/app/submissions/${stage.id}`} className="block">
+      <Card className={`transition-colors hover:bg-muted/50 cursor-pointer ${isCurrent ? "border-primary" : ""}`}>
+        <CardContent className="p-4">
           <div className="flex items-center gap-3">
-            <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${
-              isSubmitted ? "bg-green-100 text-green-600" : "bg-muted text-muted-foreground"
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+              isSubmitted ? "bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400" : "bg-muted text-muted-foreground"
             }`}>
               {isSubmitted ? (
                 <CheckCircle className="h-5 w-5" />
@@ -180,52 +188,39 @@ function StageCard({ stage, isCurrent }: { stage: StageWithSubmission; isCurrent
                 <span className="font-bold">{stage.number}</span>
               )}
             </div>
-            <div>
-              <h3 className="font-medium flex items-center gap-2">
-                {stage.name}
-                <Badge variant={status.variant}>
-                  <StatusIcon className="mr-1 h-3 w-3" />
-                  {status.label}
-                </Badge>
-              </h3>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-medium">{stage.name}</h3>
               <p className="text-sm text-muted-foreground">
                 {isDeadlinePast
                   ? `Closed ${formatDistanceToNow(deadline, { addSuffix: true })}`
                   : `Due ${format(deadline, "MMM d, yyyy 'at' h:mm a")}`}
               </p>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {submission?.score !== undefined && submission.score !== null && (
-              <Badge variant="outline" className="text-lg px-3 py-1">
-                {submission.score}%
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge variant={status.variant}>
+                <StatusIcon className="mr-1 h-3 w-3" />
+                {status.label}
               </Badge>
-            )}
-            {canSubmit && !isSubmitted && (
-              <Button asChild variant={isCurrent ? "default" : "outline"} size="sm">
-                <Link href={`/app/submissions/${stage.id}`}>
-                  {submission?.status === "draft" ? "Continue" : "Submit"}
-                </Link>
-              </Button>
-            )}
-            {isSubmitted && (
-              <Button asChild variant="outline" size="sm">
-                <Link href={`/app/submissions/${stage.id}`}>View</Link>
-              </Button>
-            )}
+              {submission?.score !== undefined && submission.score !== null && (
+                <Badge variant="outline" className="text-base px-2 py-0.5">
+                  {submission.score}%
+                </Badge>
+              )}
+              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+            </div>
           </div>
-        </div>
 
-        {/* Feedback preview for evaluated submissions */}
-        {submission?.feedback?.comments && (
-          <div className="mt-3 p-3 bg-muted/50 rounded-md">
-            <p className="text-sm text-muted-foreground line-clamp-2">
-              <span className="font-medium">Feedback:</span> {submission.feedback.comments}
-            </p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          {/* Feedback preview for evaluated submissions */}
+          {submission?.feedback?.comments && (
+            <div className="mt-3 p-3 bg-muted/50 rounded-md">
+              <p className="text-sm text-muted-foreground line-clamp-2">
+                <span className="font-medium">Feedback:</span> {submission.feedback.comments}
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
 
@@ -235,7 +230,7 @@ function DeadlineCountdown({ deadline }: { deadline: string }) {
   
   if (isOverdue) {
     return (
-      <Badge variant="destructive">
+      <Badge variant="outline" className="text-destructive border-destructive">
         <AlertCircle className="mr-1 h-3 w-3" />
         Overdue
       </Badge>
@@ -245,7 +240,7 @@ function DeadlineCountdown({ deadline }: { deadline: string }) {
   const distance = formatDistanceToNow(date, { addSuffix: false });
   
   return (
-    <Badge variant="secondary">
+    <Badge variant="outline">
       <Clock className="mr-1 h-3 w-3" />
       {distance} left
     </Badge>

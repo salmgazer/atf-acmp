@@ -6,6 +6,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { User, Role } from "../../database/entities/user.entity";
 import { Participant, ParticipantStatus } from "../../database/entities/participant.entity";
+import { TeamMember } from "../../database/entities/team.entity";
 
 interface JwtPayload {
   sub: string;
@@ -27,6 +28,7 @@ interface AuthenticatedUser {
   isActive: boolean;
   participantId?: string;
   cohortId?: string;
+  teamId?: string;
   mustChangePassword?: boolean;
 }
 
@@ -38,6 +40,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly userRepository: Repository<User>,
     @InjectRepository(Participant)
     private readonly participantRepository: Repository<Participant>,
+    @InjectRepository(TeamMember)
+    private readonly teamMemberRepository: Repository<TeamMember>,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -81,6 +85,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // For now, all non-deleted participants are considered active
     const isActive = participant.status !== ParticipantStatus.IMPORTED || participant.firebaseUid !== null;
 
+    // Look up team membership
+    const teamMember = await this.teamMemberRepository.findOne({
+      where: { participantId: participant.id },
+    });
+
     // Return participant as an AuthenticatedUser
     // Note: participantId here is the UUID (participant.id), NOT the human-readable code (participant.participantId)
     return {
@@ -92,6 +101,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       isActive: true, // If participant exists and is not deleted, they're active
       participantId: participant.id, // Use UUID, not the human-readable participantId code
       cohortId: participant.cohortId,
+      teamId: teamMember?.teamId,
       mustChangePassword: participant.mustChangePassword,
     };
   }

@@ -13,6 +13,7 @@ function MentorLoginContent() {
         title="Mentor Portal"
         subtitle="Sign in to guide and support your assigned teams"
         portalName="Mentor Portal"
+        portalType="mentor"
         imageSide="left"
       >
         <MagicLinkForm portal="mentor" />

@@ -47,13 +47,11 @@ export function JournalForm({ weekNumber, existingEntry }: JournalFormProps) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
 
-  const { trigger: createJournal, isMutating: isCreating } = useCreateJournal();
-  const { trigger: updateJournal, isMutating: isUpdating } = useUpdateJournal(
-    existingEntry?.id || ""
-  );
+  const createJournalMutation = useCreateJournal();
+  const updateJournalMutation = useUpdateJournal();
 
   const isEditing = !!existingEntry;
-  const isSaving = isCreating || isUpdating;
+  const isSaving = createJournalMutation.isPending || updateJournalMutation.isPending;
 
   const {
     register,
@@ -136,15 +134,15 @@ export function JournalForm({ weekNumber, existingEntry }: JournalFormProps) {
     };
 
     try {
-      if (isEditing) {
-        await updateJournal(payload);
+      if (isEditing && existingEntry) {
+        await updateJournalMutation.mutateAsync({ id: existingEntry.id, data: payload });
       } else {
-        await createJournal(payload);
+        await createJournalMutation.mutateAsync(payload);
       }
       queryClient.invalidateQueries({ queryKey: ["journals"] });
       router.push("/app/journals");
     } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to save journal entry");
+      setError(err.response?.data?.message || err.message || "Failed to save journal entry");
     }
   };
 

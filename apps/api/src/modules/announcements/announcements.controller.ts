@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   ParseUUIDPipe,
+  UseInterceptors,
 } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
 import { JwtAuthGuard } from "@/auth/guards/jwt-auth.guard";
@@ -23,6 +24,9 @@ import {
   AnnouncementQueryDto,
   ParticipantAnnouncementQueryDto,
 } from "./dto/announcement.dto";
+import { Audit } from "@/common/decorators/audit.decorator";
+import { AuditInterceptor } from "@/common/interceptors/audit.interceptor";
+import { AuditAction } from "@/database/entities/audit-log.entity";
 
 /**
  * Admin announcement controller
@@ -31,11 +35,19 @@ import {
 @ApiBearerAuth()
 @Controller("admin/announcements")
 @UseGuards(JwtAuthGuard, RolesGuard)
+@UseInterceptors(AuditInterceptor)
 @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
 export class AdminAnnouncementsController {
   constructor(private readonly announcementsService: AnnouncementsService) {}
 
   @Post()
+  @Audit({
+    action: AuditAction.CREATE,
+    entityType: "Announcement",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.title,
+    getDescription: (result) => `Created announcement: ${result?.title}`,
+  })
   @ApiOperation({ summary: "Create a new announcement" })
   async create(@Body() dto: CreateAnnouncementDto, @CurrentUser() user: any) {
     return this.announcementsService.create(dto, user.id);
@@ -54,6 +66,13 @@ export class AdminAnnouncementsController {
   }
 
   @Patch(":id")
+  @Audit({
+    action: AuditAction.UPDATE,
+    entityType: "Announcement",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.title,
+    getDescription: (result) => `Updated announcement: ${result?.title}`,
+  })
   @ApiOperation({ summary: "Update an announcement" })
   async update(
     @Param("id", ParseUUIDPipe) id: string,
@@ -63,18 +82,38 @@ export class AdminAnnouncementsController {
   }
 
   @Post(":id/publish")
+  @Audit({
+    action: AuditAction.STATUS_CHANGE,
+    entityType: "Announcement",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.title,
+    getDescription: (result) => `Published announcement: ${result?.title}`,
+  })
   @ApiOperation({ summary: "Publish an announcement immediately" })
   async publish(@Param("id", ParseUUIDPipe) id: string) {
     return this.announcementsService.publish(id);
   }
 
   @Post(":id/archive")
+  @Audit({
+    action: AuditAction.STATUS_CHANGE,
+    entityType: "Announcement",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.title,
+    getDescription: (result) => `Archived announcement: ${result?.title}`,
+  })
   @ApiOperation({ summary: "Archive an announcement" })
   async archive(@Param("id", ParseUUIDPipe) id: string) {
     return this.announcementsService.archive(id);
   }
 
   @Delete(":id")
+  @Audit({
+    action: AuditAction.DELETE,
+    entityType: "Announcement",
+    getEntityId: (_, args) => args[0]?.id,
+    getDescription: (_, args) => `Deleted announcement: ${args[0]?.id}`,
+  })
   @ApiOperation({ summary: "Delete an announcement" })
   async delete(@Param("id", ParseUUIDPipe) id: string) {
     await this.announcementsService.delete(id);

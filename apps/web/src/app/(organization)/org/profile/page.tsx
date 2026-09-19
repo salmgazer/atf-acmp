@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { OrganizationLayout } from "@/components/layouts";
@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { PhoneInput } from "@/components/ui/phone-input";
 import {
   useCurrentOrganization,
   useUpdateOrganization,
@@ -74,6 +75,32 @@ const AFRICAN_COUNTRIES = [
   "Namibia",
 ];
 
+// Map country names to ISO codes for phone input
+const COUNTRY_CODE_MAP: Record<string, string> = {
+  Nigeria: "ng",
+  Kenya: "ke",
+  "South Africa": "za",
+  Ghana: "gh",
+  Egypt: "eg",
+  Rwanda: "rw",
+  Ethiopia: "et",
+  Tanzania: "tz",
+  Uganda: "ug",
+  Morocco: "ma",
+  Senegal: "sn",
+  Cameroon: "cm",
+  "Cote d'Ivoire": "ci",
+  Zimbabwe: "zw",
+  Zambia: "zm",
+  Botswana: "bw",
+  Mauritius: "mu",
+  Tunisia: "tn",
+  Algeria: "dz",
+  Namibia: "na",
+};
+
+const getCountryCode = (country: string): string => COUNTRY_CODE_MAP[country] || "gh";
+
 const profileSchema = z.object({
   name: z.string().min(2, "Organization name is required").max(200),
   website: z.string().url("Please enter a valid URL").optional().or(z.literal("")),
@@ -87,9 +114,9 @@ const profileSchema = z.object({
 type ProfileFormData = z.infer<typeof profileSchema>;
 
 const statusConfig = {
-  pending: { label: "Pending Approval", icon: Clock, color: "bg-yellow-100 text-yellow-800" },
-  approved: { label: "Approved", icon: CheckCircle, color: "bg-green-100 text-green-800" },
-  rejected: { label: "Rejected", icon: XCircle, color: "bg-red-100 text-red-800" },
+  pending: { label: "Pending Approval", icon: Clock, color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400" },
+  approved: { label: "Approved", icon: CheckCircle, color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" },
+  rejected: { label: "Rejected", icon: XCircle, color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" },
 };
 
 function ProfileContent() {
@@ -102,6 +129,8 @@ function ProfileContent() {
   const {
     register,
     handleSubmit,
+    control,
+    watch,
     formState: { errors, isDirty },
     reset,
   } = useForm<ProfileFormData>({
@@ -118,6 +147,8 @@ function ProfileContent() {
         }
       : undefined,
   });
+
+  const selectedCountry = watch("country");
 
   const handleLogoClick = () => {
     fileInputRef.current?.click();
@@ -393,11 +424,17 @@ function ProfileContent() {
 
                   <div className="space-y-2">
                     <Label htmlFor="contactPhone">Phone Number</Label>
-                    <Input
-                      id="contactPhone"
-                      type="tel"
-                      placeholder="+234..."
-                      {...register("contactPhone")}
+                    <Controller
+                      name="contactPhone"
+                      control={control}
+                      render={({ field }) => (
+                        <PhoneInput
+                          id="contactPhone"
+                          value={field.value || ""}
+                          onChange={field.onChange}
+                          defaultCountry={getCountryCode(selectedCountry || "")}
+                        />
+                      )}
                     />
                   </div>
                 </div>

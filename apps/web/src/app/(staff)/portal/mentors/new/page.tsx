@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { PhoneInput } from "@/components/ui/phone-input";
 import {
   Select,
   SelectContent,
@@ -281,12 +282,12 @@ function NewMentorContent() {
               </div>
               <div className="space-y-2">
                 <Label>Phone</Label>
-                <Input
+                <PhoneInput
                   value={formData.phone || ""}
-                  onChange={(e) =>
-                    setFormData((f) => ({ ...f, phone: e.target.value }))
+                  onChange={(phone) =>
+                    setFormData((f) => ({ ...f, phone }))
                   }
-                  placeholder="+1234567890"
+                  placeholder="Enter phone number"
                 />
               </div>
               <div className="space-y-2">
@@ -421,16 +422,6 @@ function NewMentorContent() {
           <div className="rounded-lg border bg-card p-6">
             <h2 className="font-semibold mb-4">Links</h2>
             <div className="grid gap-4">
-              <div className="space-y-2">
-                <Label>Calendly Link</Label>
-                <Input
-                  value={formData.calendlyLink || ""}
-                  onChange={(e) =>
-                    setFormData((f) => ({ ...f, calendlyLink: e.target.value }))
-                  }
-                  placeholder="https://calendly.com/your-link"
-                />
-              </div>
               <div className="space-y-2">
                 <Label>LinkedIn URL</Label>
                 <Input

@@ -245,3 +245,26 @@
     background-clip: text;
   }
 }
+
+
+/* react-international-phone dropdown styling */
+/* Light mode hover */
+.react-international-phone-country-selector-dropdown__list-item:hover,
+.react-international-phone-country-selector-dropdown__list-item--focused,
+.react-international-phone-country-selector-dropdown__list-item--selected {
+  background-color: #F1F5F9 !important;
+}
+
+/* Dark mode hover - using class added by component */
+.phone-dropdown-item-dark:hover,
+.phone-dropdown-item-dark.react-international-phone-country-selector-dropdown__list-item--focused,
+.phone-dropdown-item-dark.react-international-phone-country-selector-dropdown__list-item--selected {
+  background-color: #252729 !important;
+}
+
+/* Also target via html.dark for additional specificity */
+html.dark .react-international-phone-country-selector-dropdown__list-item:hover,
+html.dark .react-international-phone-country-selector-dropdown__list-item--focused,
+html.dark .react-international-phone-country-selector-dropdown__list-item--selected {
+  background-color: #252729 !important;
+}

@@ -9,6 +9,7 @@ import {
   IsNumber,
   IsUrl,
   ValidateNested,
+  IsEmail,
   Min,
   Max,
 } from "class-validator";
@@ -19,11 +20,98 @@ class ResourceDto {
   @IsString()
   name: string;
 
-  @IsUrl()
+  @IsString()
   url: string;
 
   @IsString()
   type: string;
+}
+
+class SecondaryContactDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  role?: string;
+
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  phone?: string;
+}
+
+class ScoringAnswersDto {
+  @IsOptional()
+  @IsString()
+  q1?: string;
+
+  @IsOptional()
+  @IsString()
+  q1_text?: string;
+
+  @IsOptional()
+  @IsString()
+  q2?: string;
+
+  @IsOptional()
+  @IsString()
+  q2_text?: string;
+
+  @IsOptional()
+  @IsString()
+  q3?: string;
+
+  @IsOptional()
+  @IsString()
+  q3_text?: string;
+
+  @IsOptional()
+  @IsString()
+  q4?: string;
+
+  @IsOptional()
+  @IsString()
+  q4_text?: string;
+
+  @IsOptional()
+  @IsString()
+  q5?: string;
+
+  @IsOptional()
+  @IsString()
+  q5_text?: string;
+
+  @IsOptional()
+  @IsString()
+  q6?: string;
+
+  @IsOptional()
+  @IsString()
+  q6_text?: string;
+
+  @IsOptional()
+  @IsString()
+  q7?: string;
+
+  @IsOptional()
+  @IsString()
+  q7_text?: string;
+
+  @IsOptional()
+  @IsString()
+  q8?: string;
+
+  @IsOptional()
+  @IsString()
+  q8_text?: string;
 }
 
 export class CreateBriefDto {
@@ -73,6 +161,37 @@ export class CreateBriefDto {
   @Min(1)
   @Max(100)
   maxTeams?: number;
+
+  // Fields from onboard-organization form
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  whatChanges?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  affectedCount?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  dataDescription?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  dataAccess?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SecondaryContactDto)
+  secondaryContact?: SecondaryContactDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ScoringAnswersDto)
+  scoringAnswers?: ScoringAnswersDto;
 }
 
 export class UpdateBriefDto {
@@ -129,6 +248,37 @@ export class UpdateBriefDto {
   @IsArray()
   @IsUrl({}, { each: true })
   imageUrls?: string[];
+
+  // Fields from onboard-organization form
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  whatChanges?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  affectedCount?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  dataDescription?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  dataAccess?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SecondaryContactDto)
+  secondaryContact?: SecondaryContactDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ScoringAnswersDto)
+  scoringAnswers?: ScoringAnswersDto;
 }
 
 export class SubmitBriefDto {
@@ -150,6 +300,96 @@ export class ReviewBriefDto {
   @IsOptional()
   @IsString()
   reviewedBy?: string;
+}
+
+export class StaffUpdateBriefDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(5)
+  @MaxLength(200)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(50)
+  @MaxLength(5000)
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(50)
+  @MaxLength(5000)
+  problemStatement?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(50)
+  @MaxLength(3000)
+  expectedOutcomes?: string;
+
+  @IsOptional()
+  @IsUUID()
+  verticalId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ResourceDto)
+  resources?: ResourceDto[];
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  maxTeams?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  editComment?: string;
+
+  // Fields from onboard-organization form
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  whatChanges?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  affectedCount?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(5000)
+  dataDescription?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  dataAccess?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SecondaryContactDto)
+  secondaryContact?: SecondaryContactDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ScoringAnswersDto)
+  scoringAnswers?: ScoringAnswersDto;
+}
+
+export class RestoreRevisionDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  comment?: string;
 }
 
 export class BriefQueryDto {
@@ -178,6 +418,14 @@ export class BriefQueryDto {
 
   @IsOptional()
   limit?: number;
+
+  @IsOptional()
+  @IsString()
+  sortBy?: "priority" | "fitScore" | "impactScore" | "createdAt" | "updatedAt";
+
+  @IsOptional()
+  @IsString()
+  sortOrder?: "asc" | "desc";
 }
 
 export class BriefResponseDto {
@@ -213,6 +461,44 @@ export class BriefResponseDto {
   revisionCount: number;
   createdAt: Date;
   updatedAt: Date;
+  // Fields from onboard-organization form
+  whatChanges?: string;
+  affectedCount?: string;
+  dataDescription?: string;
+  dataAccess?: string;
+  secondaryContact?: {
+    name?: string;
+    role?: string;
+    email?: string;
+    phone?: string;
+  };
+  scoringAnswers?: {
+    q1?: string;
+    q1_text?: string;
+    q2?: string;
+    q2_text?: string;
+    q3?: string;
+    q3_text?: string;
+    q4?: string;
+    q4_text?: string;
+    q5?: string;
+    q5_text?: string;
+    q6?: string;
+    q6_text?: string;
+    q7?: string;
+    q7_text?: string;
+    q8?: string;
+    q8_text?: string;
+  };
+  // Scoring results
+  fitScore?: number;
+  fitBand?: string;
+  scoreOverride?: string;
+  depthScore?: number;
+  breadthScore?: number;
+  impactScore?: number;
+  impactBand?: string;
+  priorityScore?: number;
 }
 
 export class PaginatedBriefsDto {

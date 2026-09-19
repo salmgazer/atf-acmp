@@ -150,6 +150,11 @@ export class UpdateParticipantDto {
   @IsArray()
   @IsString({ each: true })
   interests?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  profileImageUrl?: string;
 }
 
 // ============ Bulk Import DTOs ============

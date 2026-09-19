@@ -5,10 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Loader2, Mail, ArrowLeft } from "lucide-react";
+import { Loader2, Mail, ArrowLeft, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { api } from "@/lib/api/client";
 import { useAuthStore, type Portal, getDashboardPath } from "@/lib/stores/auth-store";
 import { toast } from "sonner";
@@ -35,6 +36,7 @@ export function MagicLinkForm({ portal }: MagicLinkFormProps) {
   const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [cohortBlocked, setCohortBlocked] = useState(false);
 
   const returnTo = searchParams.get("returnTo");
 
@@ -66,6 +68,7 @@ export function MagicLinkForm({ portal }: MagicLinkFormProps) {
 
   const handleVerifyCode = async (data: CodeForm) => {
     setIsLoading(true);
+    setCohortBlocked(false);
     try {
       const response = await api.post<{ user: any; accessToken: string }>("/auth/verify-code", {
         email,
@@ -79,7 +82,14 @@ export function MagicLinkForm({ portal }: MagicLinkFormProps) {
       router.push(redirectTo);
     } catch (error: any) {
       console.error("Verify code error:", error);
-      toast.error(error.message || "Invalid or expired code");
+      const message = error.message || "Invalid or expired code";
+      
+      // Check if this is a cohort access error
+      if (message.includes("COHORT_NOT_ACCESSIBLE")) {
+        setCohortBlocked(true);
+      } else {
+        toast.error(message);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -87,6 +97,15 @@ export function MagicLinkForm({ portal }: MagicLinkFormProps) {
 
   const handleBack = () => {
     setStep("email");
+    setCohortBlocked(false);
+    codeForm.reset();
+  };
+
+  const handleResetForm = () => {
+    setStep("email");
+    setCohortBlocked(false);
+    setEmail("");
+    emailForm.reset();
     codeForm.reset();
   };
 
@@ -104,6 +123,41 @@ export function MagicLinkForm({ portal }: MagicLinkFormProps) {
       setIsLoading(false);
     }
   };
+
+  if (cohortBlocked) {
+    return (
+      <div className="space-y-6">
+        <Alert variant="destructive" className="border-orange-200 bg-orange-50 text-orange-900">
+          <AlertCircle className="h-5 w-5 text-orange-600" />
+          <AlertTitle className="text-orange-900 font-semibold">Cohort No Longer Active</AlertTitle>
+          <AlertDescription className="text-orange-800 mt-2">
+            <p>Your cohort has ended and is no longer accessible.</p>
+            <p className="mt-2">
+              If you need access to your data or have any questions, please contact our support team.
+            </p>
+          </AlertDescription>
+        </Alert>
+        
+        <div className="text-center space-y-4">
+          <a
+            href="mailto:support@africantechforum.org"
+            className="inline-flex items-center justify-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+          >
+            Contact Support
+          </a>
+          <div>
+            <button
+              type="button"
+              onClick={handleResetForm}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              Try a different account
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (step === "code") {
     return (

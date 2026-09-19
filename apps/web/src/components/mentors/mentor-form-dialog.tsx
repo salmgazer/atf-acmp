@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Loader2 } from "lucide-react";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { PhoneInput } from "@/components/ui/phone-input";
 import {
   Dialog,
   DialogContent,
@@ -41,9 +42,9 @@ const mentorSchema = z.object({
   title: z.string().optional(),
   bio: z.string().optional(),
   expertise: z.string().optional(), // comma-separated
-  calendlyLink: z.string().url("Please enter a valid URL").optional().or(z.literal("")),
   linkedinUrl: z.string().url("Please enter a valid URL").optional().or(z.literal("")),
   maxTeams: z.coerce.number().min(1, "Must be at least 1").max(20, "Cannot exceed 20"),
+  sessionRateOverride: z.coerce.number().min(0).optional().nullable(),
   status: z.enum(["imported", "active", "inactive"]).optional(),
   cohortId: z.string().min(1, "Please select a cohort"),
 });
@@ -73,6 +74,7 @@ export function MentorFormDialog({
     reset,
     setValue,
     watch,
+    control,
     formState: { errors },
   } = useForm<MentorFormData>({
     resolver: zodResolver(mentorSchema),
@@ -85,9 +87,9 @@ export function MentorFormDialog({
       title: "",
       bio: "",
       expertise: "",
-      calendlyLink: "",
       linkedinUrl: "",
       maxTeams: 3,
+      sessionRateOverride: null,
       status: "imported",
       cohortId: "",
     },
@@ -104,9 +106,9 @@ export function MentorFormDialog({
         title: mentor.title || "",
         bio: mentor.bio || "",
         expertise: mentor.expertise?.join(", ") || "",
-        calendlyLink: mentor.calendlyLink || "",
         linkedinUrl: mentor.linkedinUrl || "",
         maxTeams: mentor.maxTeams,
+        sessionRateOverride: mentor.sessionRateOverride ?? null,
         status: mentor.status,
         cohortId: mentor.cohortId,
       });
@@ -122,9 +124,9 @@ export function MentorFormDialog({
         title: "",
         bio: "",
         expertise: "",
-        calendlyLink: "",
         linkedinUrl: "",
         maxTeams: 3,
+        sessionRateOverride: null,
         status: "imported",
         cohortId: activeCohort?.id || "",
       });
@@ -138,6 +140,11 @@ export function MentorFormDialog({
         ? data.expertise.split(",").map((s) => s.trim()).filter(Boolean)
         : [];
 
+      // Handle session rate - convert empty/0 to undefined (use cohort default)
+      const sessionRate = data.sessionRateOverride && data.sessionRateOverride > 0 
+        ? data.sessionRateOverride 
+        : undefined;
+
       if (isEditing) {
         await updateMutation.mutateAsync({
           id: mentor.id,
@@ -149,9 +156,9 @@ export function MentorFormDialog({
             title: data.title || undefined,
             bio: data.bio || undefined,
             expertise: expertiseArray.length > 0 ? expertiseArray : undefined,
-            calendlyLink: data.calendlyLink || undefined,
             linkedinUrl: data.linkedinUrl || undefined,
             maxTeams: data.maxTeams,
+            sessionRateOverride: sessionRate,
             status: data.status,
           },
         });
@@ -165,9 +172,9 @@ export function MentorFormDialog({
           title: data.title || undefined,
           bio: data.bio || undefined,
           expertise: expertiseArray.length > 0 ? expertiseArray : undefined,
-          calendlyLink: data.calendlyLink || undefined,
           linkedinUrl: data.linkedinUrl || undefined,
           maxTeams: data.maxTeams,
+          sessionRateOverride: sessionRate,
           cohortId: data.cohortId,
         });
       }
@@ -251,11 +258,17 @@ export function MentorFormDialog({
 
             <div className="space-y-2">
               <Label htmlFor="phone">Phone</Label>
-              <Input
-                id="phone"
-                placeholder="+233 XX XXX XXXX"
-                {...register("phone")}
-                disabled={isPending}
+              <Controller
+                name="phone"
+                control={control}
+                render={({ field }) => (
+                  <PhoneInput
+                    id="phone"
+                    value={field.value || ""}
+                    onChange={field.onChange}
+                    disabled={isPending}
+                  />
+                )}
               />
             </div>
           </div>
@@ -334,6 +347,24 @@ export function MentorFormDialog({
             </div>
           </div>
 
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="sessionRateOverride">Session Rate Override ($)</Label>
+              <Input
+                id="sessionRateOverride"
+                type="number"
+                min={0}
+                step="0.01"
+                placeholder="Use cohort default"
+                {...register("sessionRateOverride")}
+                disabled={isPending}
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave empty to use cohort default rate
+              </p>
+            </div>
+          </div>
+
           {isEditing && (
             <div className="space-y-2">
               <Label htmlFor="status">Status</Label>
@@ -367,34 +398,18 @@ export function MentorFormDialog({
             </p>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="calendlyLink">Calendly Link</Label>
-              <Input
-                id="calendlyLink"
-                type="url"
-                placeholder="https://calendly.com/johndoe"
-                {...register("calendlyLink")}
-                disabled={isPending}
-              />
-              {errors.calendlyLink && (
-                <p className="text-sm text-destructive">{errors.calendlyLink.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="linkedinUrl">LinkedIn URL</Label>
-              <Input
-                id="linkedinUrl"
-                type="url"
-                placeholder="https://linkedin.com/in/johndoe"
-                {...register("linkedinUrl")}
-                disabled={isPending}
-              />
-              {errors.linkedinUrl && (
-                <p className="text-sm text-destructive">{errors.linkedinUrl.message}</p>
-              )}
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="linkedinUrl">LinkedIn URL</Label>
+            <Input
+              id="linkedinUrl"
+              type="url"
+              placeholder="https://linkedin.com/in/johndoe"
+              {...register("linkedinUrl")}
+              disabled={isPending}
+            />
+            {errors.linkedinUrl && (
+              <p className="text-sm text-destructive">{errors.linkedinUrl.message}</p>
+            )}
           </div>
 
           <div className="space-y-2">

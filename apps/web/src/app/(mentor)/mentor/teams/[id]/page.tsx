@@ -28,8 +28,10 @@ import {
 import {
   useMyMentorTeams,
   useMyMentorSessions,
+  useMyScheduledSessions,
   useLogMentorSession,
   type CreateSessionDto,
+  type ScheduledSession,
 } from "@/lib/api/hooks/use-mentors";
 import {
   ArrowLeft,
@@ -74,9 +76,19 @@ function TeamDetailContent({ id }: { id: string }) {
 
   const { data: teams, isLoading } = useMyMentorTeams();
   const { data: sessions, isLoading: sessionsLoading } = useMyMentorSessions(id);
+  const { data: scheduledSessions, isLoading: scheduledLoading } = useMyScheduledSessions(id);
   const logSessionMutation = useLogMentorSession();
 
   const team = teams?.find((t: any) => t.id === id);
+
+  // Separate upcoming and past scheduled sessions
+  const now = new Date();
+  const upcomingSessions = scheduledSessions?.filter(
+    (s) => (s.status === "scheduled" || s.status === "confirmed") && new Date(s.scheduledAt) >= now
+  ) || [];
+  const pastScheduledSessions = scheduledSessions?.filter(
+    (s) => s.status === "completed" || (s.status !== "cancelled" && new Date(s.scheduledAt) < now)
+  ) || [];
 
   const handleLogSession = async () => {
     if (!sessionForm.sessionDate || !sessionForm.durationMinutes) {
@@ -451,12 +463,71 @@ function TeamDetailContent({ id }: { id: string }) {
           </div>
         </div>
 
-        {/* Session History */}
+        {/* Upcoming Sessions */}
         <div className="rounded-lg border bg-card">
           <div className="p-4 border-b">
             <h2 className="font-semibold flex items-center gap-2">
               <Calendar className="h-4 w-4" />
-              Session History ({sessions?.length || 0})
+              Upcoming Sessions ({upcomingSessions.length})
+            </h2>
+          </div>
+          {scheduledLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : upcomingSessions.length === 0 ? (
+            <div className="p-6 text-center">
+              <Calendar className="mx-auto h-10 w-10 text-muted-foreground/50" />
+              <p className="mt-2 text-sm text-muted-foreground">
+                No upcoming sessions scheduled
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y">
+              {upcomingSessions.map((session) => (
+                <div key={session.id} className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge 
+                        variant={session.status === "confirmed" ? "default" : "outline"} 
+                        className="text-xs"
+                      >
+                        {session.status === "confirmed" ? "Confirmed" : "Pending"}
+                      </Badge>
+                      <span className="text-sm font-medium">
+                        Session {session.sessionNumber}
+                      </span>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {format(new Date(session.scheduledAt), "MMM d, yyyy 'at' h:mm a")}
+                    </div>
+                  </div>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    <span className="font-medium">Question:</span> {session.question}
+                  </p>
+                  {session.googleMeetLink && (
+                    <a
+                      href={session.googleMeetLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Join Google Meet
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Session History */}
+        <div className="rounded-lg border bg-card">
+          <div className="p-4 border-b">
+            <h2 className="font-semibold flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              Logged Sessions ({sessions?.length || 0})
             </h2>
           </div>
           {sessionsLoading ? (
@@ -465,7 +536,7 @@ function TeamDetailContent({ id }: { id: string }) {
             </div>
           ) : sessions?.length === 0 ? (
             <div className="p-6 text-center">
-              <Calendar className="mx-auto h-10 w-10 text-muted-foreground/50" />
+              <Clock className="mx-auto h-10 w-10 text-muted-foreground/50" />
               <p className="mt-2 text-sm text-muted-foreground">
                 No sessions logged yet
               </p>

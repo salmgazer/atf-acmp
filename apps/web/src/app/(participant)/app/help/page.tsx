@@ -1,17 +1,13 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ParticipantLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -22,37 +18,11 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   HelpCircle,
   MessageSquare,
-  Mail,
-  FileText,
-  Users,
-  Calendar,
-  Trophy,
   ArrowLeft,
-  Send,
-  Loader2,
-  ExternalLink,
-  BookOpen,
-  Video,
-  CheckCircle,
+  ChevronRight,
 } from "lucide-react";
-import { toast } from "sonner";
 
 // FAQ data
 const FAQ_ITEMS = [
@@ -126,58 +96,8 @@ const FAQ_ITEMS = [
   },
 ];
 
-// Quick links
-const QUICK_LINKS = [
-  {
-    icon: BookOpen,
-    title: "Participant Guide",
-    description: "Complete guide for participants",
-    href: "#",
-  },
-  {
-    icon: Video,
-    title: "Video Tutorials",
-    description: "Step-by-step video guides",
-    href: "#",
-  },
-  {
-    icon: Calendar,
-    title: "Challenge Timeline",
-    description: "Key dates and deadlines",
-    href: "/app/dashboard",
-  },
-  {
-    icon: Trophy,
-    title: "Leaderboard",
-    description: "View current rankings",
-    href: "/app/leaderboard",
-  },
-];
-
 function HelpContent() {
-  const [showContactDialog, setShowContactDialog] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [contactForm, setContactForm] = useState({
-    category: "",
-    subject: "",
-    message: "",
-  });
-
-  const handleSubmitContact = async () => {
-    if (!contactForm.category || !contactForm.subject || !contactForm.message) {
-      toast.error("Please fill in all fields");
-      return;
-    }
-
-    setIsSubmitting(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    toast.success("Your message has been sent. We'll respond within 24-48 hours.");
-    setShowContactDialog(false);
-    setContactForm({ category: "", subject: "", message: "" });
-    setIsSubmitting(false);
-  };
+  const router = useRouter();
 
   return (
     <div className="space-y-6 pb-20">
@@ -204,41 +124,18 @@ function HelpContent() {
             <div className="flex-1">
               <h3 className="font-semibold">Need more help?</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Can't find what you're looking for? Contact our support team.
+                Can't find what you're looking for? Ask in the Technical Help chat.
               </p>
               <Button
                 className="mt-3"
                 size="sm"
-                onClick={() => setShowContactDialog(true)}
+                onClick={() => router.push("/app/chat?channel=technical-help")}
               >
-                <Mail className="h-4 w-4 mr-2" />
-                Contact Support
+                <HelpCircle className="h-4 w-4 mr-2" />
+                Get Technical Help
+                <ChevronRight className="h-4 w-4 ml-1" />
               </Button>
             </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Quick Links */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Quick Links</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-3">
-            {QUICK_LINKS.map((link) => (
-              <Link
-                key={link.title}
-                href={link.href}
-                className="flex items-start gap-3 p-3 rounded-lg border hover:bg-muted transition-colors"
-              >
-                <link.icon className="h-5 w-5 text-primary mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium">{link.title}</p>
-                  <p className="text-xs text-muted-foreground">{link.description}</p>
-                </div>
-              </Link>
-            ))}
           </div>
         </CardContent>
       </Card>
@@ -273,113 +170,6 @@ function HelpContent() {
           ))}
         </CardContent>
       </Card>
-
-      {/* Contact Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Contact Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-3">
-            <Mail className="h-4 w-4 text-muted-foreground" />
-            <div>
-              <p className="text-sm font-medium">Email Support</p>
-              <a
-                href="mailto:support@atfchallenge.org"
-                className="text-sm text-primary hover:underline"
-              >
-                support@atfchallenge.org
-              </a>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-            <div>
-              <p className="text-sm font-medium">Response Time</p>
-              <p className="text-sm text-muted-foreground">
-                We typically respond within 24-48 hours
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Contact Support Dialog */}
-      <Dialog open={showContactDialog} onOpenChange={setShowContactDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Contact Support</DialogTitle>
-            <DialogDescription>
-              Send us a message and we'll get back to you as soon as possible.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="category">Category</Label>
-              <Select
-                value={contactForm.category}
-                onValueChange={(value) =>
-                  setContactForm((prev) => ({ ...prev, category: value }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="account">Account & Login</SelectItem>
-                  <SelectItem value="team">Teams & Collaboration</SelectItem>
-                  <SelectItem value="submission">Submissions</SelectItem>
-                  <SelectItem value="technical">Technical Issues</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="subject">Subject</Label>
-              <Input
-                id="subject"
-                placeholder="Brief description of your issue"
-                value={contactForm.subject}
-                onChange={(e) =>
-                  setContactForm((prev) => ({ ...prev, subject: e.target.value }))
-                }
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="message">Message</Label>
-              <Textarea
-                id="message"
-                placeholder="Describe your issue in detail..."
-                rows={4}
-                value={contactForm.message}
-                onChange={(e) =>
-                  setContactForm((prev) => ({ ...prev, message: e.target.value }))
-                }
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowContactDialog(false)}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleSubmitContact} disabled={isSubmitting}>
-              {isSubmitting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="mr-2 h-4 w-4" />
-              )}
-              Send Message
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

@@ -17,6 +17,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
+  ApiQuery,
 } from "@nestjs/swagger";
 import { ChatService } from "./chat.service";
 import { ChatGateway } from "./chat.gateway";
@@ -84,10 +85,14 @@ export class ChannelsController {
 
   @Get("my")
   @ApiOperation({ summary: "Get current user's channels" })
-  async getMyChannels(@CurrentUser() user: any) {
+  @ApiQuery({ name: "cohortId", required: false, description: "Filter by cohort ID" })
+  async getMyChannels(
+    @CurrentUser() user: any,
+    @Query("cohortId") cohortId?: string
+  ) {
     const senderType = getSenderType(user.role);
     const memberId = await this.getEffectiveMemberId(user, senderType);
-    return this.chatService.getUserChannelsWithUnread(memberId, senderType);
+    return this.chatService.getUserChannelsWithUnread(memberId, senderType, cohortId);
   }
 
   @Get(":id")

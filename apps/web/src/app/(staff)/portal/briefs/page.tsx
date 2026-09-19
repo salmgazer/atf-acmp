@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { StaffLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -9,8 +9,17 @@ import {
   useBriefStatistics,
   type Brief,
   type BriefStatus,
+  type BriefQueryParams,
 } from "@/lib/api/hooks/use-briefs";
-import { useActiveCohort } from "@/lib/api/hooks/use-cohorts";
+import { useCohorts } from "@/lib/api/hooks/use-cohorts";
+import { useStaffCohortStore } from "@/lib/stores/staff-cohort-store";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Search,
   FileText,
@@ -24,6 +33,10 @@ import {
   SlidersHorizontal,
   X,
   Video,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  TrendingUp,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 
@@ -46,10 +59,28 @@ const statusTabs: { value: BriefStatus | "all" | "pending"; label: string }[] = 
   { value: "revision_requested", label: "Revision Requested" },
 ];
 
+// Priority score badge styling based on score range
+function getPriorityBadgeStyle(score?: number | null): { bgClass: string; textClass: string; label: string } {
+  if (score === undefined || score === null) {
+    return { bgClass: "bg-muted", textClass: "text-muted-foreground", label: "—" };
+  }
+  if (score >= 140) {
+    return { bgClass: "bg-emerald-500/15", textClass: "text-emerald-600", label: String(score) };
+  }
+  if (score >= 100) {
+    return { bgClass: "bg-blue-500/15", textClass: "text-blue-600", label: String(score) };
+  }
+  if (score >= 50) {
+    return { bgClass: "bg-amber-500/15", textClass: "text-amber-600", label: String(score) };
+  }
+  return { bgClass: "bg-red-500/15", textClass: "text-red-600", label: String(score) };
+}
+
 function BriefRow({ brief }: { brief: Brief }) {
   const config = statusConfig[brief.status];
   const StatusIcon = config.icon;
   const isReviewable = ["submitted", "in_review"].includes(brief.status);
+  const priorityStyle = getPriorityBadgeStyle(brief.priorityScore);
 
   return (
     <tr className="border-b border-border/50 hover:bg-muted transition-colors">
@@ -64,7 +95,7 @@ function BriefRow({ brief }: { brief: Brief }) {
                 {brief.title}
               </Link>
               {brief.videoUrl && (
-                <Video className="h-4 w-4 shrink-0 text-primary" title="Has video pitch" />
+                <Video className="h-4 w-4 shrink-0 text-primary" aria-label="Has video pitch" />
               )}
             </div>
             <p className="mt-1 text-sm text-muted-foreground line-clamp-1">
@@ -87,6 +118,12 @@ function BriefRow({ brief }: { brief: Brief }) {
         ) : (
           <span className="text-sm text-muted-foreground">—</span>
         )}
+      </td>
+      <td className="p-4">
+        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${priorityStyle.bgClass} ${priorityStyle.textClass}`}>
+          <TrendingUp className="h-3 w-3" />
+          {priorityStyle.label}
+        </span>
       </td>
       <td className="p-4">
         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${config.bgClass} ${config.textClass}`}>
@@ -113,22 +150,48 @@ function BriefRow({ brief }: { brief: Brief }) {
 }
 
 function BriefsReviewContent() {
-  const { data: activeCohort } = useActiveCohort();
+  // Get global cohort from store (set by sidebar)
+  const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
+  
+  // Local cohort filter - initialized from global but can be overridden
+  const [selectedCohortId, setSelectedCohortId] = useState<string | null>(null);
+  const [hasInitialized, setHasInitialized] = useState(false);
   const [statusFilter, setStatusFilter] = useState<BriefStatus | "all" | "pending">("all");
   const [search, setSearch] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+  const [sortBy, setSortBy] = useState<BriefQueryParams["sortBy"]>("createdAt");
+  const [sortOrder, setSortOrder] = useState<BriefQueryParams["sortOrder"]>("desc");
+
+  const { data: cohortsData } = useCohorts({ limit: 100 });
+  const cohorts = cohortsData?.data || [];
+
+  // Initialize local cohort from global when component mounts (if not yet set locally)
+  useEffect(() => {
+    if (globalCohortId && !hasInitialized) {
+      setSelectedCohortId(null); // null means "use global"
+      setHasInitialized(true);
+    }
+  }, [globalCohortId, hasInitialized]);
+
+  // Use local cohort if explicitly set, otherwise fall back to global
+  const effectiveCohortId = selectedCohortId ?? globalCohortId ?? undefined;
+  
+  // Find the selected cohort name for display
+  const selectedCohort = cohorts.find(c => c.id === effectiveCohortId);
 
   const apiStatus = statusFilter === "all" ? undefined : 
                     statusFilter === "pending" ? undefined : statusFilter;
   
   const { data: briefsData, isLoading } = useBriefs({
-    cohortId: activeCohort?.id,
+    cohortId: effectiveCohortId,
     status: apiStatus,
     search: search || undefined,
     limit: 100,
+    sortBy,
+    sortOrder,
   });
   
-  const { data: stats } = useBriefStatistics(activeCohort?.id);
+  const { data: stats } = useBriefStatistics(effectiveCohortId);
 
   let briefs = briefsData?.data || [];
   if (statusFilter === "pending") {
@@ -136,7 +199,27 @@ function BriefsReviewContent() {
   }
 
   const pendingCount = (stats?.submitted || 0) + (stats?.inReview || 0);
-  const hasActiveFilters = statusFilter !== "all";
+  const hasActiveFilters = statusFilter !== "all" || (selectedCohortId !== null && selectedCohortId !== globalCohortId);
+
+  // Toggle sort order or change sort field
+  const handleSort = (field: BriefQueryParams["sortBy"]) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === "desc" ? "asc" : "desc");
+    } else {
+      setSortBy(field);
+      setSortOrder("desc");
+    }
+  };
+
+  // Get sort icon for a column
+  const getSortIcon = (field: BriefQueryParams["sortBy"]) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="h-3 w-3 ml-1 opacity-50" />;
+    }
+    return sortOrder === "desc" 
+      ? <ArrowDown className="h-3 w-3 ml-1" />
+      : <ArrowUp className="h-3 w-3 ml-1" />;
+  };
 
   return (
     <StaffLayout>
@@ -146,7 +229,7 @@ function BriefsReviewContent() {
           <h1 className="text-2xl font-semibold text-foreground">Brief Review Queue</h1>
           <p className="text-sm text-muted-foreground">
             Review and manage organization brief submissions
-            {activeCohort && ` for ${activeCohort.name}`}
+            {selectedCohort && ` for ${selectedCohort.name}`}
           </p>
         </div>
 
@@ -214,31 +297,56 @@ function BriefsReviewContent() {
 
         {/* Collapsible Filter Row */}
         {showFilters && (
-          <div className="flex items-center gap-4 p-4 rounded-xl bg-muted border border-border/50">
-            <span className="text-sm font-medium text-muted-foreground">Status:</span>
-            <div className="flex flex-wrap gap-2">
-              {statusTabs.map((tab) => (
-                <button
-                  key={tab.value}
-                  onClick={() => setStatusFilter(tab.value)}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                    statusFilter === tab.value
-                      ? "bg-zinc-900 text-white"
-                      : "bg-card text-muted-foreground border border-border hover:bg-muted"
-                  }`}
-                >
-                  {tab.label}
-                  {tab.value === "pending" && pendingCount > 0 && (
-                    <span className="ml-1.5 px-1.5 py-0.5 text-xs rounded-full bg-card/20">
-                      {pendingCount}
-                    </span>
-                  )}
-                </button>
-              ))}
+          <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl bg-muted border border-border/50">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">Status:</span>
+              <div className="flex flex-wrap gap-2">
+                {statusTabs.map((tab) => (
+                  <button
+                    key={tab.value}
+                    onClick={() => setStatusFilter(tab.value)}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                      statusFilter === tab.value
+                        ? "bg-zinc-900 text-white"
+                        : "bg-card text-muted-foreground border border-border hover:bg-muted"
+                    }`}
+                  >
+                    {tab.label}
+                    {tab.value === "pending" && pendingCount > 0 && (
+                      <span className="ml-1.5 px-1.5 py-0.5 text-xs rounded-full bg-card/20">
+                        {pendingCount}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
+            
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">Cohort:</span>
+              <Select 
+                value={selectedCohortId ?? globalCohortId ?? ""} 
+                onValueChange={(v) => setSelectedCohortId(v || null)}
+              >
+                <SelectTrigger className="w-48 h-9">
+                  <SelectValue placeholder="Select cohort" />
+                </SelectTrigger>
+                <SelectContent>
+                  {cohorts.map((cohort) => (
+                    <SelectItem key={cohort.id} value={cohort.id}>
+                      {cohort.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
             {hasActiveFilters && (
               <button
-                onClick={() => setStatusFilter("all")}
+                onClick={() => {
+                  setStatusFilter("all");
+                  setSelectedCohortId(null);
+                }}
                 className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
               >
                 <X className="h-3 w-3" />
@@ -273,8 +381,25 @@ function BriefsReviewContent() {
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Brief</th>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Organization</th>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Vertical</th>
+                  <th 
+                    className="text-left p-4 text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
+                    onClick={() => handleSort("priority")}
+                  >
+                    <span className="inline-flex items-center">
+                      Priority
+                      {getSortIcon("priority")}
+                    </span>
+                  </th>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Status</th>
-                  <th className="text-left p-4 text-sm font-medium text-muted-foreground">Date</th>
+                  <th 
+                    className="text-left p-4 text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
+                    onClick={() => handleSort("createdAt")}
+                  >
+                    <span className="inline-flex items-center">
+                      Date
+                      {getSortIcon("createdAt")}
+                    </span>
+                  </th>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Action</th>
                 </tr>
               </thead>

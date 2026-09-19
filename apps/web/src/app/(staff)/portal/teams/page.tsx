@@ -1,16 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { StaffLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import {
   useTeams,
   useTeamStatistics,
+  useAdminRemovalRequests,
   type Team,
   type TeamStatus,
 } from "@/lib/api/hooks/use-teams";
 import { useCohorts } from "@/lib/api/hooks/use-cohorts";
+import { useStaffCohortStore } from "@/lib/stores/staff-cohort-store";
 import {
   Search,
   Users,
@@ -23,6 +25,7 @@ import {
   Loader2,
   SlidersHorizontal,
   X,
+  UserMinus,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -109,30 +112,47 @@ function TeamRow({ team }: { team: Team }) {
 function TeamsContent() {
   const [statusFilter, setStatusFilter] = useState<TeamStatus | "all">("all");
   const [search, setSearch] = useState("");
-  const [selectedCohortId, setSelectedCohortId] = useState<string>("");
+  const [selectedCohortId, setSelectedCohortId] = useState<string | null>(null);
+  const [hasInitialized, setHasInitialized] = useState(false);
   const [briefFilter, setBriefFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
 
+  // Get global cohort from store (set by sidebar)
+  const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
+  
   const { data: cohortsData } = useCohorts({ limit: 100 });
   const cohorts = cohortsData?.data || [];
+
+  // Initialize local cohort from global when component mounts (if not yet set locally)
+  useEffect(() => {
+    if (globalCohortId && !hasInitialized) {
+      setSelectedCohortId(null); // null means "use global"
+      setHasInitialized(true);
+    }
+  }, [globalCohortId, hasInitialized]);
+
+  // Use local cohort if explicitly set, otherwise fall back to global
+  const effectiveCohortId = selectedCohortId ?? globalCohortId ?? undefined;
 
   const { data: teamsData, isLoading } = useTeams({
     status: statusFilter === "all" ? undefined : statusFilter,
     search: search || undefined,
-    cohortId: selectedCohortId || undefined,
+    cohortId: effectiveCohortId,
     hasbrief: briefFilter === "all" ? undefined : briefFilter === "with",
     page,
     limit: 20,
   });
-  const { data: stats } = useTeamStatistics(selectedCohortId || undefined);
+  const { data: stats } = useTeamStatistics(effectiveCohortId);
+  const { data: removalRequests } = useAdminRemovalRequests(effectiveCohortId);
 
   const teams = teamsData?.data || [];
   const totalPages = teamsData?.totalPages || 1;
+  const pendingRemovalCount = removalRequests?.length || 0;
 
   const activeFilterCount = [
     statusFilter !== "all",
-    selectedCohortId !== "",
+    selectedCohortId !== null && selectedCohortId !== globalCohortId,
     briefFilter !== "all",
   ].filter(Boolean).length;
 
@@ -140,7 +160,7 @@ function TeamsContent() {
 
   const clearFilters = () => {
     setStatusFilter("all");
-    setSelectedCohortId("");
+    setSelectedCohortId(null);
     setBriefFilter("all");
     setPage(1);
   };
@@ -185,6 +205,31 @@ function TeamsContent() {
             <div className="mt-1 text-2xl font-semibold text-foreground">{stats?.averageMembers || 0}</div>
           </div>
         </div>
+
+        {/* Pending Removal Requests Alert */}
+        {pendingRemovalCount > 0 && (
+          <Link
+            href="/portal/teams/removal-requests"
+            className="flex items-center justify-between p-4 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/50">
+                <UserMinus className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div>
+                <p className="font-medium text-amber-900 dark:text-amber-100">
+                  {pendingRemovalCount} pending removal request{pendingRemovalCount !== 1 ? "s" : ""}
+                </p>
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  Team leads are waiting for your review
+                </p>
+              </div>
+            </div>
+            <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
+              Review requests →
+            </span>
+          </Link>
+        )}
 
         {/* Search and Filter Toggle */}
         <div className="flex items-center gap-3">
@@ -246,14 +291,13 @@ function TeamsContent() {
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-muted-foreground">Cohort:</span>
               <select
-                value={selectedCohortId || "all"}
+                value={selectedCohortId ?? globalCohortId ?? ""}
                 onChange={(e) => {
-                  setSelectedCohortId(e.target.value === "all" ? "" : e.target.value);
+                  setSelectedCohortId(e.target.value || null);
                   setPage(1);
                 }}
                 className="h-9 px-3 text-sm bg-card border border-border rounded-lg focus:outline-none focus:border-zinc-400"
               >
-                <option value="all">All Cohorts</option>
                 {cohorts.map((cohort) => (
                   <option key={cohort.id} value={cohort.id}>
                     {cohort.name}

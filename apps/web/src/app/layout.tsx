@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { Montserrat } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
@@ -46,8 +47,35 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const oneSignalAppId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
+
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {oneSignalAppId && (
+          <>
+            <Script
+              src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js"
+              strategy="afterInteractive"
+            />
+            <Script id="onesignal-init" strategy="afterInteractive">
+              {`
+                window.OneSignalDeferred = window.OneSignalDeferred || [];
+                OneSignalDeferred.push(async function(OneSignal) {
+                  try {
+                    await OneSignal.init({
+                      appId: "${oneSignalAppId}",
+                      allowLocalhostAsSecureOrigin: ${process.env.NODE_ENV === "development"},
+                    });
+                  } catch (error) {
+                    console.debug("OneSignal initialization failed (this is normal if using an ad blocker):", error.message);
+                  }
+                });
+              `}
+            </Script>
+          </>
+        )}
+      </head>
       <body className={`${montserrat.variable} font-sans antialiased`}>
         <Providers>{children}</Providers>
       </body>

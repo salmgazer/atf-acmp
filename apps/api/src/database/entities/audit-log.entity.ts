@@ -13,6 +13,8 @@ export enum AuditAction {
   ASSIGNMENT = "assignment",
   BULK_IMPORT = "bulk_import",
   BULK_ACTION = "bulk_action",
+  APPROVAL = "approval",
+  REJECTION = "rejection",
 }
 
 @Entity("audit_logs")

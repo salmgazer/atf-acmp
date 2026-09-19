@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { apiClient } from "@/lib/api/client";
+import { refreshAccessToken } from "@/lib/auth";
 import {
   useAuthStore,
   getPortalFromRole,
@@ -66,9 +67,25 @@ export function AuthProvider({ children }: AuthProviderProps) {
             setLoading(false);
             return;
           }
-        } catch (error) {
-          // Token is invalid, clear it
-          console.error("Token verification failed:", error);
+        } catch (error: any) {
+          // Token verification failed - try to refresh the token
+          if (error?.response?.status === 401 || error?.message?.includes("401")) {
+            console.log("[AuthProvider] Access token expired, attempting refresh...");
+            
+            try {
+              const newToken = await refreshAccessToken();
+              if (newToken) {
+                console.log("[AuthProvider] Token refreshed successfully");
+                setLoading(false);
+                return;
+              }
+            } catch (refreshError) {
+              console.error("[AuthProvider] Token refresh failed:", refreshError);
+            }
+          }
+          
+          // Both token verification and refresh failed - logout
+          console.error("[AuthProvider] Authentication failed, logging out");
           logout();
         }
       }

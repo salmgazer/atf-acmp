@@ -15,7 +15,7 @@ import {
 } from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { MentorStatus } from "@/database/entities/mentor.entity";
+import { MentorStatus, MentorPaymentStatus } from "@/database/entities/mentor.entity";
 
 // ============ Mentor DTOs ============
 
@@ -68,11 +68,6 @@ export class CreateMentorDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  calendlyLink?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   linkedinUrl?: string;
 
   @ApiPropertyOptional()
@@ -81,6 +76,12 @@ export class CreateMentorDto {
   @Min(1)
   @Max(10)
   maxTeams?: number;
+
+  @ApiPropertyOptional({ description: "Override session rate for this mentor (null = use cohort default)" })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  sessionRateOverride?: number;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -138,11 +139,6 @@ export class UpdateMentorDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  calendlyLink?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
   linkedinUrl?: string;
 
   @ApiPropertyOptional()
@@ -151,6 +147,12 @@ export class UpdateMentorDto {
   @Min(1)
   @Max(10)
   maxTeams?: number;
+
+  @ApiPropertyOptional({ description: "Override session rate for this mentor (null = use cohort default)" })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  sessionRateOverride?: number | null;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -416,4 +418,164 @@ export class MentorCapacityDto {
   availableSlots: number;
   verticalScope: string[];
   status: MentorStatus;
+}
+
+
+// ============ Payment DTOs ============
+
+export class CreateMentorPaymentDto {
+  @ApiProperty()
+  @IsUUID()
+  mentorId: string;
+
+  @ApiProperty({ description: "Total payment amount" })
+  @IsNumber()
+  @Min(0)
+  amount: number;
+
+  @ApiPropertyOptional({ description: "Number of sessions this payment covers" })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  sessionsCount?: number;
+
+  @ApiPropertyOptional({ description: "IDs of ScheduledSessions included in this payment" })
+  @IsOptional()
+  @IsArray()
+  @IsUUID("4", { each: true })
+  sessionIds?: string[];
+
+  @ApiPropertyOptional({ description: "Start of payment period (YYYY-MM-DD)" })
+  @IsOptional()
+  @IsDateString()
+  periodStart?: string;
+
+  @ApiPropertyOptional({ description: "End of payment period (YYYY-MM-DD)" })
+  @IsOptional()
+  @IsDateString()
+  periodEnd?: string;
+
+  @ApiPropertyOptional({ description: "External payment reference (e.g., bank transfer ID)" })
+  @IsOptional()
+  @IsString()
+  paymentReference?: string;
+
+  @ApiPropertyOptional({ description: "Payment method (bank_transfer, mobile_money, etc.)" })
+  @IsOptional()
+  @IsString()
+  paymentMethod?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+export class UpdateMentorPaymentDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsEnum(MentorPaymentStatus)
+  status?: MentorPaymentStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  paidAt?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  paymentReference?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  paymentMethod?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+export class MentorPaymentQueryDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  mentorId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  cohortId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsEnum(MentorPaymentStatus)
+  status?: MentorPaymentStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  startDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  page?: number = 1;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  limit?: number = 20;
+}
+
+export class MentorEarningsDto {
+  mentorId: string;
+  mentorName: string;
+  email: string;
+  sessionRate: number; // Effective rate (mentor override or cohort default)
+  confirmedSessions: number; // Completed sessions count
+  completedSessions: number; // Same as confirmed for payment purposes
+  totalEarned: number; // Total earnings from all completed sessions
+  totalPaid: number; // Total amount already paid
+  unpaidAmount: number; // Amount still owed (totalEarned - totalPaid)
+  currentMonthEarned: number; // Earnings for current month
+  currentMonthPaid: number; // Payments made this month
+  currentMonthUnpaid: number; // Unpaid for current month
+}
+
+export class MentorEarningsSummaryDto {
+  totalMentors: number;
+  totalCompletedSessions: number;
+  totalEarnings: number;
+  totalPaid: number;
+  totalUnpaid: number;
+  currentMonthEarnings: number;
+  currentMonthPaid: number;
+  currentMonthUnpaid: number;
+}
+
+export class MentorPaymentRecordDto {
+  id: string;
+  mentorId: string;
+  mentorName: string;
+  amount: number;
+  status: MentorPaymentStatus;
+  sessionsCount: number;
+  periodStart?: string;
+  periodEnd?: string;
+  paidAt?: Date;
+  paidBy?: string;
+  paymentReference?: string;
+  paymentMethod?: string;
+  notes?: string;
+  createdAt: Date;
 }

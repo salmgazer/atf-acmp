@@ -257,7 +257,7 @@ function DashboardContent() {
         )}
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           {hasTeam ? (
             <Link
               href="/app/team"
@@ -281,27 +281,52 @@ function DashboardContent() {
               <div className="text-xs text-muted-foreground">Join or create a team</div>
             </Link>
           )}
-          <Link
-            href="/app/briefs"
-            className="rounded-lg border bg-card p-4 text-left transition-colors hover:bg-accent"
-          >
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-              <FileText className="h-5 w-5 text-primary" />
-            </div>
-            <div className="mt-3 font-medium">View Briefs</div>
-            <div className="text-xs text-muted-foreground">Browse challenges</div>
-          </Link>
+          {hasBrief && team?.brief ? (
+            <Link
+              href={`/app/briefs/${team.briefId}`}
+              className="rounded-lg border bg-card p-4 text-left transition-colors hover:bg-accent"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100 dark:bg-green-900/30">
+                <FileText className="h-5 w-5 text-green-600 dark:text-green-400" />
+              </div>
+              <div className="mt-3 font-medium">Our Brief</div>
+              <div className="text-xs text-muted-foreground line-clamp-1">{team.brief.title}</div>
+              {team.brief.organization?.name && (
+                <div className="text-xs text-muted-foreground/70 line-clamp-1">{team.brief.organization.name}</div>
+              )}
+            </Link>
+          ) : (
+            <Link
+              href="/app/briefs"
+              className="rounded-lg border bg-card p-4 text-left transition-colors hover:bg-accent"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                <FileText className="h-5 w-5 text-primary" />
+              </div>
+              <div className="mt-3 font-medium">View Briefs</div>
+              <div className="text-xs text-muted-foreground">Browse challenges</div>
+            </Link>
+          )}
         </div>
 
         {/* Active Stages (only show when in challenge phase) */}
         {hasBrief && activeStages.length > 0 && (
           <div className="rounded-lg border bg-card p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <AlertCircle className="h-4 w-4 text-primary" />
-              <h2 className="font-semibold">Active Stages</h2>
-              <span className="text-xs text-muted-foreground">
-                ({activeStages.length} open)
-              </span>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-primary" />
+                <h2 className="font-semibold">Active Stages</h2>
+                <span className="text-xs text-muted-foreground">
+                  ({activeStages.length} open)
+                </span>
+              </div>
+              <Link 
+                href="/app/submissions" 
+                className="text-xs text-primary hover:underline flex items-center gap-1"
+              >
+                View All
+                <ChevronRight className="h-3 w-3" />
+              </Link>
             </div>
             <div className="space-y-3">
               {activeStages.map((stage) => (
@@ -333,59 +358,6 @@ function DashboardContent() {
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </div>
                 </Link>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* All Stages Overview (when in challenge phase) */}
-        {hasBrief && stagesWithStatus.length > 0 && (
-          <div className="rounded-lg border bg-card p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <h2 className="font-semibold">Challenge Stages</h2>
-            </div>
-            <div className="space-y-2">
-              {stagesWithStatus.map((stage) => (
-                <div 
-                  key={stage.id}
-                  className={`flex items-center justify-between p-2 rounded-lg ${
-                    stage.status === "open" 
-                      ? "bg-primary/5" 
-                      : stage.status === "closed"
-                      ? "bg-muted/50"
-                      : "bg-background"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <div className={`flex h-6 w-6 items-center justify-center rounded text-xs font-medium ${
-                      stage.status === "open"
-                        ? "bg-primary text-primary-foreground"
-                        : stage.status === "closed"
-                        ? "bg-green-600 text-white"
-                        : "bg-muted text-muted-foreground"
-                    }`}>
-                      {stage.status === "closed" ? "✓" : stage.number}
-                    </div>
-                    <span className={`text-sm ${stage.status === "closed" ? "text-muted-foreground" : ""}`}>
-                      {stage.name}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`text-xs ${
-                      stage.status === "open" && stage.daysRemaining !== null && stage.daysRemaining <= 3
-                        ? "text-red-600 dark:text-red-400 font-medium"
-                        : "text-muted-foreground"
-                    }`}>
-                      {stage.status === "upcoming" 
-                        ? `Opens ${format(new Date(stage.startDate!), "MMM d")}`
-                        : stage.status === "closed"
-                        ? "Closed"
-                        : formatDeadline(stage.deadline)
-                      }
-                    </span>
-                  </div>
-                </div>
               ))}
             </div>
           </div>

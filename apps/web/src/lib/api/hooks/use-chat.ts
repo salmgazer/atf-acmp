@@ -80,7 +80,7 @@ export interface SendMessageDto {
 // Query keys
 const chatKeys = {
   all: ["chat"] as const,
-  channels: () => [...chatKeys.all, "channels"] as const,
+  channels: (cohortId?: string) => [...chatKeys.all, "channels", cohortId] as const,
   channel: (id: string) => [...chatKeys.all, "channel", id] as const,
   messages: (channelId: string) => [...chatKeys.all, "messages", channelId] as const,
   members: (channelId: string) => [...chatKeys.all, "members", channelId] as const,
@@ -88,10 +88,15 @@ const chatKeys = {
 
 // ============ REST API Hooks ============
 
-export function useMyChannels() {
+export function useMyChannels(cohortId?: string) {
   return useQuery({
-    queryKey: chatKeys.channels(),
-    queryFn: () => api.get<ChannelWithUnread[]>("/chat/channels/my"),
+    queryKey: chatKeys.channels(cohortId),
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (cohortId) params.set("cohortId", cohortId);
+      const queryString = params.toString();
+      return api.get<ChannelWithUnread[]>(`/chat/channels/my${queryString ? `?${queryString}` : ""}`);
+    },
   });
 }
 

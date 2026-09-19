@@ -63,6 +63,8 @@ interface FormValues {
   textMinLength: number;
   textMaxLength: number;
   isActive: boolean;
+  unlocksMentorClaim: boolean;
+  requiresManualApproval: boolean;
 }
 
 export function StageFormDialog({
@@ -109,6 +111,8 @@ export function StageFormDialog({
       textMinLength: 0,
       textMaxLength: 5000,
       isActive: true,
+      unlocksMentorClaim: false,
+      requiresManualApproval: false,
     },
   });
 
@@ -178,6 +182,8 @@ export function StageFormDialog({
         textMinLength: stage.requirements?.textMinLength || 0,
         textMaxLength: stage.requirements?.textMaxLength || 5000,
         isActive: stage.isActive,
+        unlocksMentorClaim: stage.unlocksMentorClaim || false,
+        requiresManualApproval: stage.requiresManualApproval || false,
       });
     } else {
       reset({
@@ -203,6 +209,8 @@ export function StageFormDialog({
         textMinLength: 0,
         textMaxLength: 5000,
         isActive: true,
+        unlocksMentorClaim: false,
+        requiresManualApproval: false,
       });
     }
   }, [stage, nextNumber, reset]);
@@ -274,6 +282,8 @@ export function StageFormDialog({
           latePenaltyPercentage: data.latePenaltyPercentage,
           requirements,
           isActive: data.isActive,
+          unlocksMentorClaim: data.unlocksMentorClaim,
+          requiresManualApproval: data.requiresManualApproval,
         };
         await updateMutation.mutateAsync({ id: stage.id, data: updateData });
       } else {
@@ -290,6 +300,8 @@ export function StageFormDialog({
           allowLateSubmissions: data.allowLateSubmissions,
           latePenaltyPercentage: data.latePenaltyPercentage,
           requirements,
+          unlocksMentorClaim: data.unlocksMentorClaim,
+          requiresManualApproval: data.requiresManualApproval,
         };
         await createMutation.mutateAsync(createData);
       }
@@ -750,6 +762,32 @@ export function StageFormDialog({
                   </p>
                 </div>
               )}
+
+              <div className="flex items-center justify-between p-4 border rounded-lg bg-purple-50 dark:bg-purple-950/30 border-purple-200 dark:border-purple-800">
+                <div>
+                  <Label>Unlocks Mentor Claim</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Teams can claim mentors after completing and being evaluated on this stage
+                  </p>
+                </div>
+                <Switch
+                  checked={watch("unlocksMentorClaim")}
+                  onCheckedChange={(v) => setValue("unlocksMentorClaim", v)}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-4 border rounded-lg bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
+                <div>
+                  <Label>Requires Manual Approval</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Staff must manually approve submissions before they count as completed
+                  </p>
+                </div>
+                <Switch
+                  checked={watch("requiresManualApproval")}
+                  onCheckedChange={(v) => setValue("requiresManualApproval", v)}
+                />
+              </div>
 
               {isEditing && (
                 <div className="flex items-center justify-between p-4 border rounded-lg">

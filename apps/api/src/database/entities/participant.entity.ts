@@ -117,6 +117,9 @@ export class Participant extends BaseEntity {
   @Column({ name: "onboarding_complete", default: false })
   onboardingComplete: boolean;
 
+  @Column({ name: "profile_image_url", nullable: true })
+  profileImageUrl?: string;
+
   @Column({
     type: "enum",
     enum: ParticipantStatus,

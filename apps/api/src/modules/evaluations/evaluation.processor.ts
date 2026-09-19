@@ -63,14 +63,7 @@ export class EvaluationProcessor extends WorkerHost {
         progress: 10,
       });
 
-      // Step 1: Fetch submission
-      const submission = await this.fetchSubmission(teamId, stageId);
-      if (!submission) {
-        throw new Error("No submission found for team");
-      }
-      await this.updateJobProgress(evaluationJobId, 20, EVALUATION_STEPS.FETCH_GITHUB);
-
-      // Step 2: Fetch team and stage info
+      // Step 1: Fetch team info (submission is optional for code-only evaluation)
       const team = await this.teamRepo.findOne({ where: { id: teamId } });
       const stage = await this.stageRepo.findOne({ where: { id: stageId } });
 
@@ -78,12 +71,21 @@ export class EvaluationProcessor extends WorkerHost {
         throw new Error("Team or stage not found");
       }
 
-      // Step 3: Analyze GitHub if available
+      // Step 2: Fetch submission if exists (optional)
+      const submission = await this.fetchSubmission(teamId, stageId);
+      await this.updateJobProgress(evaluationJobId, 20, EVALUATION_STEPS.FETCH_GITHUB);
+
+      // Step 3: Analyze GitHub if available (use team's github repo URL)
       let codeAnalysis: CodeAnalysisData | undefined;
-      if (submission.githubUrl) {
+      if (team.githubRepoUrl) {
         await this.updateJobProgress(evaluationJobId, 30, EVALUATION_STEPS.ANALYZE_CODE);
-        codeAnalysis = await this.analyzeGitHub(submission.githubUrl);
+        codeAnalysis = await this.analyzeGitHub(team.githubRepoUrl);
       }
+
+      if (!codeAnalysis && !submission) {
+        throw new Error("No GitHub repository or submission found for team");
+      }
+
       await this.updateJobProgress(evaluationJobId, 50, EVALUATION_STEPS.ANALYZE_DOCUMENTS);
 
       // Step 4: Prepare submission data for AI
@@ -210,7 +212,7 @@ export class EvaluationProcessor extends WorkerHost {
   }
 
   private prepareSubmissionData(
-    submission: Submission,
+    submission: Submission | null,
     team: Team,
     stage: Stage,
   ): SubmissionData {
@@ -219,14 +221,14 @@ export class EvaluationProcessor extends WorkerHost {
       projectName: team.name, // Use team name as project name
       stageNumber: stage.number,
       stageName: stage.name,
-      documents: submission.fileUrls?.map((f: any) => ({
+      documents: submission?.fileUrls?.map((f: any) => ({
         name: f.name || "Document",
         content: f.extractedText || "[Document content not extracted]",
         type: f.type || "document",
       })),
-      githubUrl: submission.githubUrl,
-      videoUrl: submission.videoUrl,
-      additionalContent: submission.content,
+      githubUrl: team.githubRepoUrl,
+      videoUrl: submission?.videoUrl,
+      additionalContent: submission?.content,
     };
   }
 

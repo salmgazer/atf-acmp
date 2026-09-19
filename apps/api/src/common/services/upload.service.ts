@@ -352,4 +352,109 @@ export class UploadService {
       return null;
     }
   }
+
+  /**
+   * Upload a document file (PDF, DOC, DOCX, etc.)
+   */
+  async uploadDocument(
+    file: Express.Multer.File,
+    folder: string,
+  ): Promise<UploadResult> {
+    // Validate file type
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'text/plain',
+      'text/csv',
+    ];
+    
+    if (!allowedTypes.includes(file.mimetype)) {
+      throw new BadRequestException(
+        'Invalid file type. Allowed: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, CSV'
+      );
+    }
+
+    // Validate file size (max 25MB)
+    const maxSize = 25 * 1024 * 1024; // 25MB
+    if (file.size > maxSize) {
+      throw new BadRequestException('Document file is too large. Maximum size is 25MB.');
+    }
+
+    try {
+      // Generate unique filename preserving original extension
+      const originalExt = file.originalname.split('.').pop() || 'pdf';
+      const key = `${folder}/${uuidv4()}.${originalExt}`;
+
+      // Upload to S3
+      await this.s3Client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+          ContentDisposition: `inline; filename="${file.originalname}"`,
+          CacheControl: 'public, max-age=31536000', // 1 year cache
+        }),
+      );
+
+      const url = this.getPublicUrl(key);
+
+      this.logger.log(`Uploaded document: ${key} (${file.size} bytes)`);
+
+      return {
+        url,
+        key,
+        bucket: this.bucket,
+        contentType: file.mimetype,
+        size: file.size,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to upload document: ${error.message}`, error.stack);
+      throw new BadRequestException('Failed to upload document');
+    }
+  }
+
+  /**
+   * Upload a brief resource document
+   */
+  async uploadBriefResource(file: Express.Multer.File): Promise<UploadResult> {
+    return this.uploadDocument(file, 'briefs/resources');
+  }
+
+  /**
+   * Upload a brief resource image (PNG, JPG, JPEG)
+   */
+  async uploadBriefResourceImage(file: Express.Multer.File): Promise<UploadResult> {
+    // Validate file type
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg'];
+    if (!allowedTypes.includes(file.mimetype)) {
+      throw new BadRequestException('Invalid file type. Allowed: PNG, JPG, JPEG');
+    }
+
+    // Use existing uploadImage method with brief resources folder
+    return this.uploadImage(file, 'briefs/resources/images', {
+      maxWidth: 1920,
+      maxHeight: 1080,
+      quality: 90,
+      format: file.mimetype === 'image/png' ? 'png' : 'jpeg',
+    });
+  }
+
+  /**
+   * Upload a brief resource video (MP4)
+   */
+  async uploadBriefResourceVideo(file: Express.Multer.File): Promise<VideoUploadResult> {
+    // Validate file type - only MP4
+    if (file.mimetype !== 'video/mp4') {
+      throw new BadRequestException('Invalid file type. Only MP4 videos are allowed.');
+    }
+
+    // Use existing uploadVideo method
+    return this.uploadVideo(file, 'briefs/resources/videos', false);
+  }
 }

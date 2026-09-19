@@ -15,6 +15,7 @@ export enum OrganizationUserRole {
 }
 
 @Entity("organizations")
+@Index(["publicSubmission"])
 export class Organization extends BaseEntity {
   @Column()
   name: string;
@@ -37,6 +38,34 @@ export class Organization extends BaseEntity {
 
   @Column({ nullable: true })
   country?: string;
+
+  // Public submission fields
+  @Column({ nullable: true })
+  city?: string;
+
+  @Column({ nullable: true })
+  sector?: string;
+
+  @Column({ name: "sector_other", nullable: true })
+  sectorOther?: string;
+
+  @Column({ name: "submitter_name", nullable: true })
+  submitterName?: string;
+
+  @Column({ name: "submitter_designation", nullable: true })
+  submitterDesignation?: string;
+
+  @Column({ name: "submitter_department", nullable: true })
+  submitterDepartment?: string;
+
+  @Column({ name: "public_submission", default: false })
+  publicSubmission: boolean;
+
+  @Column({ name: "consent_given", default: false })
+  consentGiven: boolean;
+
+  @Column({ name: "consent_timestamp", nullable: true })
+  consentTimestamp?: Date;
 
   @Column({ name: "contact_person", nullable: true })
   contactPerson?: string;

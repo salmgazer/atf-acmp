@@ -43,12 +43,17 @@ export interface Stage {
   allowLateSubmissions: boolean;
   latePenaltyPercentage: number;
   sortOrder: number;
+  unlocksMentorClaim: boolean;
+  requiresManualApproval: boolean;
   isOpen?: boolean;
   isPastDeadline?: boolean;
   stats?: {
     draft: number;
     submitted: number;
     late: number;
+    pending_approval: number;
+    approved: number;
+    rejected: number;
     evaluated: number;
     total: number;
   };
@@ -70,6 +75,8 @@ export interface CreateStageInput {
   allowLateSubmissions?: boolean;
   latePenaltyPercentage?: number;
   sortOrder?: number;
+  unlocksMentorClaim?: boolean;
+  requiresManualApproval?: boolean;
 }
 
 export interface UpdateStageInput {
@@ -86,6 +93,8 @@ export interface UpdateStageInput {
   allowLateSubmissions?: boolean;
   latePenaltyPercentage?: number;
   sortOrder?: number;
+  unlocksMentorClaim?: boolean;
+  requiresManualApproval?: boolean;
 }
 
 // Query keys

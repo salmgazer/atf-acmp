@@ -22,8 +22,11 @@ import {
   useSubmitBrief,
   useDeleteBrief,
   useUploadBriefVideoForExisting,
+  useUploadBriefImage,
+  useRemoveBriefImage,
   type BriefStatus,
 } from "@/lib/api/hooks/use-briefs";
+import { useTeams, type Team } from "@/lib/api/hooks/use-teams";
 import {
   ArrowLeft,
   Pencil,
@@ -45,6 +48,8 @@ import {
   Video,
   Upload,
   Play,
+  Image,
+  X,
 } from "lucide-react";
 
 const statusConfig: Record<BriefStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; icon: typeof CheckCircle; color: string }> = {
@@ -62,10 +67,21 @@ function BriefDetailContent({ id }: { id: string }) {
   const submitMutation = useSubmitBrief();
   const deleteMutation = useDeleteBrief();
   const uploadVideoMutation = useUploadBriefVideoForExisting();
+  const uploadImageMutation = useUploadBriefImage();
+  const removeImageMutation = useRemoveBriefImage();
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isUploadingVideo, setIsUploadingVideo] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [imageToDelete, setImageToDelete] = useState<number | null>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch teams assigned to this brief
+  const { data: teamsData, isLoading: isLoadingTeams } = useTeams({
+    briefId: id,
+    limit: 100,
+  });
 
   if (isLoading) {
     return (
@@ -133,6 +149,41 @@ function BriefDetailContent({ id }: { id: string }) {
         videoInputRef.current.value = "";
       }
     }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ["image/png", "image/jpeg", "image/jpg"];
+    if (!allowedTypes.includes(file.type)) {
+      alert("Please upload a valid image file (PNG or JPG)");
+      return;
+    }
+
+    // Validate file size (10MB max)
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      alert("Image file is too large. Maximum size is 10MB.");
+      return;
+    }
+
+    setIsUploadingImage(true);
+    try {
+      await uploadImageMutation.mutateAsync({ id, file });
+    } finally {
+      setIsUploadingImage(false);
+      if (imageInputRef.current) {
+        imageInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleImageDelete = async () => {
+    if (imageToDelete === null) return;
+    await removeImageMutation.mutateAsync({ id, index: imageToDelete });
+    setImageToDelete(null);
   };
 
   return (
@@ -297,6 +348,75 @@ function BriefDetailContent({ id }: { id: string }) {
                 </Button>
               </div>
             )}
+
+            {/* Image Gallery Section */}
+            <div className="mt-6 pt-6 border-t border-border/50">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Image className="h-5 w-5 text-muted-foreground" />
+                  <h3 className="font-medium">Image Gallery</h3>
+                  <span className="text-sm text-muted-foreground">
+                    ({brief.imageUrls?.length || 0}/10)
+                  </span>
+                </div>
+                {(brief.imageUrls?.length || 0) < 10 && (
+                  <>
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                      id="image-upload"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => imageInputRef.current?.click()}
+                      disabled={isUploadingImage}
+                    >
+                      {isUploadingImage ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Upload className="mr-2 h-4 w-4" />
+                      )}
+                      Add Image
+                    </Button>
+                  </>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground mb-4">
+                Add images to showcase your organization and challenge context (PNG or JPG, max 10MB each).
+              </p>
+              
+              {brief.imageUrls && brief.imageUrls.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {brief.imageUrls.map((url, index) => (
+                    <div key={index} className="relative group aspect-square rounded-lg overflow-hidden bg-muted">
+                      <img
+                        src={url}
+                        alt={`Gallery image ${index + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                      <button
+                        onClick={() => setImageToDelete(index)}
+                        className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80"
+                        title="Remove image"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
+                  <Image className="mx-auto h-10 w-10 text-muted-foreground/50" />
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    No images uploaded yet
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -357,31 +477,113 @@ function BriefDetailContent({ id }: { id: string }) {
                     <Users className="h-5 w-5" />
                     Assigned Teams ({brief.teamsCount})
                   </h2>
+                  <Link
+                    href={`/org/teams?briefId=${id}`}
+                    className="text-sm text-primary hover:underline flex items-center gap-1"
+                  >
+                    View all teams
+                    <ExternalLink className="h-3 w-3" />
+                  </Link>
                 </div>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Teams working on your brief and their current progress
+                  Teams working on your brief
                 </p>
                 
-                {/* Placeholder for teams - will be populated when teams API is connected */}
-                <div className="space-y-3">
-                  {/* Demo team cards - replace with actual data */}
-                  <div className="p-4 rounded-lg border bg-muted/30">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="font-medium">Team progress tracking</h3>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          Team names and progress will appear here once teams are assigned to your brief
-                        </p>
-                      </div>
-                    </div>
+                {isLoadingTeams ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                   </div>
-                </div>
+                ) : (
+                  <div className="space-y-3">
+                    {teamsData?.data.map((team) => (
+                      <div key={team.id} className="p-4 rounded-lg border bg-muted/30">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-medium">{team.name}</h3>
+                              <Badge variant={team.status === "active" ? "default" : "secondary"} className="text-xs">
+                                {team.status}
+                              </Badge>
+                            </div>
+                            {team.description && (
+                              <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                                {team.description}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Users className="h-3 w-3" />
+                                {team.memberCount} member{team.memberCount !== 1 ? "s" : ""}
+                              </span>
+                              {team.mentor && (
+                                <span className="flex items-center gap-1">
+                                  <Award className="h-3 w-3" />
+                                  Mentor: {team.mentor.firstName} {team.mentor.lastName}
+                                </span>
+                              )}
+                              {team.githubRepoUrl && (
+                                <a
+                                  href={team.githubRepoUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1 hover:text-foreground"
+                                >
+                                  <GitBranch className="h-3 w-3" />
+                                  Repository
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        {/* Team Members */}
+                        {team.members && team.members.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-border/50">
+                            <div className="flex flex-wrap gap-2">
+                              {team.members.slice(0, 5).map((member) => (
+                                <div
+                                  key={member.id}
+                                  className="flex items-center gap-2 px-2 py-1 rounded-full bg-background text-xs"
+                                >
+                                  <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-medium">
+                                    {member.participant.firstName?.[0]}{member.participant.lastName?.[0]}
+                                  </div>
+                                  <span>{member.participant.firstName} {member.participant.lastName}</span>
+                                  {member.role === "lead" && (
+                                    <Badge variant="outline" className="text-[10px] px-1 py-0">Lead</Badge>
+                                  )}
+                                </div>
+                              ))}
+                              {team.members.length > 5 && (
+                                <div className="flex items-center px-2 py-1 text-xs text-muted-foreground">
+                                  +{team.members.length - 5} more
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
             {/* Empty state when approved but no teams yet */}
             {brief.status === "approved" && brief.teamsCount === 0 && (
               <div className="rounded-lg border bg-card p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    Assigned Teams
+                  </h2>
+                  <Link
+                    href={`/org/teams?briefId=${id}`}
+                    className="text-sm text-primary hover:underline flex items-center gap-1"
+                  >
+                    View teams page
+                    <ExternalLink className="h-3 w-3" />
+                  </Link>
+                </div>
                 <div className="text-center py-8">
                   <Users className="mx-auto h-12 w-12 text-muted-foreground/50" />
                   <h3 className="mt-4 text-lg font-medium">No Teams Assigned Yet</h3>
@@ -481,6 +683,25 @@ function BriefDetailContent({ id }: { id: string }) {
             <Button variant="destructive" onClick={handleDelete} disabled={deleteMutation.isPending}>
               {deleteMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Delete Dialog */}
+      <Dialog open={imageToDelete !== null} onOpenChange={(open) => !open && setImageToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remove Image</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to remove this image from the gallery?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImageToDelete(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleImageDelete} disabled={removeImageMutation.isPending}>
+              {removeImageMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Remove
             </Button>
           </DialogFooter>
         </DialogContent>

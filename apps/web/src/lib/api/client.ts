@@ -1,12 +1,15 @@
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import { toast } from "sonner";
 
 // API configuration
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
 const API_TIMEOUT = Number(process.env.NEXT_PUBLIC_API_TIMEOUT) || 30000;
 
-// Flag to prevent multiple 401 redirect attempts
+// Flag to prevent multiple 401 redirect attempts - reset after 5 seconds
 let isRedirecting = false;
+let redirectTimeout: NodeJS.Timeout | null = null;
+let isRefreshing = false;
+let refreshPromise: Promise<string | null> | null = null;
 
 /**
  * Generic API response type
@@ -27,6 +30,45 @@ export interface PaginatedResponse<T> {
     limit: number;
     totalPages: number;
   };
+}
+
+/**
+ * Refresh access token using refresh token
+ * This is a local implementation to avoid circular imports
+ */
+async function tryRefreshToken(): Promise<string | null> {
+  const refreshToken = typeof window !== "undefined" 
+    ? localStorage.getItem("refresh_token") 
+    : null;
+
+  console.log("[tryRefreshToken] Attempting refresh, has refresh token:", !!refreshToken);
+
+  if (!refreshToken) {
+    console.log("[tryRefreshToken] No refresh token found in localStorage");
+    return null;
+  }
+
+  try {
+    // Use a fresh axios instance to avoid interceptors
+    const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+      refreshToken,
+    });
+
+    const { accessToken, user } = response.data;
+    console.log("[tryRefreshToken] Refresh successful, got new access token");
+
+    // Update localStorage
+    if (typeof window !== "undefined" && accessToken) {
+      localStorage.setItem("auth_token", accessToken);
+      // Also update cookie for middleware
+      document.cookie = `auth_token=${accessToken}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
+    }
+
+    return accessToken;
+  } catch (error: any) {
+    console.error("[tryRefreshToken] Refresh failed:", error?.response?.status, error?.message);
+    return null;
+  }
 }
 
 /**
@@ -71,41 +113,87 @@ const createApiClient = (): AxiosInstance => {
       return response;
     },
     async (error) => {
-      const originalRequest = error.config;
+      const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
       // Handle 401 Unauthorized
       const isPublicEndpoint =
         originalRequest.url?.includes("/auth/login") ||
         originalRequest.url?.includes("/auth/register") ||
         originalRequest.url?.includes("/auth/magic-link") ||
-        originalRequest.url?.includes("/auth/verify");
+        originalRequest.url?.includes("/auth/verify") ||
+        originalRequest.url?.includes("/auth/refresh");
 
-      if (error.response?.status === 401 && !isPublicEndpoint && !isRedirecting) {
-        isRedirecting = true;
+      if (error.response?.status === 401 && !isPublicEndpoint && !originalRequest._retry) {
+        // Mark request as retried to prevent infinite loops
+        originalRequest._retry = true;
         
-        // Clear auth data and redirect to login
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("auth_token");
-          localStorage.removeItem("acmp-auth-store"); // Clear the auth store as well
-          document.cookie = "auth_token=; path=/; max-age=0";
-          
-          // Determine which portal and redirect accordingly
-          const path = window.location.pathname;
-          let loginPath = "/";
-          
-          if (path.startsWith("/portal")) {
-            loginPath = "/portal/login";
-          } else if (path.startsWith("/org")) {
-            loginPath = "/org/login";
-          } else if (path.startsWith("/app")) {
-            loginPath = "/app/login";
-          } else if (path.startsWith("/mentor")) {
-            loginPath = "/mentor/login";
+        // If we're already refreshing, wait for that to complete
+        if (isRefreshing && refreshPromise) {
+          try {
+            const newToken = await refreshPromise;
+            if (newToken) {
+              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+              return client(originalRequest);
+            }
+          } catch (refreshError) {
+            // Refresh failed, fall through to logout
           }
+        } else {
+          // Start a new refresh
+          isRefreshing = true;
+          refreshPromise = tryRefreshToken();
+          
+          try {
+            const newToken = await refreshPromise;
+            isRefreshing = false;
+            refreshPromise = null;
+            
+            if (newToken) {
+              // Retry the original request with the new token
+              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+              return client(originalRequest);
+            }
+          } catch (refreshError) {
+            isRefreshing = false;
+            refreshPromise = null;
+          }
+        }
+        
+        // Token refresh failed - logout and redirect
+        if (!isRedirecting) {
+          isRedirecting = true;
+          
+          // Reset the flag after 5 seconds to allow future redirects
+          if (redirectTimeout) clearTimeout(redirectTimeout);
+          redirectTimeout = setTimeout(() => {
+            isRedirecting = false;
+          }, 5000);
+          
+          // Clear auth data and redirect to login
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("auth_token");
+            localStorage.removeItem("refresh_token");
+            localStorage.removeItem("acmp-auth-store");
+            document.cookie = "auth_token=; path=/; max-age=0";
+            
+            // Determine which portal and redirect accordingly
+            const path = window.location.pathname;
+            let loginPath = "/";
+            
+            if (path.startsWith("/portal")) {
+              loginPath = "/portal/login";
+            } else if (path.startsWith("/org")) {
+              loginPath = "/org/login";
+            } else if (path.startsWith("/app")) {
+              loginPath = "/app/login";
+            } else if (path.startsWith("/mentor")) {
+              loginPath = "/mentor/login";
+            }
 
-          // Only redirect if not already on login page to prevent loops
-          if (!window.location.pathname.includes("/login")) {
-            window.location.href = loginPath;
+            // Only redirect if not already on login page to prevent loops
+            if (!window.location.pathname.includes("/login")) {
+              window.location.href = loginPath;
+            }
           }
         }
 

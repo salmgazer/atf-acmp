@@ -24,6 +24,7 @@ import {
   NotificationCountDto,
 } from "./dto/notification.dto";
 import { NotificationsGateway } from "./notifications.gateway";
+import { OneSignalService } from "./onesignal.service";
 
 @Injectable()
 export class NotificationsService {
@@ -36,7 +37,8 @@ export class NotificationsService {
     private readonly preferenceRepository: Repository<NotificationPreference>,
     @InjectRepository(PushToken)
     private readonly pushTokenRepository: Repository<PushToken>,
-    private readonly gateway: NotificationsGateway
+    private readonly gateway: NotificationsGateway,
+    private readonly oneSignalService: OneSignalService
   ) {}
 
   // ============ Notification CRUD ============
@@ -92,8 +94,8 @@ export class NotificationsService {
       createdAt: saved.createdAt,
     });
 
-    // TODO: Send email if enabled
-    // TODO: Send push notification if enabled
+    // Send push notification if enabled
+    await this.sendPushNotification(saved, preferences);
 
     return saved;
   }
@@ -384,5 +386,107 @@ export class NotificationsService {
       priority: notification.priority,
       createdAt: notification.createdAt,
     };
+  }
+
+  /**
+   * Send push notification via OneSignal
+   */
+  private async sendPushNotification(
+    notification: Notification,
+    preferences: NotificationPreference
+  ): Promise<void> {
+    // Check if push is enabled globally and for this type
+    const typeSettings = preferences.typeSettings?.[notification.type];
+    const shouldSendPush = preferences.pushEnabled && (typeSettings?.push !== false);
+
+    if (!shouldSendPush) {
+      this.logger.debug(
+        `Push notification disabled for ${notification.recipientId}:${notification.type}`
+      );
+      return;
+    }
+
+    // Check quiet hours
+    if (this.isInQuietHours(preferences)) {
+      this.logger.debug(
+        `Skipping push for ${notification.recipientId} - quiet hours active`
+      );
+      return;
+    }
+
+    // Build external user ID (format: recipientType:recipientId)
+    const externalUserId = `${notification.recipientType}:${notification.recipientId}`;
+
+    const result = await this.oneSignalService.sendToExternalUserIds(
+      [externalUserId],
+      {
+        title: notification.title,
+        body: notification.summary || notification.body,
+        data: {
+          notificationId: notification.id,
+          ...notification.data,
+        },
+        url: notification.actionUrl,
+        priority: notification.priority,
+        type: notification.type,
+      }
+    );
+
+    if (result.success) {
+      // Update notification to mark push as sent
+      await this.notificationRepository.update(notification.id, {
+        pushSent: true,
+        pushSentAt: new Date(),
+      });
+      this.logger.debug(
+        `Push sent for notification ${notification.id}, recipients: ${result.recipients}`
+      );
+    } else {
+      this.logger.warn(
+        `Failed to send push for notification ${notification.id}: ${result.errors?.join(", ")}`
+      );
+    }
+  }
+
+  /**
+   * Check if current time is within user's quiet hours
+   */
+  private isInQuietHours(preferences: NotificationPreference): boolean {
+    if (!preferences.quietHoursStart || !preferences.quietHoursEnd) {
+      return false;
+    }
+
+    const now = new Date();
+    const timezone = preferences.timezone || "UTC";
+
+    try {
+      // Get current time in user's timezone
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+      const currentTime = formatter.format(now);
+
+      const [currentHour, currentMinute] = currentTime.split(":").map(Number);
+      const currentMinutes = currentHour * 60 + currentMinute;
+
+      const [startHour, startMinute] = preferences.quietHoursStart.split(":").map(Number);
+      const startMinutes = startHour * 60 + startMinute;
+
+      const [endHour, endMinute] = preferences.quietHoursEnd.split(":").map(Number);
+      const endMinutes = endHour * 60 + endMinute;
+
+      // Handle overnight quiet hours (e.g., 22:00 to 08:00)
+      if (startMinutes > endMinutes) {
+        return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+      }
+
+      return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+    } catch (error) {
+      this.logger.warn(`Failed to check quiet hours: ${error.message}`);
+      return false;
+    }
   }
 }

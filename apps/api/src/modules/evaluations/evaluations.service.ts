@@ -5,7 +5,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, In } from "typeorm";
+import { Repository, In, Not, IsNull } from "typeorm";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Queue } from "bullmq";
 import {
@@ -14,7 +14,7 @@ import {
   EvaluationJobStatus,
 } from "@/database/entities/evaluation.entity";
 import { Submission, SubmissionStatus } from "@/database/entities/stage.entity";
-import { Team } from "@/database/entities/team.entity";
+import { Team, TeamMember } from "@/database/entities/team.entity";
 import {
   TriggerEvaluationDto,
   TriggerSingleEvaluationDto,
@@ -30,6 +30,7 @@ import {
   DEFAULT_JOB_OPTIONS,
 } from "./evaluation.constants";
 import { EvaluationJobData } from "./evaluation.processor";
+import { OneSignalService } from "@/modules/notifications/onesignal.service";
 
 @Injectable()
 export class EvaluationsService {
@@ -44,8 +45,11 @@ export class EvaluationsService {
     private submissionRepo: Repository<Submission>,
     @InjectRepository(Team)
     private teamRepo: Repository<Team>,
+    @InjectRepository(TeamMember)
+    private teamMemberRepo: Repository<TeamMember>,
     @InjectQueue(EVALUATION_QUEUE_NAME)
     private evaluationQueue: Queue<EvaluationJobData>,
+    private oneSignalService: OneSignalService,
   ) {}
 
   // ============ Trigger Methods ============
@@ -57,21 +61,20 @@ export class EvaluationsService {
   }> {
     const { cohortId, stageId, teamIds } = dto;
 
-    // Get all submitted teams for this stage
-    let submissions = await this.submissionRepo.find({
+    // CODE EVALUATION MODE: Get all teams with GitHub repos in this cohort
+    let teams = await this.teamRepo.find({
       where: {
-        stageId,
-        status: In([SubmissionStatus.SUBMITTED, SubmissionStatus.LATE]),
+        cohortId,
+        githubRepoUrl: Not(IsNull()),
       },
-      relations: ["team"],
     });
 
     // Filter by specific team IDs if provided
     if (teamIds && teamIds.length > 0) {
-      submissions = submissions.filter((s) => teamIds.includes(s.teamId));
+      teams = teams.filter((t) => teamIds.includes(t.id));
     }
 
-    // Filter out teams that already have completed evaluations
+    // Filter out teams that already have completed evaluations for this stage
     const existingEvaluations = await this.evaluationRepo.find({
       where: { stageId },
       select: ["teamId", "aiEvaluatedAt"],
@@ -83,18 +86,18 @@ export class EvaluationsService {
         .map((e) => e.teamId),
     );
 
-    const toEvaluate = submissions.filter(
-      (s) => !evaluatedTeamIds.has(s.teamId),
+    const toEvaluate = teams.filter(
+      (t) => !evaluatedTeamIds.has(t.id),
     );
 
     const jobs: EvaluationJob[] = [];
     let skipped = 0;
 
-    for (const submission of toEvaluate) {
+    for (const team of toEvaluate) {
       // Check for existing pending/processing job
       const existingJob = await this.evaluationJobRepo.findOne({
         where: {
-          teamId: submission.teamId,
+          teamId: team.id,
           stageId,
           status: In([EvaluationJobStatus.PENDING, EvaluationJobStatus.PROCESSING]),
         },
@@ -107,7 +110,7 @@ export class EvaluationsService {
 
       // Create job record
       const evaluationJob = this.evaluationJobRepo.create({
-        teamId: submission.teamId,
+        teamId: team.id,
         stageId,
         cohortId,
         status: EvaluationJobStatus.PENDING,
@@ -118,7 +121,7 @@ export class EvaluationsService {
       await this.evaluationQueue.add(
         EVALUATION_JOB_TYPES.EVALUATE_SUBMISSION,
         {
-          teamId: submission.teamId,
+          teamId: team.id,
           stageId,
           cohortId,
           evaluationJobId: evaluationJob.id,
@@ -135,7 +138,7 @@ export class EvaluationsService {
 
     return {
       queued: jobs.length,
-      skipped: skipped + (submissions.length - toEvaluate.length),
+      skipped: skipped + (teams.length - toEvaluate.length),
       jobs,
     };
   }
@@ -492,7 +495,66 @@ export class EvaluationsService {
       { id: In(evaluationIds) },
       { isPublished: true, publishedAt: new Date() },
     );
+
+    // Send push notifications to team members
+    await this.notifyTeamsOfPublishedEvaluations(evaluationIds);
+
     return result.affected || 0;
+  }
+
+  private async notifyTeamsOfPublishedEvaluations(evaluationIds: string[]): Promise<void> {
+    try {
+      // Get published evaluations with stage info
+      const evaluations = await this.evaluationRepo.find({
+        where: { id: In(evaluationIds) },
+        relations: ["stage"],
+      });
+
+      // Group by team to avoid duplicate notifications
+      const teamIds = [...new Set(evaluations.map((e) => e.teamId))];
+      
+      if (teamIds.length === 0) return;
+
+      // Get team members for all teams
+      const teamMembers = await this.teamMemberRepo.find({
+        where: { teamId: In(teamIds) },
+      });
+
+      // Group members by team
+      const membersByTeam = new Map<string, string[]>();
+      for (const member of teamMembers) {
+        if (!membersByTeam.has(member.teamId)) {
+          membersByTeam.set(member.teamId, []);
+        }
+        membersByTeam.get(member.teamId)!.push(`participant:${member.participantId}`);
+      }
+
+      // Send notification to each team's members
+      for (const evaluation of evaluations) {
+        const participantIds = membersByTeam.get(evaluation.teamId) || [];
+        if (participantIds.length === 0) continue;
+
+        const stageName = evaluation.stage?.name || "Stage";
+
+        this.logger.log(
+          `[PUSH] Sending evaluation published notification to ${participantIds.length} members for team ${evaluation.teamId}`
+        );
+
+        await this.oneSignalService.sendToExternalUserIds(participantIds, {
+          title: "📊 Evaluation Published",
+          body: `Your submission for ${stageName} has been evaluated! Check your results.`,
+          data: {
+            type: "evaluation_published",
+            evaluationId: evaluation.id,
+            stageId: evaluation.stageId,
+            stageName,
+          },
+          url: "/app/evaluations",
+        });
+      }
+    } catch (error) {
+      this.logger.error(`Failed to send evaluation published notifications: ${error.message}`);
+    }
   }
 
   async unpublishEvaluations(evaluationIds: string[]): Promise<number> {

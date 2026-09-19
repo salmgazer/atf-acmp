@@ -119,13 +119,13 @@ export function AdminPeerReviews({ cohortId, stages }: AdminPeerReviewsProps) {
     selectedStageId || null
   );
 
-  const { trigger: createRubric } = useCreateRubric();
-  const { trigger: deleteRubric } = useDeleteRubric();
-  const { trigger: assignReviews, isMutating: isAssigning } = useAssignPeerReviews();
-  const { trigger: deleteAssignments } = useDeleteStageAssignments();
-  const { trigger: skipAssignment } = useSkipAssignment();
-  const { trigger: flagReview } = useFlagReview();
-  const { trigger: unflagReview } = useUnflagReview();
+  const { mutateAsync: createRubric } = useCreateRubric();
+  const { mutateAsync: deleteRubric } = useDeleteRubric();
+  const { mutateAsync: assignReviews, isPending: isAssigning } = useAssignPeerReviews();
+  const { mutateAsync: deleteAssignments } = useDeleteStageAssignments();
+  const { mutateAsync: skipAssignment } = useSkipAssignment();
+  const { mutateAsync: flagReview } = useFlagReview();
+  const { mutateAsync: unflagReview } = useUnflagReview();
 
   const assignments = assignmentsData?.data || [];
 
@@ -237,7 +237,7 @@ export function AdminPeerReviews({ cohortId, stages }: AdminPeerReviewsProps) {
             assignments={assignments}
             isLoading={assignmentsLoading}
             onSkip={async (id) => {
-              await skipAssignment({ id });
+              await skipAssignment(id);
               queryClient.invalidateQueries({ queryKey: ["peer-reviews", "admin", "assignments"] });
               toast.success("Assignment skipped");
             }}
@@ -253,7 +253,7 @@ export function AdminPeerReviews({ cohortId, stages }: AdminPeerReviewsProps) {
               toast.success("Review flagged");
             }}
             onUnflag={async (id) => {
-              await unflagReview({ id });
+              await unflagReview(id);
               queryClient.invalidateQueries({ queryKey: ["peer-reviews", "admin", "reviews"] });
               toast.success("Review unflagged");
             }}
@@ -265,7 +265,7 @@ export function AdminPeerReviews({ cohortId, stages }: AdminPeerReviewsProps) {
             rubrics={rubrics || []}
             isLoading={rubricsLoading}
             onDelete={async (id) => {
-              await deleteRubric({ id });
+              await deleteRubric(id);
               queryClient.invalidateQueries({ queryKey: ["peer-reviews", "admin", "rubrics"] });
               toast.success("Rubric deleted");
             }}

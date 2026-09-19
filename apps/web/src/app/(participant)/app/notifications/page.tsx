@@ -145,8 +145,8 @@ function NotificationsContent() {
   const markAsReadMutation = useMarkAsRead();
   const markAllAsReadMutation = useMarkAllAsRead();
 
-  const notifications = data?.data?.data || [];
-  const unreadCount = data?.data?.unreadCount || 0;
+  const notifications = data?.data || [];
+  const unreadCount = data?.unreadCount || 0;
 
   const handleMarkAsRead = (id: string) => {
     markAsReadMutation.mutate(id);
@@ -225,7 +225,7 @@ function NotificationsContent() {
           </div>
         ) : (
           <div className="space-y-3">
-            {notifications.map((notification) => (
+            {notifications.map((notification: Notification) => (
               <NotificationItem
                 key={notification.id}
                 notification={notification}

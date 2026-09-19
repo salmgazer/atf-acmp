@@ -4,6 +4,9 @@ import * as path from "path";
 
 dotenv.config();
 
+// Use process.cwd() as fallback for ESM compatibility
+const baseDir = typeof __dirname !== 'undefined' ? __dirname : process.cwd() + '/src/database';
+
 export const dataSourceOptions: DataSourceOptions = {
   type: "postgres",
   host: process.env.DATABASE_HOST || "localhost",
@@ -11,8 +14,8 @@ export const dataSourceOptions: DataSourceOptions = {
   username: process.env.DATABASE_USER || "postgres",
   password: process.env.DATABASE_PASSWORD || "postgres",
   database: process.env.DATABASE_NAME || "acmp_dev",
-  entities: [path.join(__dirname, "/entities/**/*.entity{.ts,.js}")],
-  migrations: [path.join(__dirname, "/migrations/**/*{.ts,.js}")],
+  entities: [path.join(baseDir, "/entities/**/*.entity{.ts,.js}")],
+  migrations: [path.join(baseDir, "/migrations/**/*{.ts,.js}")],
   synchronize: process.env.NODE_ENV === "development",
   logging: process.env.NODE_ENV === "development",
   ssl: process.env.DATABASE_SSL === "true" ? { rejectUnauthorized: false } : false,

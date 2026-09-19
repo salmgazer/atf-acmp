@@ -109,6 +109,7 @@ COPY tsconfig.base.json ./
 WORKDIR /app/apps/api
 
 ENV NODE_ENV=development
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 EXPOSE 3001
 
 CMD ["npm", "run", "dev"]

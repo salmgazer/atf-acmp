@@ -35,6 +35,23 @@ export enum InvitationStatus {
   CANCELLED = "cancelled",
 }
 
+/**
+ * Status for team members - supports pending approval workflow
+ */
+export enum TeamMemberStatus {
+  PENDING = "pending",     // Requested to join, awaiting team lead approval
+  CONFIRMED = "confirmed", // Approved and active member
+}
+
+/**
+ * Status for member removal requests
+ */
+export enum RemovalRequestStatus {
+  PENDING = "pending",
+  APPROVED = "approved",
+  REJECTED = "rejected",
+}
+
 @Entity("teams")
 @Index(["cohortId", "status"])
 @Index(["briefId"])
@@ -75,6 +92,9 @@ export class Team extends BaseEntity {
   @Column({ type: "jsonb", nullable: true })
   metadata?: Record<string, any>;
 
+  @Column({ name: "github_repo_url", nullable: true })
+  githubRepoUrl?: string;
+
   @Column({ name: "disqualification_reason", nullable: true })
   disqualificationReason?: string;
 
@@ -91,17 +111,45 @@ export class Team extends BaseEntity {
   invitations: TeamInvitation[];
 
   /**
-   * Get member count
+   * Get confirmed member count (excludes pending members)
    */
   get memberCount(): number {
+    return this.members?.filter((m) => m.status === TeamMemberStatus.CONFIRMED).length || 0;
+  }
+
+  /**
+   * Get all members count including pending
+   */
+  get totalMemberCount(): number {
     return this.members?.length || 0;
   }
 
   /**
-   * Get team lead
+   * Get pending member count
+   */
+  get pendingMemberCount(): number {
+    return this.members?.filter((m) => m.status === TeamMemberStatus.PENDING).length || 0;
+  }
+
+  /**
+   * Get team lead (must be confirmed)
    */
   get lead(): TeamMember | undefined {
-    return this.members?.find((m) => m.role === TeamRole.LEAD);
+    return this.members?.find((m) => m.role === TeamRole.LEAD && m.status === TeamMemberStatus.CONFIRMED);
+  }
+
+  /**
+   * Get confirmed members only
+   */
+  get confirmedMembers(): TeamMember[] {
+    return this.members?.filter((m) => m.status === TeamMemberStatus.CONFIRMED) || [];
+  }
+
+  /**
+   * Get pending members only
+   */
+  get pendingMembers(): TeamMember[] {
+    return this.members?.filter((m) => m.status === TeamMemberStatus.PENDING) || [];
   }
 
   /**
@@ -134,8 +182,17 @@ export class TeamMember extends BaseEntity {
   @Column({ type: "enum", enum: TeamRole, default: TeamRole.MEMBER })
   role: TeamRole;
 
+  @Column({ type: "enum", enum: TeamMemberStatus, default: TeamMemberStatus.CONFIRMED })
+  status: TeamMemberStatus;
+
   @Column({ name: "joined_at", type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
   joinedAt: Date;
+
+  @Column({ name: "confirmed_at", type: "timestamp", nullable: true })
+  confirmedAt?: Date;
+
+  @Column({ name: "confirmed_by", nullable: true })
+  confirmedBy?: string;
 }
 
 @Entity("team_invitations")
@@ -194,4 +251,61 @@ export class TeamInvitation extends BaseEntity {
   canRespond(): boolean {
     return this.status === InvitationStatus.PENDING && !this.isExpired();
   }
+}
+
+/**
+ * Tracks requests for removing confirmed team members
+ * Pending members can be removed immediately without staff approval
+ * Confirmed members require staff approval
+ */
+@Entity("team_member_removal_requests")
+@Index(["teamId"])
+@Index(["memberId"])
+@Index(["status"])
+export class TeamMemberRemovalRequest extends BaseEntity {
+  @Column({ name: "team_id" })
+  teamId: string;
+
+  @ManyToOne(() => Team, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "team_id" })
+  team: Team;
+
+  @Column({ name: "member_id", nullable: true })
+  memberId: string | null;
+
+  @ManyToOne(() => TeamMember, { onDelete: "SET NULL", nullable: true })
+  @JoinColumn({ name: "member_id" })
+  member: TeamMember | null;
+
+  @Column({ name: "participant_id" })
+  participantId: string;
+
+  @ManyToOne(() => Participant)
+  @JoinColumn({ name: "participant_id" })
+  participant: Participant;
+
+  @Column({ name: "requested_by" })
+  requestedBy: string;
+
+  @ManyToOne(() => Participant)
+  @JoinColumn({ name: "requested_by" })
+  requester: Participant;
+
+  @Column({ type: "enum", enum: RemovalRequestStatus, default: RemovalRequestStatus.PENDING })
+  status: RemovalRequestStatus;
+
+  @Column({ type: "text", nullable: true })
+  reason?: string;
+
+  @Column({ name: "requested_at", type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
+  requestedAt: Date;
+
+  @Column({ name: "resolved_at", type: "timestamp", nullable: true })
+  resolvedAt?: Date;
+
+  @Column({ name: "resolved_by", nullable: true })
+  resolvedBy?: string;
+
+  @Column({ name: "resolution_notes", type: "text", nullable: true })
+  resolutionNotes?: string;
 }

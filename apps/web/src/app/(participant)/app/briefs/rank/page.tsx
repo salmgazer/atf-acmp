@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ParticipantLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import {
   useParticipantPreferences,
   useUpdateBriefRankings,
 } from "@/lib/api/hooks/use-participants";
+import { useMyTeam } from "@/lib/api/hooks/use-teams";
 import {
   ArrowLeft,
   GripVertical,
@@ -186,12 +188,14 @@ function DragOverlayItem({ brief, rank }: { brief: Brief; rank: number }) {
 }
 
 function RankingContent() {
+  const router = useRouter();
   const [orderedBriefs, setOrderedBriefs] = useState<Brief[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
 
   const { data: participant, isLoading: participantLoading } = useCurrentParticipant();
+  const { data: team, isLoading: teamLoading } = useMyTeam(participant?.id || "");
   const { data: preferences, isLoading: preferencesLoading } = useParticipantPreferences(
     participant?.id || ""
   );
@@ -200,7 +204,14 @@ function RankingContent() {
   );
   const updateRankingsMutation = useUpdateBriefRankings();
 
-  const isLoading = participantLoading || preferencesLoading || briefsLoading;
+  const isLoading = participantLoading || teamLoading || preferencesLoading || briefsLoading;
+
+  // Redirect if team already has a brief assigned
+  useEffect(() => {
+    if (!teamLoading && team?.briefId) {
+      router.replace("/app/briefs");
+    }
+  }, [team, teamLoading, router]);
 
   // Sensors for drag detection
   const sensors = useSensors(

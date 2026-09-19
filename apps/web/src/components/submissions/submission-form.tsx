@@ -11,6 +11,7 @@ import {
   Calendar,
   CheckCircle,
   Clock,
+  ClipboardCheck,
   FileText,
   Github,
   Link as LinkIcon,
@@ -21,6 +22,7 @@ import {
   Video,
   Upload,
   X,
+  XCircle,
   Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -45,6 +47,7 @@ import {
   useMySubmissionForStage,
   useSaveDraft,
   useSubmitSubmission,
+  useUploadSubmissionVideo,
   FileUrl,
 } from "@/lib/api/hooks/use-submissions";
 import { useCurrentParticipant } from "@/lib/api/hooks/use-participants";
@@ -55,7 +58,6 @@ interface SubmissionFormProps {
 }
 
 interface FormValues {
-  githubUrl: string;
   videoUrl: string;
   content: Record<string, string>;
 }
@@ -76,6 +78,7 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
   const { data: submission, isLoading: submissionLoading } = useMySubmissionForStage(stageId);
   const saveDraftMutation = useSaveDraft();
   const submitMutation = useSubmitSubmission();
+  const uploadVideoMutation = useUploadSubmissionVideo();
 
   // Calculate user's role and permissions
   const userRole = useMemo((): TeamRole | null => {
@@ -93,11 +96,20 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
-  const isSubmitted = submission?.status && ["submitted", "late", "evaluated"].includes(submission.status);
+  const isSubmitted = submission?.status && ["submitted", "late", "pending_approval", "approved", "evaluated"].includes(submission.status);
+  const isPendingApproval = submission?.status === "pending_approval";
+  const isApproved = submission?.status === "approved";
+  const isRejected = submission?.status === "rejected";
   const isLoading = stageLoading || submissionLoading || participantLoading || teamLoading;
   
-  // Disable editing if view-only or already submitted
-  const isDisabled = isViewOnly || isSubmitted;
+  // Disable editing if:
+  // - User doesn't have edit permission (not lead/co-lead), OR
+  // - Deadline has passed (regardless of late submission settings for already submitted work)
+  // - EXCEPTION: Rejected submissions can be edited even after deadline (to allow resubmission)
+  // Note: Late submissions setting only applies to NEW submissions, not editing existing ones after deadline
+  const deadline = stage ? new Date(stage.deadline) : new Date();
+  const isOverdue = stage ? isPast(deadline) : false;
+  const isDisabled = isViewOnly || (isOverdue && !isRejected);
 
   const {
     register,
@@ -107,7 +119,6 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
     formState: { isDirty },
   } = useForm<FormValues>({
     defaultValues: {
-      githubUrl: "",
       videoUrl: "",
       content: {},
     },
@@ -117,7 +128,6 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
   useEffect(() => {
     if (submission) {
       reset({
-        githubUrl: submission.githubUrl || "",
         videoUrl: submission.videoUrl || "",
         content: submission.content || {},
       });
@@ -137,7 +147,6 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
         stageId,
         content: data.content,
         fileUrls: files,
-        githubUrl: data.githubUrl || undefined,
         videoUrl: data.videoUrl || undefined,
       });
       setLastSaved(new Date());
@@ -154,7 +163,6 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
         stageId,
         content: data.content,
         fileUrls: files,
-        githubUrl: data.githubUrl || undefined,
         videoUrl: data.videoUrl || undefined,
       });
       queryClient.invalidateQueries({ queryKey: ["submissions"] });
@@ -180,14 +188,8 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
       }
     }
     
-    // Validate GitHub URL
-    if (stage.requirements?.githubRequired) {
-      if (!formData.githubUrl || formData.githubUrl.trim() === "") {
-        errors.push("GitHub repository URL is required");
-      } else if (!formData.githubUrl.includes("github.com")) {
-        errors.push("Please provide a valid GitHub URL");
-      }
-    }
+    // GitHub requirement is now checked at team level, not in submission form
+    // The backend will validate team.githubRepoUrl if stage.requirements.githubRequired is true
     
     // Validate Video URL
     if (stage.type === "video" || stage.requirements?.videoRequired) {
@@ -271,10 +273,9 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
     );
   }
 
-  const deadline = new Date(stage.deadline);
-  const isOverdue = isPast(deadline);
-  const stageIsOpen = stage.isOpen || (isOverdue && stage.allowLateSubmissions);
-  const canSubmit = stageIsOpen && hasEditPermission && !isSubmitted;
+  const stageIsOpen = stage.isOpen || (isOverdue && stage.allowLateSubmissions && !isSubmitted);
+  // Allow submission if: stage is open AND user has edit permission AND (not submitted OR rejected)
+  const canSubmit = (stageIsOpen || isRejected) && hasEditPermission && (!isSubmitted || isRejected);
 
   return (
     <div className="space-y-6">
@@ -305,7 +306,25 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
                   Overdue
                 </Badge>
               )}
-              {isSubmitted && (
+              {isPendingApproval && (
+                <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
+                  <ClipboardCheck className="mr-1 h-3 w-3" />
+                  Pending Approval
+                </Badge>
+              )}
+              {isApproved && (
+                <Badge variant="outline" className="text-xs text-green-600 border-green-300">
+                  <CheckCircle className="mr-1 h-3 w-3" />
+                  Approved
+                </Badge>
+              )}
+              {isRejected && (
+                <Badge variant="outline" className="text-xs text-red-600 border-red-300">
+                  <XCircle className="mr-1 h-3 w-3" />
+                  Rejected
+                </Badge>
+              )}
+              {isSubmitted && !isPendingApproval && !isApproved && !isRejected && (
                 <Badge variant="default" className="text-xs">
                   <CheckCircle className="mr-1 h-3 w-3" />
                   Submitted
@@ -330,8 +349,8 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
         </Alert>
       )}
 
-      {/* Validation Errors */}
-      {validationErrors.length > 0 && (
+      {/* Validation Errors - only show when not submitted */}
+      {validationErrors.length > 0 && !isSubmitted && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
@@ -371,18 +390,51 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
         </Alert>
       )}
 
-      {/* Stage Instructions */}
-      {stage.instructions && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Instructions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="prose prose-sm max-w-none text-muted-foreground">
-              {stage.instructions}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Pending Approval Info */}
+      {isPendingApproval && (
+        <Alert>
+          <ClipboardCheck className="h-4 w-4" />
+          <AlertDescription>
+            <span className="font-medium">Pending Approval</span> — Your submission is being reviewed by the program staff. 
+            You will be notified once it has been approved or if any changes are needed.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Approval Notes */}
+      {isApproved && submission?.approvalNotes && (
+        <Alert className="border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30">
+          <CheckCircle className="h-4 w-4 text-green-600" />
+          <AlertDescription className="text-green-700 dark:text-green-300">
+            <span className="font-medium">Approved!</span> {submission.approvalNotes}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Rejection Reason */}
+      {isRejected && submission?.rejectionReason && (
+        <Alert variant="destructive">
+          <XCircle className="h-4 w-4" />
+          <AlertDescription>
+            <span className="font-medium">Submission Rejected</span> — {submission.rejectionReason}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Stage Instructions - compact collapsible */}
+      {stage.instructions && !isSubmitted && (
+        <details className="group border rounded-lg">
+          <summary className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors">
+            <span className="text-sm font-medium flex items-center gap-2">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              Instructions
+            </span>
+            <span className="text-xs text-muted-foreground group-open:hidden">Click to expand</span>
+          </summary>
+          <div className="px-3 pb-3 pt-0 text-sm text-muted-foreground border-t">
+            <div className="pt-3 whitespace-pre-wrap">{stage.instructions}</div>
+          </div>
+        </details>
       )}
 
       {/* Submission Form */}
@@ -393,7 +445,7 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
             <Label className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
               Documents
-              {stage.requirements?.documentRequired && (
+              {stage.requirements?.documentRequired && !isSubmitted && (
                 <Badge variant="outline" className="text-xs">Required</Badge>
               )}
             </Label>
@@ -406,43 +458,55 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
           </div>
         )}
 
-        {/* GitHub URL */}
+        {/* GitHub Requirement Info - link to team settings */}
         {stage.requirements?.githubRequired && (
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              <Github className="h-4 w-4" />
-              GitHub Repository
-              <Badge variant="outline" className="text-xs">Required</Badge>
-            </Label>
-            <Input
-              placeholder="https://github.com/username/repository"
-              {...register("githubUrl")}
-              disabled={isDisabled}
-            />
-            <p className="text-sm text-muted-foreground">
-              Provide the URL to your public GitHub repository
-            </p>
-          </div>
+          <Alert>
+            <Github className="h-4 w-4" />
+            <AlertDescription>
+              <span className="font-medium">GitHub Repository Required</span> — This stage requires a GitHub repository. 
+              {team?.githubRepoUrl ? (
+                <span> Your team's repository: <a href={team.githubRepoUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{team.githubRepoUrl}</a></span>
+              ) : (
+                <span> Please set your team's GitHub repository URL in the <a href="/app/team" className="text-primary hover:underline">Team Settings</a>.</span>
+              )}
+            </AlertDescription>
+          </Alert>
         )}
 
-        {/* Video URL */}
+        {/* Video Upload */}
         {(stage.type === "video" || stage.requirements?.videoRequired) && (
           <div className="space-y-2">
             <Label className="flex items-center gap-2">
               <Video className="h-4 w-4" />
               Video
-              {stage.requirements?.videoRequired && (
+              {stage.requirements?.videoRequired && !isSubmitted && (
                 <Badge variant="outline" className="text-xs">Required</Badge>
               )}
             </Label>
-            <Input
-              placeholder="https://youtube.com/watch?v=... or video URL"
-              {...register("videoUrl")}
+            <VideoUploadArea
+              videoUrl={watch("videoUrl")}
+              onUpload={async (file) => {
+                const result = await uploadVideoMutation.mutateAsync({ file });
+                // Set the video URL in the form
+                reset({
+                  ...watch(),
+                  videoUrl: result.url,
+                });
+              }}
+              onRemove={() => {
+                reset({
+                  ...watch(),
+                  videoUrl: "",
+                });
+              }}
+              isUploading={uploadVideoMutation.isPending}
               disabled={isDisabled}
             />
-            <p className="text-sm text-muted-foreground">
-              Provide a link to your video (YouTube, Vimeo, etc.)
-            </p>
+            {!isSubmitted && (
+              <p className="text-sm text-muted-foreground">
+                Upload your video (MP4, WebM, or MOV format, max 100MB)
+              </p>
+            )}
           </div>
         )}
 
@@ -452,7 +516,7 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
             <Label className="flex items-center gap-2">
               <LinkIcon className="h-4 w-4" />
               {stage.requirements.urlLabel || "URL"}
-              <Badge variant="outline" className="text-xs">Required</Badge>
+              {!isSubmitted && <Badge variant="outline" className="text-xs">Required</Badge>}
             </Label>
             <Input
               placeholder="https://..."
@@ -468,7 +532,7 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
             <Label className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
               {stage.requirements?.textLabel || "Written Response"}
-              {stage.requirements?.textRequired && (
+              {stage.requirements?.textRequired && !isSubmitted && (
                 <Badge variant="outline" className="text-xs">Required</Badge>
               )}
             </Label>
@@ -479,17 +543,19 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
               rows={12}
               className="min-h-[200px] resize-y"
             />
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <div className="flex items-center gap-3">
-                <span className="font-medium">{(watch("content.textContent") || "").length.toLocaleString()} chars</span>
-                {stage.requirements?.textMinLength && stage.requirements?.textMinLength > 0 && (
-                  <span className="text-muted-foreground/70">Min: {stage.requirements.textMinLength.toLocaleString()}</span>
-                )}
-                {stage.requirements?.textMaxLength && (
-                  <span className="text-muted-foreground/70">Max: {stage.requirements.textMaxLength.toLocaleString()}</span>
-                )}
+            {!isSubmitted && (
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                <div className="flex items-center gap-3">
+                  <span className="font-medium">{(watch("content.textContent") || "").length.toLocaleString()} chars</span>
+                  {stage.requirements?.textMinLength && stage.requirements?.textMinLength > 0 && (
+                    <span className="text-muted-foreground/70">Min: {stage.requirements.textMinLength.toLocaleString()}</span>
+                  )}
+                  {stage.requirements?.textMaxLength && (
+                    <span className="text-muted-foreground/70">Max: {stage.requirements.textMaxLength.toLocaleString()}</span>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -498,7 +564,7 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
           <div key={field.name} className="space-y-2">
             <Label className="flex items-center gap-2">
               {field.label}
-              {field.required && <Badge variant="outline" className="text-xs">Required</Badge>}
+              {field.required && !isSubmitted && <Badge variant="outline" className="text-xs">Required</Badge>}
             </Label>
             {field.type === "textarea" ? (
               <Textarea
@@ -743,5 +809,130 @@ function FileUploadArea({
         </p>
       )}
     </div>
+  );
+}
+
+function VideoUploadArea({
+  videoUrl,
+  onUpload,
+  onRemove,
+  isUploading,
+  disabled,
+}: {
+  videoUrl?: string;
+  onUpload: (file: File) => Promise<void>;
+  onRemove: () => void;
+  isUploading?: boolean;
+  disabled?: boolean;
+}) {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (disabled || isUploading) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    const allowedTypes = ["video/mp4", "video/webm", "video/quicktime"];
+    if (!allowedTypes.includes(file.type)) {
+      alert("Please upload a video file (MP4, WebM, or MOV format)");
+      return;
+    }
+
+    // Validate file size (100MB max)
+    const maxSize = 100 * 1024 * 1024;
+    if (file.size > maxSize) {
+      alert("Video file is too large. Maximum size is 100MB.");
+      return;
+    }
+
+    await onUpload(file);
+    e.target.value = "";
+  };
+
+  // If video is already uploaded, show the video player
+  if (videoUrl) {
+    return (
+      <div className="space-y-3">
+        <div className="relative rounded-lg overflow-hidden bg-black aspect-video">
+          <video
+            src={videoUrl}
+            controls
+            className="w-full h-full object-contain"
+          />
+        </div>
+        {!disabled && (
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onRemove}
+              className="flex-1"
+            >
+              <X className="mr-2 h-4 w-4" />
+              Remove Video
+            </Button>
+            <label className="flex-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                asChild
+              >
+                <span>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Replace Video
+                </span>
+              </Button>
+              <input
+                type="file"
+                className="hidden"
+                accept="video/mp4,video/webm,video/quicktime"
+                onChange={handleFileSelect}
+                disabled={isUploading}
+              />
+            </label>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Upload area when no video is uploaded
+  return (
+    <label className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-lg transition-colors ${
+      disabled || isUploading ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-muted/50"
+    }`}>
+      <div className="flex flex-col items-center justify-center py-6">
+        {isUploading ? (
+          <>
+            <Loader2 className="h-10 w-10 text-primary mb-3 animate-spin" />
+            <p className="text-sm font-medium text-muted-foreground">
+              Uploading video...
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              This may take a moment
+            </p>
+          </>
+        ) : (
+          <>
+            <Video className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium">Click to upload</span> your video
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              MP4, WebM, or MOV (max 100MB)
+            </p>
+          </>
+        )}
+      </div>
+      <input
+        type="file"
+        className="hidden"
+        accept="video/mp4,video/webm,video/quicktime"
+        onChange={handleFileSelect}
+        disabled={disabled || isUploading}
+      />
+    </label>
   );
 }

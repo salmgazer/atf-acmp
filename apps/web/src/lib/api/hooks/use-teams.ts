@@ -14,6 +14,8 @@ export type TeamStatus =
 
 export type TeamRole = "lead" | "co_lead" | "member";
 
+export type TeamMemberStatus = "pending" | "confirmed";
+
 export type InvitationStatus =
   | "pending"
   | "accepted"
@@ -34,9 +36,13 @@ export interface TeamMember {
     country: string;
     institution?: string;
     skills: string[];
+    profileImageUrl?: string;
   };
   role: TeamRole;
+  status: TeamMemberStatus;
   joinedAt: string;
+  confirmedAt?: string;
+  confirmedBy?: string;
 }
 
 export interface Team {
@@ -45,6 +51,12 @@ export interface Team {
   description?: string;
   status: TeamStatus;
   cohortId: string;
+  cohort?: {
+    id: string;
+    name: string;
+    teamSizeMin: number;
+    teamSizeMax: number;
+  };
   briefId?: string;
   brief?: {
     id: string;
@@ -69,9 +81,9 @@ export interface Team {
     title?: string;
     profileImageUrl?: string;
     expertise: string[];
-    calendlyLink?: string;
   };
   inviteCode: string;
+  githubRepoUrl?: string;
   disqualificationReason?: string;
   disqualifiedAt?: string;
   members: TeamMember[];
@@ -111,6 +123,7 @@ export interface TeamQueryParams {
   cohortId?: string;
   status?: TeamStatus;
   briefId?: string;
+  organizationId?: string;
   search?: string;
   hasbrief?: boolean;
 }
@@ -145,12 +158,54 @@ export interface CreateTeamDto {
 export interface UpdateTeamDto {
   name?: string;
   description?: string;
+  githubRepoUrl?: string;
 }
 
 export interface SendInvitationDto {
   participantId: string;
   invitedBy: string;
   message?: string;
+}
+
+export type ScheduledSessionStatus =
+  | "scheduled"
+  | "confirmed"
+  | "completed"
+  | "cancelled"
+  | "no_show"
+  | "rescheduled";
+
+export interface TeamScheduledSession {
+  id: string;
+  mentorId: string;
+  mentor: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    company?: string;
+    title?: string;
+    profileImageUrl?: string;
+    expertise: string[];
+  };
+  teamId: string;
+  sessionNumber: number;
+  scheduledAt: string;
+  durationMinutes: number;
+  question: string;
+  status: ScheduledSessionStatus;
+  googleMeetLink?: string;
+  confirmedByMentor: boolean;
+  notes?: string;
+  actionItems: string[];
+  mentorFeedback?: string;
+  teamFeedback?: string;
+  rating?: number;
+}
+
+export interface TeamSessionsResponse {
+  upcoming: TeamScheduledSession[];
+  past: TeamScheduledSession[];
 }
 
 // Query keys
@@ -164,6 +219,9 @@ export const teamKeys = {
   inviteCode: (code: string) => [...teamKeys.all, "inviteCode", code] as const,
   statistics: (cohortId?: string) => [...teamKeys.all, "statistics", cohortId] as const,
   invitations: (teamId: string) => [...teamKeys.all, "invitations", teamId] as const,
+  pendingMembers: (teamId: string) => [...teamKeys.all, "pendingMembers", teamId] as const,
+  removalRequests: (teamId: string) => [...teamKeys.all, "removalRequests", teamId] as const,
+  sessions: (teamId: string) => [...teamKeys.all, "sessions", teamId] as const,
   searchParticipants: (cohortId: string, query: string) =>
     [...teamKeys.all, "search", cohortId, query] as const,
 };
@@ -186,6 +244,7 @@ export function useTeams(params?: TeamQueryParams) {
       if (params?.cohortId) searchParams.set("cohortId", params.cohortId);
       if (params?.status) searchParams.set("status", params.status);
       if (params?.briefId) searchParams.set("briefId", params.briefId);
+      if (params?.organizationId) searchParams.set("organizationId", params.organizationId);
       if (params?.search) searchParams.set("search", params.search);
       if (params?.hasbrief !== undefined)
         searchParams.set("hasbrief", String(params.hasbrief));
@@ -251,6 +310,14 @@ export function useTeamInvitations(teamId: string) {
   });
 }
 
+export function useTeamSessions(teamId: string) {
+  return useQuery({
+    queryKey: teamKeys.sessions(teamId),
+    queryFn: () => api.get<TeamSessionsResponse>(`/teams/${teamId}/sessions`),
+    enabled: !!teamId,
+  });
+}
+
 export function useSearchAvailableParticipants(cohortId: string, query: string) {
   return useQuery({
     queryKey: teamKeys.searchParticipants(cohortId, query),
@@ -305,6 +372,7 @@ export function useUpdateTeam() {
       api.patch<Team>(`/teams/${id}`, data),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: teamKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: teamKeys.all });
       queryClient.setQueryData(teamKeys.detail(data.id), data);
       toast.success("Team updated");
     },
@@ -486,6 +554,216 @@ export function useCancelInvitation() {
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to cancel invitation");
+    },
+  });
+}
+
+// ============ Pending Members ============
+
+export function usePendingMembers(teamId: string) {
+  return useQuery({
+    queryKey: teamKeys.pendingMembers(teamId),
+    queryFn: () => api.get<TeamMember[]>(`/teams/${teamId}/pending-members`),
+    enabled: !!teamId,
+  });
+}
+
+export function useConfirmPendingMember() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      teamId,
+      memberId,
+      confirmedBy,
+    }: {
+      teamId: string;
+      memberId: string;
+      confirmedBy: string;
+    }) => api.post<TeamMember>(`/teams/${teamId}/members/${memberId}/confirm`, { confirmedBy }),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: teamKeys.all });
+      queryClient.invalidateQueries({ queryKey: teamKeys.pendingMembers(variables.teamId) });
+      toast.success("Member confirmed!");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to confirm member");
+    },
+  });
+}
+
+export function useDeclinePendingMember() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      teamId,
+      memberId,
+      declinedBy,
+    }: {
+      teamId: string;
+      memberId: string;
+      declinedBy: string;
+    }) => api.post(`/teams/${teamId}/members/${memberId}/decline`, { declinedBy }),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: teamKeys.all });
+      queryClient.invalidateQueries({ queryKey: teamKeys.pendingMembers(variables.teamId) });
+      toast.success("Join request declined");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to decline request");
+    },
+  });
+}
+
+// ============ Member Removal Requests ============
+
+export interface MemberRemovalRequest {
+  id: string;
+  teamId: string;
+  memberId: string;
+  participantId: string;
+  participant?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  };
+  requestedBy: string;
+  requester?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+  };
+  status: "pending" | "approved" | "rejected";
+  reason?: string;
+  requestedAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+  resolutionNotes?: string;
+}
+
+export function useRequestMemberRemoval() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      teamId,
+      participantId,
+      requestedBy,
+      reason,
+    }: {
+      teamId: string;
+      participantId: string;
+      requestedBy: string;
+      reason?: string;
+    }) =>
+      api.post<{ immediate: boolean; request?: MemberRemovalRequest }>(
+        `/teams/${teamId}/removal-requests`,
+        { participantId, requestedBy, reason }
+      ),
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: teamKeys.all });
+      queryClient.invalidateQueries({ queryKey: teamKeys.pendingMembers(variables.teamId) });
+      if (data.immediate) {
+        toast.success("Member removed from team");
+      } else {
+        toast.success("Removal request sent to staff for approval");
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to request member removal");
+    },
+  });
+}
+
+export function useTeamRemovalRequests(teamId: string) {
+  return useQuery({
+    queryKey: teamKeys.removalRequests(teamId),
+    queryFn: () => api.get<MemberRemovalRequest[]>(`/teams/${teamId}/removal-requests`),
+    enabled: !!teamId,
+  });
+}
+
+// ============ Admin: Removal Request Management ============
+
+export const adminRemovalRequestKeys = {
+  all: ["admin", "removal-requests"] as const,
+  list: (cohortId?: string) => [...adminRemovalRequestKeys.all, "list", cohortId] as const,
+};
+
+export interface AdminMemberRemovalRequest extends MemberRemovalRequest {
+  team?: {
+    id: string;
+    name: string;
+    cohortId: string;
+  };
+}
+
+export function useAdminRemovalRequests(cohortId?: string) {
+  return useQuery({
+    queryKey: adminRemovalRequestKeys.list(cohortId),
+    queryFn: () => {
+      const url = cohortId
+        ? `/teams/admin/removal-requests?cohortId=${cohortId}`
+        : "/teams/admin/removal-requests";
+      return api.get<AdminMemberRemovalRequest[]>(url);
+    },
+  });
+}
+
+export function useApproveRemovalRequest() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      requestId,
+      resolvedBy,
+      notes,
+    }: {
+      requestId: string;
+      resolvedBy: string;
+      notes?: string;
+    }) =>
+      api.post<MemberRemovalRequest>(
+        `/teams/admin/removal-requests/${requestId}/approve`,
+        { resolvedBy, notes }
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: adminRemovalRequestKeys.all });
+      queryClient.invalidateQueries({ queryKey: teamKeys.all });
+      toast.success("Removal request approved - member has been removed from team");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to approve removal request");
+    },
+  });
+}
+
+export function useRejectRemovalRequest() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      requestId,
+      resolvedBy,
+      notes,
+    }: {
+      requestId: string;
+      resolvedBy: string;
+      notes?: string;
+    }) =>
+      api.post<MemberRemovalRequest>(
+        `/teams/admin/removal-requests/${requestId}/reject`,
+        { resolvedBy, notes }
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: adminRemovalRequestKeys.all });
+      queryClient.invalidateQueries({ queryKey: teamKeys.all });
+      toast.success("Removal request rejected - member will remain on team");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to reject removal request");
     },
   });
 }

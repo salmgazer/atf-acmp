@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
+import { PhoneInput } from "@/components/ui/phone-input";
 import {
   useCurrentParticipant,
   useCompleteOnboarding,
@@ -609,11 +610,17 @@ function ProfileStep({
 
         <div className="space-y-2">
           <Label htmlFor="phoneNumber">Phone Number</Label>
-          <Input
-            id="phoneNumber"
-            type="tel"
-            placeholder="+254 700 000 000"
-            {...form.register("phoneNumber")}
+          <Controller
+            name="phoneNumber"
+            control={form.control}
+            render={({ field }) => (
+              <PhoneInput
+                id="phoneNumber"
+                value={field.value || ""}
+                onChange={field.onChange}
+                defaultCountry="ke"
+              />
+            )}
           />
         </div>
       </div>

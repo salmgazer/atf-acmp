@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Loader2 } from "lucide-react";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { PhoneInput } from "@/components/ui/phone-input";
 import {
   Dialog,
   DialogContent,
@@ -104,6 +105,7 @@ export function OrganizationFormDialog({
     reset,
     setValue,
     watch,
+    control,
     formState: { errors },
   } = useForm<OrganizationFormData>({
     resolver: zodResolver(organizationSchema),
@@ -249,11 +251,17 @@ export function OrganizationFormDialog({
 
             <div className="space-y-2">
               <Label htmlFor="contactPhone">Contact Phone</Label>
-              <Input
-                id="contactPhone"
-                placeholder="+233 XX XXX XXXX"
-                {...register("contactPhone")}
-                disabled={isPending}
+              <Controller
+                name="contactPhone"
+                control={control}
+                render={({ field }) => (
+                  <PhoneInput
+                    value={field.value || ""}
+                    onChange={field.onChange}
+                    disabled={isPending}
+                    placeholder="Enter phone number"
+                  />
+                )}
               />
             </div>
           </div>

@@ -98,6 +98,156 @@ export class NotificationTriggersService {
     });
   }
 
+  /**
+   * Notify team lead when someone requests to join their team
+   */
+  async onTeamJoinRequest(params: {
+    teamLeaderId: string;
+    teamId: string;
+    teamName: string;
+    requesterName: string;
+    requesterId: string;
+  }) {
+    this.logger.log(`Team join request notification for team lead ${params.teamLeaderId}`);
+
+    return this.notificationsService.create({
+      recipientId: params.teamLeaderId,
+      recipientType: NotificationRecipientType.PARTICIPANT,
+      type: NotificationType.TEAM_JOIN_REQUEST,
+      title: "New Join Request",
+      body: `${params.requesterName} wants to join your team "${params.teamName}"`,
+      summary: `Review join request from ${params.requesterName}`,
+      data: {
+        teamId: params.teamId,
+        teamName: params.teamName,
+        requesterId: params.requesterId,
+        requesterName: params.requesterName,
+      },
+      actionUrl: `/app/team`,
+      iconName: "user-plus",
+      priority: NotificationPriority.HIGH,
+    });
+  }
+
+  /**
+   * Notify participant when their join request is confirmed
+   */
+  async onTeamJoinConfirmed(params: {
+    participantId: string;
+    teamId: string;
+    teamName: string;
+  }) {
+    return this.notificationsService.create({
+      recipientId: params.participantId,
+      recipientType: NotificationRecipientType.PARTICIPANT,
+      type: NotificationType.TEAM_JOIN_CONFIRMED,
+      title: "You're In! 🎉",
+      body: `Your request to join "${params.teamName}" has been approved!`,
+      data: { teamId: params.teamId, teamName: params.teamName },
+      actionUrl: `/app/team`,
+      iconName: "users",
+      priority: NotificationPriority.HIGH,
+    });
+  }
+
+  /**
+   * Notify participant when their join request is declined
+   */
+  async onTeamJoinDeclined(params: {
+    participantId: string;
+    teamId: string;
+    teamName: string;
+  }) {
+    return this.notificationsService.create({
+      recipientId: params.participantId,
+      recipientType: NotificationRecipientType.PARTICIPANT,
+      type: NotificationType.TEAM_JOIN_DECLINED,
+      title: "Join Request Declined",
+      body: `Your request to join "${params.teamName}" was not accepted.`,
+      data: { teamId: params.teamId, teamName: params.teamName },
+      actionUrl: `/app/team`,
+      iconName: "users",
+    });
+  }
+
+  /**
+   * Notify staff when a team lead requests to remove a member
+   */
+  async onTeamMemberRemovalRequested(params: {
+    staffUserIds: string[];
+    teamId: string;
+    teamName: string;
+    memberName: string;
+    requesterName: string;
+    requestId: string;
+    reason?: string;
+  }) {
+    this.logger.log(`Member removal request notification to staff for team ${params.teamId}`);
+
+    return this.notificationsService.createBulk({
+      recipientIds: params.staffUserIds,
+      recipientType: NotificationRecipientType.USER,
+      type: NotificationType.TEAM_MEMBER_REMOVAL_REQUESTED,
+      title: "Member Removal Request",
+      body: `${params.requesterName} requested to remove ${params.memberName} from "${params.teamName}"`,
+      summary: params.reason || "Review removal request",
+      data: {
+        teamId: params.teamId,
+        teamName: params.teamName,
+        memberName: params.memberName,
+        requesterName: params.requesterName,
+        requestId: params.requestId,
+        reason: params.reason,
+      },
+      actionUrl: `/portal/teams/removal-requests`,
+      iconName: "user-minus",
+      priority: NotificationPriority.HIGH,
+    });
+  }
+
+  /**
+   * Notify team lead when their removal request is approved
+   */
+  async onTeamMemberRemovalApproved(params: {
+    teamLeaderId: string;
+    teamId: string;
+    teamName: string;
+    memberName: string;
+  }) {
+    return this.notificationsService.create({
+      recipientId: params.teamLeaderId,
+      recipientType: NotificationRecipientType.PARTICIPANT,
+      type: NotificationType.TEAM_MEMBER_REMOVAL_APPROVED,
+      title: "Removal Request Approved",
+      body: `${params.memberName} has been removed from "${params.teamName}"`,
+      data: { teamId: params.teamId, memberName: params.memberName },
+      actionUrl: `/app/team`,
+      iconName: "users",
+    });
+  }
+
+  /**
+   * Notify team lead when their removal request is rejected
+   */
+  async onTeamMemberRemovalRejected(params: {
+    teamLeaderId: string;
+    teamId: string;
+    teamName: string;
+    memberName: string;
+    reason?: string;
+  }) {
+    return this.notificationsService.create({
+      recipientId: params.teamLeaderId,
+      recipientType: NotificationRecipientType.PARTICIPANT,
+      type: NotificationType.TEAM_MEMBER_REMOVAL_REJECTED,
+      title: "Removal Request Rejected",
+      body: `Your request to remove ${params.memberName} from "${params.teamName}" was not approved.${params.reason ? ` Reason: ${params.reason}` : ""}`,
+      data: { teamId: params.teamId, memberName: params.memberName, reason: params.reason },
+      actionUrl: `/app/team`,
+      iconName: "users",
+    });
+  }
+
   // ============ Mentor Notifications ============
 
   async onMentorAssigned(params: {
@@ -175,6 +325,134 @@ export class NotificationTriggersService {
         sessionDate: params.sessionDate.toISOString(),
       },
       actionUrl: `/mentor/teams/${params.teamId}`,
+    });
+  }
+
+  /**
+   * Notify mentor when a team requests/books a session
+   */
+  async onMentorSessionRequested(params: {
+    mentorId: string;
+    teamId: string;
+    teamName: string;
+    sessionId: string;
+    sessionDate: Date;
+    question: string;
+  }) {
+    const formattedDate = params.sessionDate.toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+
+    this.logger.log(`Session request notification to mentor ${params.mentorId} from team ${params.teamName}`);
+
+    return this.notificationsService.create({
+      recipientId: params.mentorId,
+      recipientType: NotificationRecipientType.MENTOR,
+      type: NotificationType.MENTOR_SESSION_REQUESTED,
+      title: "New Session Request",
+      body: `${params.teamName} requested a session for ${formattedDate}`,
+      summary: params.question.slice(0, 100),
+      data: {
+        teamId: params.teamId,
+        teamName: params.teamName,
+        sessionId: params.sessionId,
+        sessionDate: params.sessionDate.toISOString(),
+        question: params.question,
+      },
+      actionUrl: `/mentor/sessions`,
+      iconName: "calendar-plus",
+      priority: NotificationPriority.HIGH,
+    });
+  }
+
+  /**
+   * Notify team members when mentor confirms their session
+   */
+  async onMentorSessionConfirmed(params: {
+    teamMemberIds: string[];
+    teamId: string;
+    teamName: string;
+    mentorName: string;
+    sessionId: string;
+    sessionDate: Date;
+    googleMeetLink?: string;
+  }) {
+    const formattedDate = params.sessionDate.toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+
+    this.logger.log(`Session confirmed notification to team ${params.teamId}`);
+
+    return this.notificationsService.createBulk({
+      recipientIds: params.teamMemberIds,
+      recipientType: NotificationRecipientType.PARTICIPANT,
+      type: NotificationType.MENTOR_SESSION_CONFIRMED,
+      title: "Session Confirmed! ✅",
+      body: `${params.mentorName} confirmed your session for ${formattedDate}`,
+      summary: params.googleMeetLink ? "Meeting link available" : undefined,
+      data: {
+        teamId: params.teamId,
+        sessionId: params.sessionId,
+        sessionDate: params.sessionDate.toISOString(),
+        mentorName: params.mentorName,
+        googleMeetLink: params.googleMeetLink,
+      },
+      actionUrl: `/app/team`,
+      iconName: "calendar-check",
+      priority: NotificationPriority.HIGH,
+    });
+  }
+
+  /**
+   * Notify team members when mentor declines their session request
+   */
+  async onMentorSessionDeclined(params: {
+    teamMemberIds: string[];
+    teamId: string;
+    teamName: string;
+    mentorName: string;
+    sessionId: string;
+    sessionDate: Date;
+    declineReason?: string;
+  }) {
+    const formattedDate = params.sessionDate.toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+
+    this.logger.log(`Session declined notification to team ${params.teamId}`);
+
+    const body = params.declineReason
+      ? `${params.mentorName} couldn't accept your session for ${formattedDate}. Reason: ${params.declineReason}`
+      : `${params.mentorName} couldn't accept your session for ${formattedDate}. Please try booking a different time.`;
+
+    return this.notificationsService.createBulk({
+      recipientIds: params.teamMemberIds,
+      recipientType: NotificationRecipientType.PARTICIPANT,
+      type: NotificationType.MENTOR_SESSION_DECLINED,
+      title: "Session Not Available",
+      body,
+      data: {
+        teamId: params.teamId,
+        sessionId: params.sessionId,
+        sessionDate: params.sessionDate.toISOString(),
+        mentorName: params.mentorName,
+        declineReason: params.declineReason,
+      },
+      actionUrl: `/app/team`,
+      iconName: "calendar-x",
+      priority: NotificationPriority.HIGH,
     });
   }
 
@@ -283,6 +561,70 @@ export class NotificationTriggersService {
   }
 
   // ============ Submission Notifications ============
+
+  async onSubmissionNeedsApproval(params: {
+    staffUserIds: string[];
+    submissionId: string;
+    teamId: string;
+    teamName: string;
+    stageId: string;
+    stageName: string;
+    cohortName: string;
+  }) {
+    return this.notificationsService.createBulk({
+      recipientIds: params.staffUserIds,
+      recipientType: NotificationRecipientType.USER,
+      type: NotificationType.SUBMISSION_NEEDS_APPROVAL,
+      title: "Submission Needs Approval",
+      body: `${params.teamName} submitted "${params.stageName}" and needs your approval`,
+      data: {
+        submissionId: params.submissionId,
+        teamId: params.teamId,
+        teamName: params.teamName,
+        stageId: params.stageId,
+        stageName: params.stageName,
+        cohortName: params.cohortName,
+      },
+      actionUrl: `/portal/submissions/review?stageId=${params.stageId}`,
+      priority: NotificationPriority.HIGH,
+    });
+  }
+
+  async onSubmissionApproved(params: {
+    teamMemberIds: string[];
+    teamId: string;
+    stageName: string;
+    approvalNotes?: string;
+  }) {
+    return this.notificationsService.createBulk({
+      recipientIds: params.teamMemberIds,
+      recipientType: NotificationRecipientType.PARTICIPANT,
+      type: NotificationType.SUBMISSION_APPROVED,
+      title: "Submission Approved! 🎉",
+      body: `Your ${params.stageName} submission has been approved${params.approvalNotes ? ". Note: " + params.approvalNotes : ""}`,
+      data: { teamId: params.teamId, stageName: params.stageName },
+      actionUrl: `/app/submissions`,
+      priority: NotificationPriority.HIGH,
+    });
+  }
+
+  async onSubmissionRejected(params: {
+    teamMemberIds: string[];
+    teamId: string;
+    stageName: string;
+    rejectionReason: string;
+  }) {
+    return this.notificationsService.createBulk({
+      recipientIds: params.teamMemberIds,
+      recipientType: NotificationRecipientType.PARTICIPANT,
+      type: NotificationType.SUBMISSION_REJECTED,
+      title: "Submission Not Approved",
+      body: `Your ${params.stageName} submission was not approved. Reason: ${params.rejectionReason}`,
+      data: { teamId: params.teamId, stageName: params.stageName, rejectionReason: params.rejectionReason },
+      actionUrl: `/app/submissions`,
+      priority: NotificationPriority.HIGH,
+    });
+  }
 
   async onSubmissionReceived(params: {
     organizationId: string;

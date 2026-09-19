@@ -4,13 +4,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   Users,
   FileText,
   Building2,
   UserCog,
-  Settings,
   LogOut,
   Menu,
   X,
@@ -26,12 +26,17 @@ import {
   ScrollText,
   Shield,
   MessageSquare,
+  ClipboardCheck,
+  Bot,
+  ChevronsUpDown,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useUIStore } from "@/lib/stores";
+import { useUIStore, useStaffCohortStore } from "@/lib/stores";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useChatContext } from "@/lib/contexts/chat-context";
-import { useState } from "react";
+import { useCohorts } from "@/lib/api/hooks/use-cohorts";
+import { useState, useEffect } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,11 +48,20 @@ import {
   DropdownMenuSubContent,
   DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const overviewItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/portal/dashboard" },
   { icon: Layers, label: "Cohorts", href: "/portal/cohorts" },
   { icon: Users, label: "Teams", href: "/portal/teams" },
+  { icon: ClipboardCheck, label: "Submissions Review", href: "/portal/submissions/review" },
+  { icon: Bot, label: "AI Evaluations", href: "/portal/evaluations" },
   { icon: FileText, label: "Briefs", href: "/portal/briefs" },
   { icon: MessageSquare, label: "Chat", href: "/portal/chat" },
 ];
@@ -61,7 +75,6 @@ const managementItems = [
 
 const settingsItems = [
   { icon: ScrollText, label: "Audit Logs", href: "/portal/audit-logs" },
-  { icon: Settings, label: "Settings", href: "/portal/settings" },
 ];
 
 interface StaffLayoutProps {
@@ -71,13 +84,38 @@ interface StaffLayoutProps {
 export function StaffLayout({ children }: StaffLayoutProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { theme, setTheme } = useTheme();
   const { sidebarCollapsed, toggleSidebarCollapse } = useUIStore();
   const { user, logout } = useAuthStore();
   const { totalUnreadCount } = useChatContext();
   const [mobileOpen, setMobileOpen] = useState(false);
+  
+  // Global cohort context
+  const { 
+    globalCohort, 
+    globalCohortId,
+    cohorts, 
+    setCohorts, 
+    setGlobalCohortById, 
+    initializeGlobalCohort 
+  } = useStaffCohortStore();
+  
+  // Fetch cohorts
+  const { data: cohortsData } = useCohorts({ limit: 100 });
+  
+  // Update store when cohorts are fetched
+  useEffect(() => {
+    if (cohortsData?.data && cohortsData.data.length > 0) {
+      const cohortList = cohortsData.data.map((c) => ({ id: c.id, name: c.name }));
+      setCohorts(cohortList);
+      initializeGlobalCohort();
+    }
+  }, [cohortsData, setCohorts, initializeGlobalCohort]);
 
   const handleLogout = () => {
+    // Clear all cached queries to prevent stale data on next login
+    queryClient.clear();
     logout();
     router.push("/portal/login");
   };
@@ -202,6 +240,63 @@ export function StaffLayout({ children }: StaffLayoutProps) {
 
         {/* Navigation */}
         <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
+          {/* Global Cohort Selector */}
+          {!sidebarCollapsed ? (
+            <div className="px-1 pb-2">
+              <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Cohort
+              </p>
+              <Select
+                value={globalCohortId || ""}
+                onValueChange={(value) => setGlobalCohortById(value)}
+              >
+                <SelectTrigger className="w-full bg-accent/50 border-border/50">
+                  <SelectValue placeholder="Select cohort">
+                    {globalCohort?.name || "Select cohort"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {cohorts.map((cohort) => (
+                    <SelectItem key={cohort.id} value={cohort.id}>
+                      {cohort.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div className="flex justify-center pb-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button 
+                    className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent/50 hover:bg-accent transition-colors"
+                    title={globalCohort?.name || "Select cohort"}
+                  >
+                    <Layers className="h-5 w-5 text-muted-foreground" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="right" align="start" className="w-56">
+                  <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                    Select Cohort
+                  </div>
+                  <DropdownMenuSeparator />
+                  {cohorts.map((cohort) => (
+                    <DropdownMenuItem
+                      key={cohort.id}
+                      onClick={() => setGlobalCohortById(cohort.id)}
+                      className="flex items-center justify-between cursor-pointer"
+                    >
+                      {cohort.name}
+                      {globalCohortId === cohort.id && (
+                        <Check className="h-4 w-4 text-primary" />
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
+          
           <NavSection title="Overview" items={overviewItems} />
           <NavSection title="Management" items={managementItems} />
           <NavSection title="Settings" items={settingsItems} />

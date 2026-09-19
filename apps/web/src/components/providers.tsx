@@ -7,6 +7,7 @@ import { useState, type ReactNode } from "react";
 import { Toaster } from "sonner";
 import { ChatProvider } from "@/lib/contexts/chat-context";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { PushNotificationManager } from "@/components/push-notification-manager";
 
 interface ProvidersProps {
   children: ReactNode;
@@ -18,7 +19,7 @@ export function Providers({ children }: ProvidersProps) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 60 * 1000, // 1 minute
+            staleTime: 30 * 1000, // 30 seconds - data considered fresh for this duration
             gcTime: 5 * 60 * 1000, // 5 minutes
             retry: (failureCount, error: any) => {
               // Don't retry on 4xx errors
@@ -27,8 +28,8 @@ export function Providers({ children }: ProvidersProps) {
               }
               return failureCount < 1;
             },
-            refetchOnWindowFocus: false,
-            refetchOnReconnect: false,
+            refetchOnWindowFocus: true, // Refetch when user returns to tab
+            refetchOnReconnect: true, // Refetch when network reconnects
           },
         },
       })
@@ -39,6 +40,7 @@ export function Providers({ children }: ProvidersProps) {
       <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
         <TooltipProvider>
           <ChatProvider>
+            <PushNotificationManager />
             {children}
           </ChatProvider>
         </TooltipProvider>

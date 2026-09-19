@@ -20,7 +20,7 @@ export default function EvaluationDetailPage({ params }: PageProps) {
   const { data: evaluation, isLoading, error } = useEvaluation(id);
 
   return (
-    <ProtectedRoute requiredRole="admin">
+    <ProtectedRoute portal="staff">
       <StaffLayout>
         <div className="container py-6 space-y-6">
           {/* Header */}

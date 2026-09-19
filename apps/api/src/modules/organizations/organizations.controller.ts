@@ -10,6 +10,7 @@ import {
   HttpCode,
   HttpStatus,
   UseInterceptors,
+  UseGuards,
   UploadedFile,
   BadRequestException,
 } from "@nestjs/common";
@@ -35,9 +36,18 @@ import {
 } from "./dto/organization.dto";
 import { CurrentUser } from "@/common/decorators/current-user.decorator";
 import { UploadService } from "@/common/services/upload.service";
+import { Audit } from "@/common/decorators/audit.decorator";
+import { AuditInterceptor } from "@/common/interceptors/audit.interceptor";
+import { AuditAction } from "@/database/entities/audit-log.entity";
+import { JwtAuthGuard } from "@/auth/guards/jwt-auth.guard";
+import { RolesGuard } from "@/auth/guards/roles.guard";
+import { Roles } from "@/common/decorators/roles.decorator";
+import { Role } from "@/database/entities/user.entity";
 
 @ApiTags("organizations")
 @Controller("organizations")
+@UseInterceptors(AuditInterceptor)
+@UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class OrganizationsController {
   constructor(
@@ -52,6 +62,7 @@ export class OrganizationsController {
   async getCurrentOrganization(@CurrentUser("email") email: string) {
     // Look up organization by the user's email
     const org = await this.organizationsService.findByEmail(email);
+    
     if (!org) {
       throw new Error("Organization not found");
     }
@@ -67,6 +78,13 @@ export class OrganizationsController {
   }
 
   @Post()
+  @Audit({
+    action: AuditAction.CREATE,
+    entityType: "Organization",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.name,
+    getDescription: (result) => `Created organization: ${result?.name}`,
+  })
   @ApiOperation({ summary: "Create a new organization" })
   @ApiResponse({ status: 201, description: "Organization created" })
   @ApiResponse({ status: 400, description: "Validation error" })
@@ -98,6 +116,13 @@ export class OrganizationsController {
   }
 
   @Patch(":id")
+  @Audit({
+    action: AuditAction.UPDATE,
+    entityType: "Organization",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.name,
+    getDescription: (result) => `Updated organization: ${result?.name}`,
+  })
   @ApiOperation({ summary: "Update an organization" })
   @ApiParam({ name: "id", description: "Organization ID" })
   @ApiResponse({ status: 200, description: "Organization updated" })
@@ -107,6 +132,13 @@ export class OrganizationsController {
 
   @Post(":id/approve")
   @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: AuditAction.STATUS_CHANGE,
+    entityType: "Organization",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.name,
+    getDescription: (result) => `Approved organization: ${result?.name}`,
+  })
   @ApiOperation({ summary: "Approve an organization" })
   @ApiParam({ name: "id", description: "Organization ID" })
   @ApiResponse({ status: 200, description: "Organization approved" })
@@ -117,6 +149,13 @@ export class OrganizationsController {
 
   @Post(":id/reject")
   @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: AuditAction.STATUS_CHANGE,
+    entityType: "Organization",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.name,
+    getDescription: (result) => `Rejected organization: ${result?.name}`,
+  })
   @ApiOperation({ summary: "Reject an organization" })
   @ApiParam({ name: "id", description: "Organization ID" })
   @ApiResponse({ status: 200, description: "Organization rejected" })
@@ -126,6 +165,13 @@ export class OrganizationsController {
 
   @Post(":id/deactivate")
   @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: AuditAction.STATUS_CHANGE,
+    entityType: "Organization",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.name,
+    getDescription: (result) => `Deactivated organization: ${result?.name}`,
+  })
   @ApiOperation({ summary: "Deactivate an organization" })
   @ApiParam({ name: "id", description: "Organization ID" })
   @ApiResponse({ status: 200, description: "Organization deactivated" })
@@ -135,6 +181,13 @@ export class OrganizationsController {
 
   @Post(":id/activate")
   @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: AuditAction.STATUS_CHANGE,
+    entityType: "Organization",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => result?.name,
+    getDescription: (result) => `Activated organization: ${result?.name}`,
+  })
   @ApiOperation({ summary: "Activate an organization" })
   @ApiParam({ name: "id", description: "Organization ID" })
   @ApiResponse({ status: 200, description: "Organization activated" })
@@ -187,6 +240,11 @@ export class OrganizationsController {
   // ============ Bulk Import ============
 
   @Post("bulk-import")
+  @Audit({
+    action: AuditAction.BULK_IMPORT,
+    entityType: "Organization",
+    getDescription: (result) => `Bulk imported ${result?.created || 0} organizations`,
+  })
   @ApiOperation({ summary: "Bulk import organizations" })
   @ApiResponse({ status: 201, description: "Import results" })
   @ApiResponse({ status: 400, description: "Validation error" })

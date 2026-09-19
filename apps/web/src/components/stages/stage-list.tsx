@@ -21,6 +21,8 @@ import {
   ExternalLink,
   Percent,
   AlignLeft,
+  Users,
+  ClipboardCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -161,6 +163,18 @@ export function StageList({ cohortId }: StageListProps) {
                           {isPast && (
                             <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
                               Past Deadline
+                            </Badge>
+                          )}
+                          {stage.unlocksMentorClaim && (
+                            <Badge variant="outline" className="text-xs text-purple-600 border-purple-300 bg-purple-50 dark:bg-purple-950/30">
+                              <Users className="h-3 w-3 mr-1" />
+                              Unlocks Mentor Claim
+                            </Badge>
+                          )}
+                          {stage.requiresManualApproval && (
+                            <Badge variant="outline" className="text-xs text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30">
+                              <ClipboardCheck className="h-3 w-3 mr-1" />
+                              Requires Approval
                             </Badge>
                           )}
                         </div>

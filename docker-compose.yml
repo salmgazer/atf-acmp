@@ -125,6 +125,14 @@ services:
       S3_BUCKET: ${S3_BUCKET:-acmp-uploads}
       S3_REGION: ${S3_REGION:-us-east-1}
       S3_PUBLIC_URL: ${S3_PUBLIC_URL:-http://localhost:9000/acmp-uploads}
+      # AI Evaluation
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      # Google Calendar Integration
+      GOOGLE_SERVICE_ACCOUNT_EMAIL: ${GOOGLE_SERVICE_ACCOUNT_EMAIL:-}
+      GOOGLE_PRIVATE_KEY: ${GOOGLE_PRIVATE_KEY:-}
+      GOOGLE_CALENDAR_EMAIL: ${GOOGLE_CALENDAR_EMAIL:-}
+      GOOGLE_ADMIN_EMAIL: ${GOOGLE_ADMIN_EMAIL:-}
       # Enable polling for file watching in Docker
       CHOKIDAR_USEPOLLING: "true"
     depends_on:

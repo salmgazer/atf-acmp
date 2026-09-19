@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { StaffLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useCohorts } from "@/lib/api/hooks/use-cohorts";
 import { useStages } from "@/lib/api/hooks/use-stages";
+import { useStaffCohortStore } from "@/lib/stores/staff-cohort-store";
 import {
   Select,
   SelectContent,
@@ -18,12 +19,35 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EvaluationDashboard } from "@/components/evaluations";
 
 export default function EvaluationsPage() {
-  const [selectedCohortId, setSelectedCohortId] = useState<string>("");
+  // Get global cohort from store (set by sidebar)
+  const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
+  
+  // Local cohort filter - initialized from global but can be overridden
+  const [localCohortId, setLocalCohortId] = useState<string | null>(null);
+  const [hasInitialized, setHasInitialized] = useState(false);
+  
+  // Initialize local cohort from global when component mounts or global changes (if not yet set locally)
+  useEffect(() => {
+    if (globalCohortId && !hasInitialized) {
+      setLocalCohortId(globalCohortId);
+      setHasInitialized(true);
+    }
+  }, [globalCohortId, hasInitialized]);
+  
+  // Use local cohort if set, otherwise fall back to global
+  const selectedCohortId = localCohortId || globalCohortId || "";
+  
+  // Handle local cohort change (doesn't affect global sidebar)
+  const handleCohortChange = (cohortId: string) => {
+    setLocalCohortId(cohortId);
+    setHasInitialized(true);
+  };
+  
   const { data: cohorts, isLoading: cohortsLoading } = useCohorts();
-  const { data: stages } = useStages(selectedCohortId || null);
+  const { data: stages } = useStages(selectedCohortId || undefined);
 
   return (
-    <ProtectedRoute requiredRole="admin">
+    <ProtectedRoute portal="staff">
       <StaffLayout>
         <div className="container py-6 space-y-6">
           <div>
@@ -41,12 +65,12 @@ export default function EvaluationsPage() {
                 {cohortsLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Select value={selectedCohortId} onValueChange={setSelectedCohortId}>
+                  <Select value={selectedCohortId} onValueChange={handleCohortChange}>
                     <SelectTrigger className="w-72">
                       <SelectValue placeholder="Choose a cohort" />
                     </SelectTrigger>
                     <SelectContent>
-                      {cohorts?.map((cohort) => (
+                      {cohorts?.data?.map((cohort) => (
                         <SelectItem key={cohort.id} value={cohort.id}>
                           {cohort.name}
                         </SelectItem>

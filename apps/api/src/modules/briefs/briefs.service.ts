@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, ILike, In } from "typeorm";
-import { Brief, BriefStatus, BriefRevision, BriefRevisionAction } from "@/database/entities/brief.entity";
+import { Brief, BriefStatus, BriefRevision, BriefRevisionAction, BriefRevisionActorType, calculateBriefScores, ScoringAnswers } from "@/database/entities/brief.entity";
 import { Vertical } from "@/database/entities/vertical.entity";
 import { EmailService } from "@/email/email.service";
 import { NotificationTriggersService } from "@/modules/notifications/notification-triggers.service";
@@ -19,6 +19,7 @@ import {
   ReviewBriefDto,
   BriefQueryDto,
   PaginatedBriefsDto,
+  StaffUpdateBriefDto,
 } from "./dto/brief.dto";
 
 @Injectable()
@@ -55,8 +56,25 @@ export class BriefsService {
       }
     }
 
+    // Calculate scores if scoringAnswers provided
+    let scoringData = {};
+    if (dto.scoringAnswers && Object.keys(dto.scoringAnswers).some(k => dto.scoringAnswers![k as keyof ScoringAnswers])) {
+      const scores = calculateBriefScores(dto.scoringAnswers);
+      scoringData = {
+        fitScore: scores.fitScore,
+        fitBand: scores.fitBand,
+        scoreOverride: scores.scoreOverride,
+        depthScore: scores.depthScore,
+        breadthScore: scores.breadthScore,
+        impactScore: scores.impactScore,
+        impactBand: scores.impactBand,
+        priorityScore: scores.priorityScore,
+      };
+    }
+
     const brief = this.briefRepository.create({
       ...dto,
+      ...scoringData,
       status: BriefStatus.DRAFT,
     });
 
@@ -90,10 +108,24 @@ export class BriefsService {
       where.title = ILike(`%${query.search}%`);
     }
 
+    // Determine sort order
+    let order: any = { createdAt: "DESC" };
+    if (query.sortBy === "priority") {
+      order = { priorityScore: query.sortOrder === "asc" ? "ASC" : "DESC", createdAt: "DESC" };
+    } else if (query.sortBy === "fitScore") {
+      order = { fitScore: query.sortOrder === "asc" ? "ASC" : "DESC", createdAt: "DESC" };
+    } else if (query.sortBy === "impactScore") {
+      order = { impactScore: query.sortOrder === "asc" ? "ASC" : "DESC", createdAt: "DESC" };
+    } else if (query.sortBy === "createdAt") {
+      order = { createdAt: query.sortOrder === "asc" ? "ASC" : "DESC" };
+    } else if (query.sortBy === "updatedAt") {
+      order = { updatedAt: query.sortOrder === "asc" ? "ASC" : "DESC" };
+    }
+
     const [data, total] = await this.briefRepository.findAndCount({
       where,
       relations: ["vertical", "organization"],
-      order: { createdAt: "DESC" },
+      order,
       skip,
       take: limit,
     });
@@ -144,7 +176,7 @@ export class BriefsService {
     return brief;
   }
 
-  async update(id: string, dto: UpdateBriefDto): Promise<Brief> {
+  async update(id: string, dto: UpdateBriefDto, actorId?: string, actorName?: string): Promise<Brief> {
     const brief = await this.findOne(id);
 
     // Only allow updates in DRAFT or REVISION_REQUESTED status
@@ -171,20 +203,54 @@ export class BriefsService {
       }
     }
 
-    // Store previous data for revision history
+    // Store previous data for revision history (capture all editable fields)
     const previousData = {
       title: brief.title,
       description: brief.description,
       problemStatement: brief.problemStatement,
       expectedOutcomes: brief.expectedOutcomes,
       verticalId: brief.verticalId,
+      tags: Array.isArray(brief.tags) ? brief.tags : [],
+      resources: brief.resources,
+      maxTeams: brief.maxTeams,
     };
 
-    Object.assign(brief, dto);
+    // Calculate scores if scoringAnswers provided
+    let scoringData = {};
+    const answers = dto.scoringAnswers || brief.scoringAnswers;
+    if (answers && Object.keys(answers).some(k => answers[k as keyof ScoringAnswers])) {
+      const scores = calculateBriefScores(answers);
+      scoringData = {
+        fitScore: scores.fitScore,
+        fitBand: scores.fitBand,
+        scoreOverride: scores.scoreOverride,
+        depthScore: scores.depthScore,
+        breadthScore: scores.breadthScore,
+        impactScore: scores.impactScore,
+        impactBand: scores.impactBand,
+        priorityScore: scores.priorityScore,
+      };
+    }
+
+    // Increment version
+    const newVersion = brief.currentVersion + 1;
+    brief.currentVersion = newVersion;
+
+    Object.assign(brief, dto, scoringData);
     const updated = await this.briefRepository.save(brief);
 
-    // Create revision record
-    await this.createRevision(id, BriefRevisionAction.UPDATED, undefined, undefined, previousData, dto);
+    // Create revision record with actor info
+    await this.createRevision(
+      id, 
+      BriefRevisionAction.UPDATED, 
+      actorId, 
+      actorName,
+      BriefRevisionActorType.ORGANIZATION,
+      undefined, 
+      previousData, 
+      dto,
+      newVersion
+    );
 
     return updated;
   }
@@ -226,7 +292,17 @@ export class BriefsService {
     }
 
     // Create revision record
-    await this.createRevision(id, BriefRevisionAction.SUBMITTED, undefined, dto.submissionNotes);
+    await this.createRevision(
+      id, 
+      BriefRevisionAction.SUBMITTED, 
+      undefined, 
+      undefined,
+      BriefRevisionActorType.ORGANIZATION,
+      dto.submissionNotes,
+      undefined,
+      undefined,
+      brief.currentVersion
+    );
 
     // Notify staff about new submission
     try {
@@ -324,7 +400,17 @@ export class BriefsService {
     const reviewed = await this.briefRepository.save(brief);
 
     // Create revision record
-    await this.createRevision(id, revisionAction, dto.reviewedBy, dto.feedback);
+    await this.createRevision(
+      id, 
+      revisionAction, 
+      dto.reviewedBy, 
+      undefined,
+      BriefRevisionActorType.STAFF,
+      dto.feedback,
+      undefined,
+      undefined,
+      brief.currentVersion
+    );
 
     // Send in-app notification for all status changes
     if (brief.organizationId) {
@@ -393,6 +479,55 @@ export class BriefsService {
     return this.briefRepository.save(brief);
   }
 
+  /**
+   * Add an image to the brief's image gallery (Stage B)
+   * Only allowed for approved briefs
+   */
+  async addImage(id: string, imageUrl: string): Promise<Brief> {
+    const brief = await this.findOne(id);
+
+    if (brief.status !== BriefStatus.APPROVED) {
+      throw new BadRequestException(
+        "Images can only be uploaded for approved briefs (Stage B)"
+      );
+    }
+
+    // Initialize array if null/undefined
+    if (!brief.imageUrls) {
+      brief.imageUrls = [];
+    }
+
+    // Limit to 10 images max
+    if (brief.imageUrls.length >= 10) {
+      throw new BadRequestException(
+        "Maximum of 10 images allowed per brief"
+      );
+    }
+
+    brief.imageUrls.push(imageUrl);
+    return this.briefRepository.save(brief);
+  }
+
+  /**
+   * Remove an image from the brief's image gallery (Stage B)
+   */
+  async removeImage(id: string, imageIndex: number): Promise<Brief> {
+    const brief = await this.findOne(id);
+
+    if (brief.status !== BriefStatus.APPROVED) {
+      throw new BadRequestException(
+        "Images can only be modified for approved briefs (Stage B)"
+      );
+    }
+
+    if (!brief.imageUrls || imageIndex < 0 || imageIndex >= brief.imageUrls.length) {
+      throw new BadRequestException("Invalid image index");
+    }
+
+    brief.imageUrls.splice(imageIndex, 1);
+    return this.briefRepository.save(brief);
+  }
+
   async getStatistics(cohortId?: string): Promise<{
     total: number;
     draft: number;
@@ -438,23 +573,215 @@ export class BriefsService {
     });
   }
 
+  /**
+   * Get a single revision by ID
+   */
+  async getRevision(briefId: string, revisionId: string): Promise<BriefRevision> {
+    const revision = await this.revisionRepository.findOne({
+      where: { id: revisionId, briefId },
+    });
+
+    if (!revision) {
+      throw new NotFoundException("Revision not found");
+    }
+
+    return revision;
+  }
+
+  /**
+   * Restore a brief to a previous revision
+   * Creates a new revision with the restored content
+   */
+  async restoreRevision(
+    briefId: string, 
+    revisionId: string, 
+    actorId: string, 
+    actorName: string,
+    comment?: string
+  ): Promise<Brief> {
+    const brief = await this.findOne(briefId);
+    const revision = await this.getRevision(briefId, revisionId);
+
+    // The revision's previousData contains the state before that revision was made
+    // So we want to restore TO the state captured in previousData
+    if (!revision.previousData) {
+      throw new BadRequestException("This revision does not contain restorable data");
+    }
+
+    // Store current state before restoring
+    const currentData = {
+      title: brief.title,
+      description: brief.description,
+      problemStatement: brief.problemStatement,
+      expectedOutcomes: brief.expectedOutcomes,
+      verticalId: brief.verticalId,
+      tags: Array.isArray(brief.tags) ? brief.tags : [],
+      resources: brief.resources,
+      maxTeams: brief.maxTeams,
+    };
+
+    // Handle vertical change - check new vertical capacity if needed
+    const restoredVerticalId = revision.previousData.verticalId;
+    if (restoredVerticalId && restoredVerticalId !== brief.verticalId) {
+      const newVertical = await this.verticalRepository.findOne({
+        where: { id: restoredVerticalId },
+      });
+
+      if (!newVertical) {
+        throw new NotFoundException("The vertical from the revision no longer exists");
+      }
+
+      if (brief.status !== BriefStatus.DRAFT && newVertical.briefCount >= newVertical.briefCap) {
+        throw new ConflictException(
+          `Cannot restore: Vertical "${newVertical.name}" has reached its brief capacity`
+        );
+      }
+    }
+
+    // Apply restored data
+    const restorableFields = ['title', 'description', 'problemStatement', 'expectedOutcomes', 'verticalId', 'tags', 'resources', 'maxTeams'];
+    const previousData = revision.previousData!;
+    restorableFields.forEach(field => {
+      if (previousData[field] !== undefined) {
+        // For array fields (tags, resources), ensure we don't assign null
+        if (field === 'tags') {
+          (brief as any)[field] = Array.isArray(previousData[field]) ? previousData[field] : [];
+        } else if (field === 'resources') {
+          (brief as any)[field] = Array.isArray(previousData[field]) ? previousData[field] : null;
+        } else {
+          (brief as any)[field] = previousData[field];
+        }
+      }
+    });
+
+    // Increment version
+    const newVersion = brief.currentVersion + 1;
+    brief.currentVersion = newVersion;
+
+    const restored = await this.briefRepository.save(brief);
+
+    // Create revision record for the restore action
+    await this.createRevision(
+      briefId,
+      BriefRevisionAction.RESTORED,
+      actorId,
+      actorName,
+      BriefRevisionActorType.STAFF,
+      comment || `Restored to version ${revision.version}`,
+      currentData,
+      revision.previousData,
+      newVersion
+    );
+
+    this.logger.log(`Staff ${actorName} (${actorId}) restored brief ${briefId} to version ${revision.version}, new version is ${newVersion}`);
+
+    return restored;
+  }
+
   private async createRevision(
     briefId: string,
     action: BriefRevisionAction,
     actorId?: string,
+    actorName?: string,
+    actorType?: BriefRevisionActorType,
     comment?: string,
     previousData?: Record<string, any>,
-    newData?: Record<string, any>
+    newData?: Record<string, any>,
+    version?: number
   ): Promise<BriefRevision> {
     const revision = this.revisionRepository.create({
       briefId,
       action,
       actorId,
+      actorName,
+      actorType,
       comment,
       previousData,
       newData,
+      version: version || 1,
     });
 
     return this.revisionRepository.save(revision);
+  }
+
+  /**
+   * Staff update - allows staff to edit briefs regardless of status
+   * Creates a revision with staff actor tracking
+   */
+  async staffUpdate(id: string, dto: StaffUpdateBriefDto, actorId: string, actorName: string): Promise<Brief> {
+    const brief = await this.findOne(id);
+
+    // Handle vertical change - check new vertical capacity
+    if (dto.verticalId && dto.verticalId !== brief.verticalId) {
+      const newVertical = await this.verticalRepository.findOne({
+        where: { id: dto.verticalId },
+      });
+
+      if (!newVertical) {
+        throw new NotFoundException("Vertical not found");
+      }
+
+      // Only check capacity if moving to a new vertical and brief was already submitted
+      if (brief.status !== BriefStatus.DRAFT && newVertical.briefCount >= newVertical.briefCap) {
+        throw new ConflictException(
+          `Vertical "${newVertical.name}" has reached its brief capacity`
+        );
+      }
+    }
+
+    // Store previous data for revision history (capture all editable fields)
+    const previousData = {
+      title: brief.title,
+      description: brief.description,
+      problemStatement: brief.problemStatement,
+      expectedOutcomes: brief.expectedOutcomes,
+      verticalId: brief.verticalId,
+      tags: Array.isArray(brief.tags) ? brief.tags : [],
+      resources: brief.resources,
+      maxTeams: brief.maxTeams,
+    };
+
+    // Calculate scores if scoringAnswers provided
+    let scoringData = {};
+    const answers = dto.scoringAnswers || brief.scoringAnswers;
+    if (answers && Object.keys(answers).some(k => answers[k as keyof ScoringAnswers])) {
+      const scores = calculateBriefScores(answers);
+      scoringData = {
+        fitScore: scores.fitScore,
+        fitBand: scores.fitBand,
+        scoreOverride: scores.scoreOverride,
+        depthScore: scores.depthScore,
+        breadthScore: scores.breadthScore,
+        impactScore: scores.impactScore,
+        impactBand: scores.impactBand,
+        priorityScore: scores.priorityScore,
+      };
+    }
+
+    // Increment version
+    const newVersion = brief.currentVersion + 1;
+    brief.currentVersion = newVersion;
+
+    // Apply updates (excluding editComment from being saved to brief)
+    const { editComment, ...updateData } = dto;
+    Object.assign(brief, updateData, scoringData);
+    const updated = await this.briefRepository.save(brief);
+
+    // Create revision record with staff actor info
+    await this.createRevision(
+      id,
+      BriefRevisionAction.UPDATED,
+      actorId,
+      actorName,
+      BriefRevisionActorType.STAFF,
+      editComment,
+      previousData,
+      updateData,
+      newVersion
+    );
+
+    this.logger.log(`Staff ${actorName} (${actorId}) updated brief ${id} to version ${newVersion}`);
+
+    return updated;
   }
 }

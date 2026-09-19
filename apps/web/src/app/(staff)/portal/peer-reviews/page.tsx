@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { StaffLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useCohorts } from "@/lib/api/hooks/use-cohorts";
 import { useStages } from "@/lib/api/hooks/use-stages";
+import { useStaffCohortStore } from "@/lib/stores";
 import {
   Select,
   SelectContent,
@@ -18,12 +19,20 @@ import { Card, CardContent } from "@/components/ui/card";
 import { AdminPeerReviews } from "@/components/peer-reviews";
 
 export default function PeerReviewsAdminPage() {
+  const { globalCohortId } = useStaffCohortStore();
   const [selectedCohortId, setSelectedCohortId] = useState<string>("");
   const { data: cohorts, isLoading: cohortsLoading } = useCohorts();
-  const { data: stages } = useStages(selectedCohortId || null);
+  const { data: stages } = useStages(selectedCohortId || undefined);
+
+  // Initialize from global cohort
+  useEffect(() => {
+    if (globalCohortId && !selectedCohortId) {
+      setSelectedCohortId(globalCohortId);
+    }
+  }, [globalCohortId, selectedCohortId]);
 
   return (
-    <ProtectedRoute requiredRole="admin">
+    <ProtectedRoute portal="staff">
       <StaffLayout>
         <div className="container py-6 space-y-6">
           <div>
@@ -46,7 +55,7 @@ export default function PeerReviewsAdminPage() {
                       <SelectValue placeholder="Choose a cohort" />
                     </SelectTrigger>
                     <SelectContent>
-                      {cohorts?.map((cohort) => (
+                      {cohorts?.data?.map((cohort) => (
                         <SelectItem key={cohort.id} value={cohort.id}>
                           {cohort.name}
                         </SelectItem>

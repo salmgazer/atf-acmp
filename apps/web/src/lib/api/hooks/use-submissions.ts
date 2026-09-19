@@ -17,10 +17,9 @@ export interface Submission {
   id: string;
   teamId: string;
   stageId: string;
-  status: "draft" | "submitted" | "late" | "evaluated";
+  status: "draft" | "submitted" | "late" | "pending_approval" | "approved" | "rejected" | "evaluated";
   content: Record<string, any>;
   fileUrls: FileUrl[];
-  githubUrl?: string;
   videoUrl?: string;
   submittedAt?: string;
   submittedBy?: string;
@@ -33,6 +32,13 @@ export interface Submission {
     improvements?: string[];
     comments?: string;
   };
+  // Approval fields
+  approvedAt?: string;
+  approvedBy?: string;
+  approvalNotes?: string;
+  rejectedAt?: string;
+  rejectedBy?: string;
+  rejectionReason?: string;
   version: number;
   lastSavedAt?: string;
   createdAt: string;
@@ -41,6 +47,7 @@ export interface Submission {
   team?: {
     id: string;
     name: string;
+    githubRepoUrl?: string;
   };
 }
 
@@ -48,7 +55,6 @@ export interface SaveDraftInput {
   stageId: string;
   content?: Record<string, any>;
   fileUrls?: FileUrl[];
-  githubUrl?: string;
   videoUrl?: string;
 }
 
@@ -56,7 +62,6 @@ export interface SubmitInput {
   stageId: string;
   content?: Record<string, any>;
   fileUrls?: FileUrl[];
-  githubUrl?: string;
   videoUrl?: string;
 }
 
@@ -133,5 +138,120 @@ export function useSubmissionHistory(submissionId: string) {
     queryKey: submissionKeys.history(submissionId),
     queryFn: () => api.get<any[]>(`/submissions/${submissionId}/history`),
     enabled: !!submissionId,
+  });
+}
+
+// Upload submission video
+export function useUploadSubmissionVideo() {
+  return useMutation({
+    mutationFn: async ({ file }: { file: File }) => {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      return api.post<{ url: string; thumbnailUrl?: string }>("/submissions/upload-video", formData);
+    },
+    onSuccess: () => {
+      toast.success("Video uploaded successfully");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to upload video");
+    },
+  });
+}
+
+
+// ============ Admin Submission Hooks ============
+
+export interface AdminSubmission extends Submission {
+  status: "draft" | "submitted" | "late" | "pending_approval" | "approved" | "rejected" | "evaluated";
+  approvedAt?: string;
+  approvedBy?: string;
+  approvalNotes?: string;
+  rejectedAt?: string;
+  rejectedBy?: string;
+  rejectionReason?: string;
+}
+
+export interface PaginatedSubmissions {
+  submissions: AdminSubmission[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface SubmissionQueryParams {
+  stageId?: string;
+  cohortId?: string;
+  status?: string;
+  page?: number;
+  limit?: number;
+}
+
+// Admin query keys
+export const adminSubmissionKeys = {
+  all: ["admin", "submissions"] as const,
+  list: (params?: SubmissionQueryParams) => [...adminSubmissionKeys.all, "list", params] as const,
+  pendingApproval: (params?: SubmissionQueryParams) => [...adminSubmissionKeys.all, "pending", params] as const,
+  detail: (id: string) => [...adminSubmissionKeys.all, "detail", id] as const,
+};
+
+// Get submissions pending approval
+export function usePendingApprovalSubmissions(params?: SubmissionQueryParams) {
+  return useQuery({
+    queryKey: adminSubmissionKeys.pendingApproval(params),
+    queryFn: () => {
+      const searchParams = new URLSearchParams();
+      if (params?.stageId) searchParams.set("stageId", params.stageId);
+      if (params?.cohortId) searchParams.set("cohortId", params.cohortId);
+      // Only include status if it's a non-empty string (empty = "All")
+      if (params?.status && params.status.trim() !== "") {
+        searchParams.set("status", params.status);
+      }
+      if (params?.page) searchParams.set("page", params.page.toString());
+      if (params?.limit) searchParams.set("limit", params.limit.toString());
+      const query = searchParams.toString();
+      return api.get<PaginatedSubmissions>(`/admin/submissions/pending-approval${query ? `?${query}` : ""}`);
+    },
+  });
+}
+
+// Get admin submission detail
+export function useAdminSubmission(id: string) {
+  return useQuery({
+    queryKey: adminSubmissionKeys.detail(id),
+    queryFn: () => api.get<AdminSubmission>(`/admin/submissions/${id}`),
+    enabled: !!id,
+  });
+}
+
+// Approve submission
+export function useApproveSubmission() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, approvalNotes }: { id: string; approvalNotes?: string }) =>
+      api.post<AdminSubmission>(`/admin/submissions/${id}/approve`, { approvalNotes }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: adminSubmissionKeys.all });
+      toast.success("Submission approved");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to approve submission");
+    },
+  });
+}
+
+// Reject submission
+export function useRejectSubmission() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, rejectionReason }: { id: string; rejectionReason: string }) =>
+      api.post<AdminSubmission>(`/admin/submissions/${id}/reject`, { rejectionReason }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: adminSubmissionKeys.all });
+      toast.success("Submission rejected");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to reject submission");
+    },
   });
 }

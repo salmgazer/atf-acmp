@@ -14,6 +14,8 @@ import {
   StageRequirements,
 } from "@/database/entities/stage.entity";
 import { Team, TeamMember } from "@/database/entities/team.entity";
+import { User, Role } from "@/database/entities/user.entity";
+import { NotificationTriggersService } from "@/modules/notifications/notification-triggers.service";
 import {
   CreateStageDto,
   UpdateStageDto,
@@ -22,6 +24,9 @@ import {
   EvaluateSubmissionDto,
   StageQueryDto,
   SubmissionQueryDto,
+  ApproveSubmissionDto,
+  RejectSubmissionDto,
+  SubmissionApprovalQueryDto,
 } from "./dto/submission.dto";
 
 @Injectable()
@@ -37,6 +42,9 @@ export class SubmissionsService {
     private teamRepository: Repository<Team>,
     @InjectRepository(TeamMember)
     private teamMemberRepository: Repository<TeamMember>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
+    private notificationTriggers: NotificationTriggersService,
   ) {}
 
   // ============ Stage Operations ============
@@ -127,7 +135,7 @@ export class SubmissionsService {
             acc[status] = parseInt(count, 10);
             return acc;
           },
-          { draft: 0, submitted: 0, late: 0, evaluated: 0 },
+          { draft: 0, submitted: 0, late: 0, pending_approval: 0, approved: 0, rejected: 0, evaluated: 0 },
         );
 
         return {
@@ -163,30 +171,36 @@ export class SubmissionsService {
     }
 
     const stage = await this.getStage(dto.stageId);
-    if (!stage.isOpen()) {
+    
+    // Check existing submission to see if it's rejected (allows editing)
+    const existingSubmission = await this.submissionRepository.findOne({
+      where: { teamId: team.id, stageId: dto.stageId },
+    });
+    const isRejectedSubmission = existingSubmission?.status === SubmissionStatus.REJECTED;
+    
+    // Allow editing if stage is open OR if submission was rejected (for resubmission)
+    if (!stage.isOpen() && !isRejectedSubmission) {
       throw new BadRequestException("Stage is not open for submissions");
     }
 
-    let submission = await this.submissionRepository.findOne({
-      where: { teamId: team.id, stageId: dto.stageId },
-    });
+    let submission = existingSubmission;
 
     if (submission) {
-      // Cannot edit after submission
-      if (submission.status !== SubmissionStatus.DRAFT) {
+      // Cannot edit after submission, except for rejected submissions (allow resubmission)
+      if (submission.status !== SubmissionStatus.DRAFT && submission.status !== SubmissionStatus.REJECTED) {
         throw new BadRequestException("Cannot edit a submitted submission");
       }
 
       // Save history before update
       await this.saveHistory(submission, participantId);
 
-      // Update existing draft
+      // Update existing draft (or rejected submission being revised)
       submission.content = dto.content || submission.content;
       submission.fileUrls = dto.fileUrls || submission.fileUrls;
-      submission.githubUrl = dto.githubUrl ?? submission.githubUrl;
       submission.videoUrl = dto.videoUrl ?? submission.videoUrl;
       submission.version += 1;
       submission.lastSavedAt = new Date();
+      // If it was rejected, keep it as rejected until they resubmit
     } else {
       // Create new draft
       submission = this.submissionRepository.create({
@@ -195,7 +209,6 @@ export class SubmissionsService {
         status: SubmissionStatus.DRAFT,
         content: dto.content || {},
         fileUrls: dto.fileUrls || [],
-        githubUrl: dto.githubUrl,
         videoUrl: dto.videoUrl,
         lastSavedAt: new Date(),
       });
@@ -219,28 +232,31 @@ export class SubmissionsService {
     const now = new Date();
     const isPastDeadline = now > stage.deadline;
     
-    if (isPastDeadline && !stage.allowLateSubmissions) {
-      throw new BadRequestException("Deadline has passed and late submissions are not allowed");
-    }
-
     let submission = await this.submissionRepository.findOne({
       where: { teamId: team.id, stageId: dto.stageId },
     });
 
-    if (submission && submission.status !== SubmissionStatus.DRAFT) {
+    // Allow resubmission for rejected submissions even past deadline
+    const isResubmission = submission?.status === SubmissionStatus.REJECTED;
+    
+    if (isPastDeadline && !stage.allowLateSubmissions && !isResubmission) {
+      throw new BadRequestException("Deadline has passed and late submissions are not allowed");
+    }
+
+    if (submission && submission.status !== SubmissionStatus.DRAFT && submission.status !== SubmissionStatus.REJECTED) {
       throw new BadRequestException("Submission has already been submitted");
     }
 
     // Validate required fields
     const content = dto.content || submission?.content || {};
     const fileUrls = dto.fileUrls || submission?.fileUrls || [];
-    const githubUrl = dto.githubUrl ?? submission?.githubUrl;
     const videoUrl = dto.videoUrl ?? submission?.videoUrl;
 
+    // For GitHub requirement, check team's githubRepoUrl
     this.validateRequirements(stage.requirements, {
       content,
       fileUrls,
-      githubUrl,
+      githubRepoUrl: team.githubRepoUrl,
       videoUrl,
     });
 
@@ -258,22 +274,33 @@ export class SubmissionsService {
 
       submission.content = content;
       submission.fileUrls = fileUrls;
-      submission.githubUrl = githubUrl;
       submission.videoUrl = videoUrl;
-      submission.status = isLate ? SubmissionStatus.LATE : SubmissionStatus.SUBMITTED;
+      // If stage requires manual approval, set to pending_approval instead of submitted/late
+      if (stage.requiresManualApproval) {
+        submission.status = SubmissionStatus.PENDING_APPROVAL;
+      } else {
+        submission.status = isLate ? SubmissionStatus.LATE : SubmissionStatus.SUBMITTED;
+      }
       submission.submittedAt = now;
       submission.submittedBy = participantId;
       submission.isLate = isLate;
       submission.lateMinutes = lateMinutes;
       submission.version += 1;
     } else {
+      // Determine status based on whether stage requires manual approval
+      let status: SubmissionStatus;
+      if (stage.requiresManualApproval) {
+        status = SubmissionStatus.PENDING_APPROVAL;
+      } else {
+        status = isLate ? SubmissionStatus.LATE : SubmissionStatus.SUBMITTED;
+      }
+
       submission = this.submissionRepository.create({
         teamId: team.id,
         stageId: dto.stageId,
-        status: isLate ? SubmissionStatus.LATE : SubmissionStatus.SUBMITTED,
+        status,
         content,
         fileUrls,
-        githubUrl,
         videoUrl,
         submittedAt: now,
         submittedBy: participantId,
@@ -282,7 +309,14 @@ export class SubmissionsService {
       });
     }
 
-    return this.submissionRepository.save(submission);
+    const savedSubmission = await this.submissionRepository.save(submission);
+
+    // If stage requires manual approval, notify staff
+    if (stage.requiresManualApproval) {
+      await this.notifyStaffOfPendingApproval(savedSubmission, team, stage);
+    }
+
+    return savedSubmission;
   }
 
   private validateRequirements(
@@ -290,7 +324,7 @@ export class SubmissionsService {
     data: {
       content: Record<string, any>;
       fileUrls: any[];
-      githubUrl?: string;
+      githubRepoUrl?: string;
       videoUrl?: string;
     },
   ): void {
@@ -300,8 +334,8 @@ export class SubmissionsService {
       errors.push("Document upload is required");
     }
 
-    if (requirements.githubRequired && !data.githubUrl) {
-      errors.push("GitHub URL is required");
+    if (requirements.githubRequired && !data.githubRepoUrl) {
+      errors.push("Team must have a GitHub repository URL set");
     }
 
     if (requirements.videoRequired && !data.videoUrl) {
@@ -330,7 +364,6 @@ export class SubmissionsService {
       version: submission.version,
       content: submission.content,
       fileUrls: submission.fileUrls,
-      githubUrl: submission.githubUrl,
       videoUrl: submission.videoUrl,
       savedBy,
     });
@@ -443,6 +476,190 @@ export class SubmissionsService {
     });
   }
 
+  // ============ Approval Operations ============
+
+  async getPendingApprovalSubmissions(query: SubmissionApprovalQueryDto): Promise<{
+    submissions: Submission[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = query.page || 1;
+    const limit = query.limit || 20;
+
+    const qb = this.submissionRepository
+      .createQueryBuilder("submission")
+      .leftJoinAndSelect("submission.stage", "stage")
+      .leftJoinAndSelect("submission.team", "team")
+      .where("stage.requiresManualApproval = true");
+
+    if (query.stageId) {
+      qb.andWhere("submission.stageId = :stageId", { stageId: query.stageId });
+    }
+
+    if (query.cohortId) {
+      qb.andWhere("stage.cohortId = :cohortId", { cohortId: query.cohortId });
+    }
+
+    if (query.status) {
+      qb.andWhere("submission.status = :status", { status: query.status });
+    }
+    // When no status is provided, show all submissions for stages requiring manual approval
+    // (no default filter to pending_approval - let the frontend control this)
+
+    qb.orderBy("submission.submittedAt", "ASC"); // Oldest first for FIFO processing
+
+    const [submissions, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    return { submissions, total, page, limit };
+  }
+
+  async approveSubmission(
+    id: string,
+    approverId: string,
+    dto: ApproveSubmissionDto,
+  ): Promise<Submission> {
+    const submission = await this.getSubmission(id);
+
+    // Allow approval for pending_approval status, or late submissions on stages that require approval
+    const stage = await this.stageRepository.findOne({ where: { id: submission.stageId } });
+    const canApprove = 
+      submission.status === SubmissionStatus.PENDING_APPROVAL ||
+      (submission.status === SubmissionStatus.LATE && stage?.requiresManualApproval);
+
+    if (!canApprove) {
+      throw new BadRequestException("Submission is not pending approval");
+    }
+
+    submission.status = SubmissionStatus.APPROVED;
+    submission.approvedAt = new Date();
+    submission.approvedBy = approverId;
+    submission.approvalNotes = dto.approvalNotes;
+
+    const savedSubmission = await this.submissionRepository.save(submission);
+
+    // Notify team members
+    await this.notifyTeamOfApprovalResult(savedSubmission, true, dto.approvalNotes);
+
+    return savedSubmission;
+  }
+
+  async rejectSubmission(
+    id: string,
+    rejecterId: string,
+    dto: RejectSubmissionDto,
+  ): Promise<Submission> {
+    const submission = await this.getSubmission(id);
+
+    // Allow rejection for pending_approval status, or late submissions on stages that require approval
+    const stage = await this.stageRepository.findOne({ where: { id: submission.stageId } });
+    const canReject = 
+      submission.status === SubmissionStatus.PENDING_APPROVAL ||
+      (submission.status === SubmissionStatus.LATE && stage?.requiresManualApproval);
+
+    if (!canReject) {
+      throw new BadRequestException("Submission is not pending approval");
+    }
+
+    submission.status = SubmissionStatus.REJECTED;
+    submission.rejectedAt = new Date();
+    submission.rejectedBy = rejecterId;
+    submission.rejectionReason = dto.rejectionReason;
+
+    const savedSubmission = await this.submissionRepository.save(submission);
+
+    // Notify team members
+    await this.notifyTeamOfApprovalResult(savedSubmission, false, undefined, dto.rejectionReason);
+
+    return savedSubmission;
+  }
+
+  // ============ Notification Helpers ============
+
+  private async notifyStaffOfPendingApproval(
+    submission: Submission,
+    team: Team,
+    stage: Stage,
+  ): Promise<void> {
+    try {
+      // Get staff users (program managers and super admins)
+      const staffUsers = await this.userRepository.find({
+        where: [
+          { role: Role.PROGRAM_MANAGER, isActive: true },
+          { role: Role.SUPER_ADMIN, isActive: true },
+        ],
+        select: ["id"],
+      });
+
+      if (staffUsers.length === 0) return;
+
+      // Get cohort name
+      const stageWithCohort = await this.stageRepository.findOne({
+        where: { id: stage.id },
+        relations: ["cohort"],
+      });
+
+      await this.notificationTriggers.onSubmissionNeedsApproval({
+        staffUserIds: staffUsers.map((u) => u.id),
+        submissionId: submission.id,
+        teamId: team.id,
+        teamName: team.name,
+        stageId: stage.id,
+        stageName: stage.name,
+        cohortName: stageWithCohort?.cohort?.name || "Unknown Cohort",
+      });
+    } catch (error) {
+      // Log but don't fail the submission
+      console.error("Failed to send approval notification:", error);
+    }
+  }
+
+  private async notifyTeamOfApprovalResult(
+    submission: Submission,
+    approved: boolean,
+    approvalNotes?: string,
+    rejectionReason?: string,
+  ): Promise<void> {
+    try {
+      // Get team members
+      const teamMembers = await this.teamMemberRepository.find({
+        where: { teamId: submission.teamId },
+        select: ["participantId"],
+      });
+
+      if (teamMembers.length === 0) return;
+
+      // Get stage name
+      const stage = await this.stageRepository.findOne({
+        where: { id: submission.stageId },
+      });
+
+      const participantIds = teamMembers.map((m) => m.participantId);
+
+      if (approved) {
+        await this.notificationTriggers.onSubmissionApproved({
+          teamMemberIds: participantIds,
+          teamId: submission.teamId,
+          stageName: stage?.name || "Unknown Stage",
+          approvalNotes,
+        });
+      } else {
+        await this.notificationTriggers.onSubmissionRejected({
+          teamMemberIds: participantIds,
+          teamId: submission.teamId,
+          stageName: stage?.name || "Unknown Stage",
+          rejectionReason: rejectionReason || "No reason provided",
+        });
+      }
+    } catch (error) {
+      // Log but don't fail the operation
+      console.error("Failed to send team notification:", error);
+    }
+  }
+
   // ============ Stats ============
 
   async getSubmissionStats(cohortId: string): Promise<any[]> {
@@ -463,7 +680,7 @@ export class SubmissionsService {
             acc[status] = parseInt(count, 10);
             return acc;
           },
-          { draft: 0, submitted: 0, late: 0, evaluated: 0 },
+          { draft: 0, submitted: 0, late: 0, pending_approval: 0, approved: 0, rejected: 0, evaluated: 0 },
         );
 
         // Get total teams in cohort for pending calculation
@@ -471,16 +688,17 @@ export class SubmissionsService {
           where: { cohortId },
         });
 
-        const submitted = statusCounts.submitted + statusCounts.late + statusCounts.evaluated;
+        const submitted = statusCounts.submitted + statusCounts.late + statusCounts.pending_approval + statusCounts.approved + statusCounts.evaluated;
 
         return {
           stageId: stage.id,
           stageName: stage.name,
           stageNumber: stage.number,
           deadline: stage.deadline,
+          requiresManualApproval: stage.requiresManualApproval,
           total: totalTeams,
           ...statusCounts,
-          pending: totalTeams - submitted - statusCounts.draft,
+          pending: totalTeams - submitted - statusCounts.draft - statusCounts.rejected,
         };
       }),
     );

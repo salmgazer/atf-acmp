@@ -32,6 +32,10 @@ import {
   useDeclineInvitation,
   useJoinTeamByCode,
   useOpenTeams,
+  usePendingMembers,
+  useConfirmPendingMember,
+  useDeclinePendingMember,
+  useRequestMemberRemoval,
   type Team,
   type TeamMember,
   type TeamInvitation,
@@ -60,6 +64,10 @@ import {
   Hash,
   UserPlus,
   ChevronRight,
+  Lightbulb,
+  UserMinus,
+  AlertCircle,
+  Github,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -71,23 +79,45 @@ const roleConfig: Record<TeamRole, { label: string; icon: typeof Crown; color: s
   member: { label: "Member", icon: User, color: "text-muted-foreground" },
 };
 
-function MemberCard({ member, isCurrentUser }: { member: TeamMember; isCurrentUser: boolean }) {
+function MemberCard({ 
+  member, 
+  isCurrentUser,
+  canRemove,
+  onRemove,
+  isRemoving,
+}: { 
+  member: TeamMember; 
+  isCurrentUser: boolean;
+  canRemove?: boolean;
+  onRemove?: () => void;
+  isRemoving?: boolean;
+}) {
   const config = roleConfig[member.role];
   const RoleIcon = config.icon;
+  const isPending = member.status === "pending";
 
   return (
     <div
       className={cn(
         "flex items-center gap-3 p-3 rounded-lg border",
-        isCurrentUser && "bg-primary/5 border-primary/20"
+        isCurrentUser && "bg-primary/5 border-primary/20",
+        isPending && "bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-900"
       )}
     >
-      <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-        <span className="font-medium text-sm">
-          {member.participant.firstName[0]}
-          {member.participant.lastName[0]}
-        </span>
-      </div>
+      {member.participant.profileImageUrl ? (
+        <img
+          src={member.participant.profileImageUrl}
+          alt={`${member.participant.firstName} ${member.participant.lastName}`}
+          className="w-10 h-10 rounded-full object-cover"
+        />
+      ) : (
+        <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+          <span className="font-medium text-sm">
+            {member.participant.firstName[0]}
+            {member.participant.lastName[0]}
+          </span>
+        </div>
+      )}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="font-medium truncate">
@@ -96,6 +126,11 @@ function MemberCard({ member, isCurrentUser }: { member: TeamMember; isCurrentUs
           {isCurrentUser && (
             <Badge variant="outline" className="text-xs">
               You
+            </Badge>
+          )}
+          {isPending && (
+            <Badge variant="secondary" className="text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+              Pending
             </Badge>
           )}
         </div>
@@ -107,6 +142,21 @@ function MemberCard({ member, isCurrentUser }: { member: TeamMember; isCurrentUs
           <span>{member.participant.country}</span>
         </div>
       </div>
+      {canRemove && !isCurrentUser && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-destructive hover:text-destructive"
+          onClick={onRemove}
+          disabled={isRemoving}
+        >
+          {isRemoving ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <UserMinus className="h-4 w-4" />
+          )}
+        </Button>
+      )}
     </div>
   );
 }
@@ -121,12 +171,24 @@ function TeamDashboard({
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
+  const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
 
   const currentMember = team.members.find((m) => m.participantId === participantId);
   const isLeadOrCoLead = currentMember?.role === "lead" || currentMember?.role === "co_lead";
   const isLead = currentMember?.role === "lead";
 
+  // Filter confirmed and pending members
+  const confirmedMembers = team.members.filter((m) => m.status === "confirmed");
+  const pendingMembers = team.members.filter((m) => m.status === "pending");
+  
+  // Check if team is full (only count confirmed members against max size from cohort)
+  const isTeamFull = team.cohort?.teamSizeMax ? confirmedMembers.length >= team.cohort.teamSizeMax : false;
+
   const leaveMutation = useLeaveTeam();
+  const { data: pendingMembersData } = usePendingMembers(team.id);
+  const confirmMutation = useConfirmPendingMember();
+  const declineMutation = useDeclinePendingMember();
+  const removalMutation = useRequestMemberRemoval();
 
   const copyInviteCode = () => {
     navigator.clipboard.writeText(team.inviteCode);
@@ -138,6 +200,35 @@ function TeamDashboard({
     setShowLeaveDialog(false);
   };
 
+  const handleConfirmMember = async (memberId: string) => {
+    await confirmMutation.mutateAsync({
+      teamId: team.id,
+      memberId,
+      confirmedBy: participantId,
+    });
+  };
+
+  const handleDeclineMember = async (memberId: string) => {
+    await declineMutation.mutateAsync({
+      teamId: team.id,
+      memberId,
+      declinedBy: participantId,
+    });
+  };
+
+  const handleRemoveMember = async (memberParticipantId: string) => {
+    setRemovingMemberId(memberParticipantId);
+    try {
+      await removalMutation.mutateAsync({
+        teamId: team.id,
+        participantId: memberParticipantId,
+        requestedBy: participantId,
+      });
+    } finally {
+      setRemovingMemberId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Team Header */}
@@ -146,7 +237,10 @@ function TeamDashboard({
           <div>
             <h1 className="text-xl font-bold">{team.name}</h1>
             <p className="text-sm opacity-90 mt-1">
-              {team.members.length} member{team.members.length !== 1 ? "s" : ""}
+              {confirmedMembers.length} member{confirmedMembers.length !== 1 ? "s" : ""}
+              {pendingMembers.length > 0 && (
+                <span className="ml-1">• {pendingMembers.length} pending</span>
+              )}
             </p>
           </div>
           {isLeadOrCoLead && (
@@ -196,11 +290,88 @@ function TeamDashboard({
         </div>
       )}
 
+      {/* Pending Join Requests - Only for team leads */}
+      {isLeadOrCoLead && pendingMembers.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <AlertCircle className="h-5 w-5 text-yellow-600" />
+            <h2 className="font-semibold">Pending Join Requests ({pendingMembers.length})</h2>
+          </div>
+          <div className="space-y-2">
+            {pendingMembers.map((member) => (
+              <div
+                key={member.id}
+                className="flex items-center justify-between p-3 rounded-lg border bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-900"
+              >
+                <div className="flex items-center gap-3">
+                  {member.participant.profileImageUrl ? (
+                    <img
+                      src={member.participant.profileImageUrl}
+                      alt={`${member.participant.firstName} ${member.participant.lastName}`}
+                      className="w-10 h-10 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+                      <span className="font-medium text-sm">
+                        {member.participant.firstName[0]}
+                        {member.participant.lastName[0]}
+                      </span>
+                    </div>
+                  )}
+                  <div>
+                    <p className="font-medium">
+                      {member.participant.firstName} {member.participant.lastName}
+                    </p>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <MapPin className="h-3 w-3" />
+                      <span>{member.participant.country}</span>
+                      <span>•</span>
+                      <span>Requested {formatDistanceToNow(new Date(member.joinedAt), { addSuffix: true })}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => handleConfirmMember(member.id)}
+                    disabled={confirmMutation.isPending || declineMutation.isPending}
+                  >
+                    {confirmMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Check className="h-4 w-4 mr-1" />
+                        Approve
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleDeclineMember(member.id)}
+                    disabled={confirmMutation.isPending || declineMutation.isPending}
+                  >
+                    {declineMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <X className="h-4 w-4 mr-1" />
+                        Decline
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Team Members */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold">Team Members</h2>
-          {isLeadOrCoLead && (
+          {isLeadOrCoLead && !isTeamFull && (
             <Button size="sm" onClick={() => setShowInviteDialog(true)}>
               <Plus className="h-4 w-4 mr-1" />
               Invite
@@ -208,7 +379,7 @@ function TeamDashboard({
           )}
         </div>
         <div className="space-y-2">
-          {team.members
+          {confirmedMembers
             .sort((a, b) => {
               const order = { lead: 0, co_lead: 1, member: 2 };
               return order[a.role] - order[b.role];
@@ -218,28 +389,79 @@ function TeamDashboard({
                 key={member.id}
                 member={member}
                 isCurrentUser={member.participantId === participantId}
+                canRemove={isLeadOrCoLead && member.role !== "lead"}
+                onRemove={() => handleRemoveMember(member.participantId)}
+                isRemoving={removingMemberId === member.participantId}
               />
             ))}
         </div>
       </div>
 
-      {/* Invite Code */}
-      <div className="rounded-lg border bg-muted/50 p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium">Invite Code</p>
-            <p className="text-2xl font-mono font-bold tracking-wider">
-              {team.inviteCode}
-            </p>
+      {/* Invite Code - Only show if team is not full */}
+      {!isTeamFull && (
+        <div className="rounded-lg border bg-muted/50 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Invite Code</p>
+              <p className="text-2xl font-mono font-bold tracking-wider">
+                {team.inviteCode}
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={copyInviteCode}>
+              <Copy className="h-4 w-4 mr-1" />
+              Copy
+            </Button>
           </div>
-          <Button variant="outline" size="sm" onClick={copyInviteCode}>
-            <Copy className="h-4 w-4 mr-1" />
-            Copy
-          </Button>
+          <p className="text-xs text-muted-foreground mt-2">
+            Share this code with others to request to join your team
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground mt-2">
-          Share this code with others to join your team
-        </p>
+      )}
+
+      {/* GitHub Repository */}
+      <div className="rounded-lg border bg-card p-4">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+          <Github className="h-4 w-4" />
+          <span>GitHub Repository</span>
+        </div>
+        {team.githubRepoUrl ? (
+          <div className="flex items-center justify-between">
+            <a
+              href={team.githubRepoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-primary hover:underline truncate max-w-[250px]"
+            >
+              {team.githubRepoUrl}
+            </a>
+            {isLeadOrCoLead && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowSettingsDialog(true)}
+              >
+                <Settings className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div>
+            <p className="text-sm text-muted-foreground">
+              No repository linked yet
+            </p>
+            {isLeadOrCoLead && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                onClick={() => setShowSettingsDialog(true)}
+              >
+                <Github className="h-4 w-4 mr-1" />
+                Add Repository
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Pending Invitations */}
@@ -470,13 +692,18 @@ function TeamSettingsDialog({
 }) {
   const [name, setName] = useState(team.name);
   const [description, setDescription] = useState(team.description || "");
+  const [githubRepoUrl, setGithubRepoUrl] = useState(team.githubRepoUrl || "");
 
   const updateMutation = useUpdateTeam();
 
   const handleSave = async () => {
     await updateMutation.mutateAsync({
       id: team.id,
-      data: { name, description: description || undefined },
+      data: { 
+        name, 
+        description: description || undefined,
+        githubRepoUrl: githubRepoUrl || undefined,
+      },
     });
     onClose();
   };
@@ -500,6 +727,20 @@ function TeamSettingsDialog({
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
             />
+          </div>
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <Github className="h-4 w-4" />
+              GitHub Repository URL
+            </Label>
+            <Input
+              placeholder="https://github.com/username/repository"
+              value={githubRepoUrl}
+              onChange={(e) => setGithubRepoUrl(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Your team's GitHub repository for submissions and evaluation
+            </p>
           </div>
         </div>
 
@@ -665,13 +906,36 @@ function NoTeamView({ participantId, cohortId }: { participantId: string; cohort
 
       {/* Create Team Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Create Team</DialogTitle>
             <DialogDescription>
               Give your team a name and start inviting members
             </DialogDescription>
           </DialogHeader>
+
+          {/* Team Diversity Guidance */}
+          <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 p-4">
+            <div className="flex gap-3">
+              <Lightbulb className="h-5 w-5 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-400">
+                  Build a Diverse Team for Success
+                </p>
+                <p className="text-sm text-amber-700 dark:text-amber-500">
+                  The most successful teams include members with different skills and backgrounds. Consider including:
+                </p>
+                <ul className="text-sm text-amber-700 dark:text-amber-500 list-disc list-inside space-y-1">
+                  <li>Both technical and non-technical members</li>
+                  <li>People from different countries or regions</li>
+                  <li>Members with varied experiences and perspectives</li>
+                </ul>
+                <p className="text-xs text-amber-600 dark:text-amber-600">
+                  Diverse teams are more innovative and produce better solutions!
+                </p>
+              </div>
+            </div>
+          </div>
 
           <div className="space-y-4">
             <div className="space-y-2">

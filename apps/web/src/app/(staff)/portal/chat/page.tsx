@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { StaffLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { useStaffCohortStore } from "@/lib/stores";
 import {
   useMyChannels,
   useChannelMessages,
@@ -27,6 +28,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, formatDistanceToNow, isToday, isYesterday } from "date-fns";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 function formatMessageDate(date: string) {
   const d = new Date(date);
@@ -447,8 +455,25 @@ function EmptyState() {
 function ChatContent() {
   const [selectedChannel, setSelectedChannel] = useState<ChatChannel | null>(null);
   const [mobileShowChat, setMobileShowChat] = useState(false);
-  const { data: channels, isLoading } = useMyChannels();
   const { setActiveChannelId } = useChatContext();
+  
+  // Get global cohort from store
+  const { globalCohortId, globalCohort, cohorts } = useStaffCohortStore();
+  
+  // Local cohort override - initialized from global
+  const [localCohortId, setLocalCohortId] = useState<string | undefined>(undefined);
+  
+  // Initialize local cohort from global when component mounts or global changes
+  useEffect(() => {
+    if (globalCohortId && localCohortId === undefined) {
+      setLocalCohortId(globalCohortId);
+    }
+  }, [globalCohortId, localCohortId]);
+  
+  // Use local cohort for filtering (falls back to global if not set)
+  const effectiveCohortId = localCohortId || globalCohortId || undefined;
+  
+  const { data: channels, isLoading } = useMyChannels(effectiveCohortId);
 
   // Update active channel in context when selected channel changes
   useEffect(() => {
@@ -459,6 +484,12 @@ function ChatContent() {
       setActiveChannelId(null);
     };
   }, [selectedChannel?.id, setActiveChannelId]);
+  
+  // Reset selected channel when cohort changes
+  useEffect(() => {
+    setSelectedChannel(null);
+    setMobileShowChat(false);
+  }, [effectiveCohortId]);
 
   const handleSelectChannel = (channel: ChatChannel) => {
     setSelectedChannel(channel);
@@ -470,34 +501,57 @@ function ChatContent() {
   };
 
   return (
-    <div className="h-[calc(90vh-8rem)] flex rounded-xl border border-border/50 bg-card overflow-hidden">
-      {/* Sidebar */}
-      <div
-        className={cn(
-          "w-full lg:w-80 border-r border-border/50 bg-background",
-          mobileShowChat ? "hidden lg:block" : "block"
-        )}
-      >
-        <ChannelList
-          channels={channels || []}
-          selectedChannelId={selectedChannel?.id || null}
-          onSelectChannel={handleSelectChannel}
-          isLoading={isLoading}
-        />
+    <div className="space-y-4">
+      {/* Cohort Filter */}
+      <div className="flex items-center gap-3">
+        <span className="text-sm text-muted-foreground">Filter by cohort:</span>
+        <Select
+          value={effectiveCohortId || "all"}
+          onValueChange={(value) => setLocalCohortId(value === "all" ? undefined : value)}
+        >
+          <SelectTrigger className="w-[250px]">
+            <SelectValue placeholder="All cohorts" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All cohorts</SelectItem>
+            {cohorts.map((cohort) => (
+              <SelectItem key={cohort.id} value={cohort.id}>
+                {cohort.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
+      
+      <div className="h-[calc(90vh-12rem)] flex rounded-xl border border-border/50 bg-card overflow-hidden">
+        {/* Sidebar */}
+        <div
+          className={cn(
+            "w-full lg:w-80 border-r border-border/50 bg-background",
+            mobileShowChat ? "hidden lg:block" : "block"
+          )}
+        >
+          <ChannelList
+            channels={channels || []}
+            selectedChannelId={selectedChannel?.id || null}
+            onSelectChannel={handleSelectChannel}
+            isLoading={isLoading}
+          />
+        </div>
 
-      {/* Chat View */}
-      <div
-        className={cn(
-          "flex-1 bg-background",
-          mobileShowChat ? "block" : "hidden lg:block"
-        )}
-      >
-        {selectedChannel ? (
-          <ChatView channel={selectedChannel} onBack={handleBack} />
-        ) : (
-          <EmptyState />
-        )}
+        {/* Chat View */}
+        <div
+          className={cn(
+            "flex-1 bg-background",
+            mobileShowChat ? "block" : "hidden lg:block"
+          )}
+        >
+          {selectedChannel ? (
+            <ChatView channel={selectedChannel} onBack={handleBack} />
+          ) : (
+            <EmptyState />
+          )}
+        </div>
       </div>
     </div>
   );

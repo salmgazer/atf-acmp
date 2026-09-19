@@ -21,3 +21,4 @@ export * from "./certificate.entity";
 export * from "./announcement.entity";
 export * from "./refresh-token.entity";
 export * from "./audit-log.entity";
+export * from "./activity-log.entity";

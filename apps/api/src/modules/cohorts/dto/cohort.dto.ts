@@ -160,6 +160,12 @@ export class CreateCohortDto {
   @Min(1)
   @IsOptional()
   maxTeamsPerBrief?: number;
+
+  @ApiPropertyOptional({ description: "Default payment rate per mentor session", default: 0 })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  sessionRate?: number;
 }
 
 export class UpdateCohortDto extends PartialType(CreateCohortDto) {}
@@ -228,6 +234,9 @@ export class CohortResponseDto {
 
   @ApiProperty()
   maxTeamsPerBrief: number;
+
+  @ApiPropertyOptional()
+  sessionRate?: number;
 
   @ApiProperty()
   createdAt: Date;

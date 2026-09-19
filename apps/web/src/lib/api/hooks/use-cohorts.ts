@@ -48,6 +48,7 @@ export interface Cohort {
   verticals: string[];
   briefCap: number;
   maxTeamsPerBrief: number;
+  sessionRate?: number; // Default rate paid per mentor session
   stageCount?: number;
   createdAt: string;
   updatedAt: string;
@@ -65,6 +66,7 @@ export interface CreateCohortDto {
   verticals?: string[];
   briefCap?: number;
   maxTeamsPerBrief?: number;
+  sessionRate?: number;
 }
 
 export interface UpdateCohortDto extends Partial<CreateCohortDto> {}

@@ -73,6 +73,14 @@ export class CreateStageDto {
   @IsOptional()
   @IsNumber()
   sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  unlocksMentorClaim?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresManualApproval?: boolean;
 }
 
 export class UpdateStageDto {
@@ -134,6 +142,14 @@ export class UpdateStageDto {
   @IsOptional()
   @IsNumber()
   sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  unlocksMentorClaim?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresManualApproval?: boolean;
 }
 
 // ============ Submission DTOs ============
@@ -171,11 +187,7 @@ export class SaveSubmissionDraftDto {
   fileUrls?: FileUrlDto[];
 
   @IsOptional()
-  @IsUrl()
-  githubUrl?: string;
-
-  @IsOptional()
-  @IsUrl()
+  @IsString()
   videoUrl?: string;
 }
 
@@ -194,11 +206,7 @@ export class SubmitSubmissionDto {
   fileUrls?: FileUrlDto[];
 
   @IsOptional()
-  @IsUrl()
-  githubUrl?: string;
-
-  @IsOptional()
-  @IsUrl()
+  @IsString()
   videoUrl?: string;
 }
 
@@ -277,6 +285,8 @@ export class StageResponseDto {
   allowLateSubmissions: boolean;
   latePenaltyPercentage: number;
   sortOrder: number;
+  unlocksMentorClaim: boolean;
+  requiresManualApproval: boolean;
   isOpen: boolean;
   isPastDeadline: boolean;
   submissionCount?: number;
@@ -291,7 +301,6 @@ export class SubmissionResponseDto {
   status: SubmissionStatus;
   content: Record<string, any>;
   fileUrls: FileUrlDto[];
-  githubUrl?: string;
   videoUrl?: string;
   submittedAt?: Date;
   submittedBy?: string;
@@ -304,6 +313,13 @@ export class SubmissionResponseDto {
     improvements?: string[];
     comments?: string;
   };
+  // Approval fields
+  approvedAt?: Date;
+  approvedBy?: string;
+  approvalNotes?: string;
+  rejectedAt?: Date;
+  rejectedBy?: string;
+  rejectionReason?: string;
   version: number;
   lastSavedAt?: Date;
   createdAt: Date;
@@ -312,6 +328,7 @@ export class SubmissionResponseDto {
   team?: {
     id: string;
     name: string;
+    githubRepoUrl?: string;
   };
 }
 
@@ -322,6 +339,48 @@ export class SubmissionStatsDto {
   draft: number;
   submitted: number;
   late: number;
+  pendingApproval: number;
+  approved: number;
+  rejected: number;
   evaluated: number;
   pending: number;
+}
+
+// ============ Approval DTOs ============
+
+export class ApproveSubmissionDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  approvalNotes?: string;
+}
+
+export class RejectSubmissionDto {
+  @IsString()
+  @MaxLength(2000)
+  rejectionReason: string;
+}
+
+export class SubmissionApprovalQueryDto {
+  @IsOptional()
+  @IsUUID()
+  stageId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  cohortId?: string;
+
+  @IsOptional()
+  @IsEnum(SubmissionStatus)
+  status?: SubmissionStatus;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  page?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Type(() => Number)
+  limit?: number;
 }

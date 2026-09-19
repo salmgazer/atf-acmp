@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { formatDistanceToNow, format } from "date-fns";
 import {
   Megaphone,
@@ -74,6 +74,7 @@ import {
   type CreateAnnouncementDto,
 } from "@/lib/api/hooks/use-announcements";
 import { useCohorts } from "@/lib/api/hooks/use-cohorts";
+import { useStaffCohortStore } from "@/lib/stores/staff-cohort-store";
 
 const audienceOptions: { value: AnnouncementAudience; label: string; icon: typeof Users }[] = [
   { value: "all", label: "All Participants", icon: Users },
@@ -84,7 +85,24 @@ const audienceOptions: { value: AnnouncementAudience; label: string; icon: typeo
 ];
 
 export default function AdminAnnouncementsPage() {
-  const [selectedCohortId, setSelectedCohortId] = useState<string>("");
+  // Get global cohort from store (set by sidebar)
+  const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
+  
+  // Local cohort filter - initialized from global but can be overridden
+  const [localCohortId, setLocalCohortId] = useState<string | null>(null);
+  const [hasInitialized, setHasInitialized] = useState(false);
+  
+  // Initialize local cohort from global when component mounts or global changes (if not yet set locally)
+  useEffect(() => {
+    if (globalCohortId && !hasInitialized) {
+      setLocalCohortId(globalCohortId);
+      setHasInitialized(true);
+    }
+  }, [globalCohortId, hasInitialized]);
+  
+  // Use local cohort if set, otherwise fall back to global
+  const selectedCohortId = localCohortId || globalCohortId || "";
+  
   const [statusFilter, setStatusFilter] = useState<AnnouncementStatus | "all">("all");
   const [page, setPage] = useState(0);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -103,6 +121,12 @@ export default function AdminAnnouncementsPage() {
   });
 
   const { data: cohortsData } = useCohorts();
+  
+  // Handle local cohort change (doesn't affect global sidebar)
+  const handleCohortChange = (cohortId: string) => {
+    setLocalCohortId(cohortId);
+    setHasInitialized(true);
+  };
   const { data: announcementsData, isLoading } = useAdminAnnouncements({
     cohortId: selectedCohortId,
     status: statusFilter === "all" ? undefined : statusFilter,
@@ -209,7 +233,7 @@ export default function AdminAnnouncementsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex gap-4">
-          <Select value={selectedCohortId} onValueChange={setSelectedCohortId}>
+          <Select value={selectedCohortId} onValueChange={handleCohortChange}>
             <SelectTrigger className="w-full max-w-md">
               <SelectValue placeholder="Select a cohort" />
             </SelectTrigger>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { StaffLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -11,6 +11,7 @@ import {
   type ParticipantStatus,
 } from "@/lib/api/hooks/use-participants";
 import { useCohorts } from "@/lib/api/hooks/use-cohorts";
+import { useStaffCohortStore } from "@/lib/stores/staff-cohort-store";
 import { TablePagination, type PageSize } from "@/components/ui/table-pagination";
 import {
   Search,
@@ -123,22 +124,37 @@ function ParticipantRow({ participant }: { participant: Participant }) {
 function ParticipantsContent() {
   const [statusFilter, setStatusFilter] = useState<ParticipantStatus | "all">("all");
   const [search, setSearch] = useState("");
-  const [selectedCohortId, setSelectedCohortId] = useState<string>("");
+  const [selectedCohortId, setSelectedCohortId] = useState<string | null>(null);
+  const [hasInitialized, setHasInitialized] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(25);
   const [showFilters, setShowFilters] = useState(false);
 
+  // Get global cohort from store (set by sidebar)
+  const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
+  
   const { data: cohortsData } = useCohorts({ limit: 100 });
   const cohorts = cohortsData?.data || [];
+
+  // Initialize local cohort from global when component mounts (if not yet set locally)
+  useEffect(() => {
+    if (globalCohortId && !hasInitialized) {
+      setSelectedCohortId(null); // null means "use global"
+      setHasInitialized(true);
+    }
+  }, [globalCohortId, hasInitialized]);
+
+  // Use local cohort if explicitly set, otherwise fall back to global
+  const effectiveCohortId = selectedCohortId ?? globalCohortId ?? undefined;
 
   const { data: participantsData, isLoading } = useParticipants({
     status: statusFilter === "all" ? undefined : statusFilter,
     search: search || undefined,
-    cohortId: selectedCohortId || undefined,
+    cohortId: effectiveCohortId,
     page,
     limit: pageSize,
   });
-  const { data: stats } = useParticipantStatistics(selectedCohortId || undefined);
+  const { data: stats } = useParticipantStatistics(effectiveCohortId);
 
   const participants = participantsData?.data || [];
   const totalPages = participantsData?.totalPages || 1;
@@ -146,14 +162,14 @@ function ParticipantsContent() {
 
   const activeFilterCount = [
     statusFilter !== "all",
-    selectedCohortId !== "",
+    selectedCohortId !== null && selectedCohortId !== globalCohortId,
   ].filter(Boolean).length;
 
   const hasActiveFilters = activeFilterCount > 0;
 
   const clearFilters = () => {
     setStatusFilter("all");
-    setSelectedCohortId("");
+    setSelectedCohortId(null);
     setPage(1);
   };
 
@@ -272,14 +288,13 @@ function ParticipantsContent() {
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-muted-foreground">Cohort:</span>
               <select
-                value={selectedCohortId || "all"}
+                value={selectedCohortId ?? globalCohortId ?? ""}
                 onChange={(e) => {
-                  setSelectedCohortId(e.target.value === "all" ? "" : e.target.value);
+                  setSelectedCohortId(e.target.value || null);
                   setPage(1);
                 }}
                 className="h-9 px-3 text-sm bg-card border border-border rounded-lg focus:outline-none focus:border-zinc-400"
               >
-                <option value="all">All Cohorts</option>
                 {cohorts.map((cohort) => (
                   <option key={cohort.id} value={cohort.id}>
                     {cohort.name}

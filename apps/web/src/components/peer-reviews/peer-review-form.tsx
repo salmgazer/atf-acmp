@@ -79,7 +79,7 @@ export function PeerReviewForm({ assignmentId }: PeerReviewFormProps) {
     assignment?.cohortId || null,
     assignment?.stageId || null
   );
-  const { trigger: submitReview, isMutating: isSubmitting } = useSubmitPeerReview();
+  const { mutateAsync: submitReview, isPending: isSubmitting } = useSubmitPeerReview();
 
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [error, setError] = useState<string | null>(null);

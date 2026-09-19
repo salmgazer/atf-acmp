@@ -45,6 +45,7 @@ function StaffLoginContent() {
         title="Staff Portal Login"
         subtitle="Sign in to manage programs, cohorts, and participants"
         portalName="Staff Portal"
+        portalType="staff"
         imageSide="left"
       >
         <EmailPasswordForm

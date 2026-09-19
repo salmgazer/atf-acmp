@@ -14,11 +14,16 @@ import {
   MentorStatus,
   MentorAssignment,
   MentorSession,
+  ScheduledSession,
+  ScheduledSessionStatus,
+  MentorPayment,
+  MentorPaymentStatus,
 } from "@/database/entities/mentor.entity";
-import { Team, TeamStatus } from "@/database/entities/team.entity";
+import { Team, TeamStatus, TeamMember } from "@/database/entities/team.entity";
 import { Cohort } from "@/database/entities/cohort.entity";
 import { User, Role } from "@/database/entities/user.entity";
 import { ChatService } from "@/modules/chat/chat.service";
+import { OneSignalService } from "@/modules/notifications/onesignal.service";
 import {
   CreateMentorDto,
   UpdateMentorDto,
@@ -46,14 +51,21 @@ export class MentorsService {
     private readonly assignmentRepository: Repository<MentorAssignment>,
     @InjectRepository(MentorSession)
     private readonly sessionRepository: Repository<MentorSession>,
+    @InjectRepository(ScheduledSession)
+    private readonly scheduledSessionRepository: Repository<ScheduledSession>,
+    @InjectRepository(MentorPayment)
+    private readonly paymentRepository: Repository<MentorPayment>,
     @InjectRepository(Team)
     private readonly teamRepository: Repository<Team>,
     @InjectRepository(Cohort)
     private readonly cohortRepository: Repository<Cohort>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(TeamMember)
+    private readonly teamMemberRepository: Repository<TeamMember>,
     @Inject(forwardRef(() => ChatService))
-    private readonly chatService: ChatService
+    private readonly chatService: ChatService,
+    private readonly oneSignalService: OneSignalService,
   ) {}
 
   // ============ Mentor CRUD ============
@@ -199,7 +211,70 @@ export class MentorsService {
       .skip(skip)
       .take(limit);
 
-    const [data, total] = await qb.getManyAndCount();
+    const [mentors, total] = await qb.getManyAndCount();
+
+    // Fetch session stats and earnings for all mentors
+    const mentorIds = mentors.map(m => m.id);
+    
+    // Get confirmed session counts (confirmed by mentor)
+    const confirmedSessionCounts = await this.scheduledSessionRepository
+      .createQueryBuilder("session")
+      .select("session.mentorId", "mentorId")
+      .addSelect("COUNT(*)", "count")
+      .where("session.mentorId IN (:...mentorIds)", { mentorIds: mentorIds.length > 0 ? mentorIds : [''] })
+      .andWhere("session.confirmedByMentor = true")
+      .andWhere("session.status NOT IN (:...excludedStatuses)", { 
+        excludedStatuses: [ScheduledSessionStatus.CANCELLED, ScheduledSessionStatus.DECLINED] 
+      })
+      .groupBy("session.mentorId")
+      .getRawMany();
+
+    // Get completed session counts
+    const completedSessionCounts = await this.scheduledSessionRepository
+      .createQueryBuilder("session")
+      .select("session.mentorId", "mentorId")
+      .addSelect("COUNT(*)", "count")
+      .where("session.mentorId IN (:...mentorIds)", { mentorIds: mentorIds.length > 0 ? mentorIds : [''] })
+      .andWhere("session.status = :status", { status: ScheduledSessionStatus.COMPLETED })
+      .groupBy("session.mentorId")
+      .getRawMany();
+
+    // Get total paid amounts per mentor
+    const paidAmounts = await this.paymentRepository
+      .createQueryBuilder("payment")
+      .select("payment.mentorId", "mentorId")
+      .addSelect("COALESCE(SUM(payment.amount), 0)", "totalPaid")
+      .where("payment.mentorId IN (:...mentorIds)", { mentorIds: mentorIds.length > 0 ? mentorIds : [''] })
+      .andWhere("payment.status = :status", { status: MentorPaymentStatus.COMPLETED })
+      .groupBy("payment.mentorId")
+      .getRawMany();
+
+    // Create lookup maps
+    const confirmedMap = new Map(confirmedSessionCounts.map(r => [r.mentorId, parseInt(r.count)]));
+    const completedMap = new Map(completedSessionCounts.map(r => [r.mentorId, parseInt(r.count)]));
+    const paidMap = new Map(paidAmounts.map(r => [r.mentorId, parseFloat(r.totalPaid)]));
+
+    // Enhance mentor data with stats
+    const data = mentors.map(mentor => {
+      const confirmedSessions = confirmedMap.get(mentor.id) || 0;
+      const completedSessions = completedMap.get(mentor.id) || 0;
+      const sessionRate = mentor.sessionRateOverride !== null && mentor.sessionRateOverride !== undefined
+        ? Number(mentor.sessionRateOverride)
+        : (mentor.cohort?.sessionRate ? Number(mentor.cohort.sessionRate) : 0);
+      const totalEarned = completedSessions * sessionRate;
+      const totalPaid = paidMap.get(mentor.id) || 0;
+      const unpaidAmount = totalEarned - totalPaid;
+
+      return {
+        ...mentor,
+        confirmedSessions,
+        completedSessions,
+        sessionRate,
+        totalEarned,
+        totalPaid,
+        unpaidAmount,
+      };
+    });
 
     return {
       data,
@@ -434,8 +509,53 @@ export class MentorsService {
     if (!savedAssignment) {
       throw new NotFoundException("Assignment not found after save");
     }
+
+    // Send push notifications to team members about mentor assignment
+    this.notifyTeamOfMentorAssignment(dto.teamId, mentor, team.name)
+      .catch((err) => this.logger.warn(`Failed to send mentor assignment push: ${err.message}`));
     
     return savedAssignment;
+  }
+
+  /**
+   * Send push notification to team members when a mentor is assigned
+   */
+  private async notifyTeamOfMentorAssignment(
+    teamId: string,
+    mentor: Mentor,
+    teamName: string
+  ): Promise<void> {
+    // Get all team members
+    const teamMembers = await this.teamMemberRepository.find({
+      where: { teamId },
+    });
+
+    if (teamMembers.length === 0) return;
+
+    const participantIds = teamMembers.map((m) => `participant:${m.participantId}`);
+    const mentorName = `${mentor.firstName} ${mentor.lastName}`;
+
+    await this.oneSignalService.sendToExternalUserIds(participantIds, {
+      title: "Mentor Assigned!",
+      body: `${mentorName} has been assigned as your team's mentor`,
+      data: {
+        type: "mentor_assigned",
+        teamId,
+        mentorId: mentor.id,
+      },
+      url: "/app/team",
+    });
+
+    // Also notify the mentor
+    await this.oneSignalService.sendToExternalUserIds([`mentor:${mentor.id}`], {
+      title: "New Team Assignment",
+      body: `You have been assigned to mentor team "${teamName}"`,
+      data: {
+        type: "team_assigned",
+        teamId,
+      },
+      url: "/mentor/teams",
+    });
   }
 
   async unassignFromTeam(mentorId: string, dto: UnassignMentorDto): Promise<void> {
@@ -467,8 +587,10 @@ export class MentorsService {
   }
 
   async getMentorTeams(mentorId: string): Promise<Team[]> {
-    const assignments = await this.assignmentRepository.find({
-      where: { mentorId, isActive: true },
+    // Get teams through scheduled/booked sessions (the new connection method)
+    // A team is connected to a mentor when they have booked sessions together
+    const scheduledSessions = await this.scheduledSessionRepository.find({
+      where: { mentorId },
       relations: [
         "team",
         "team.members",
@@ -478,28 +600,39 @@ export class MentorsService {
       ],
     });
 
-    return assignments.map((a) => a.team);
+    // Get unique teams from scheduled sessions
+    const teamMap = new Map<string, Team>();
+    for (const session of scheduledSessions) {
+      if (session.team && !teamMap.has(session.team.id)) {
+        teamMap.set(session.team.id, session.team);
+      }
+    }
+
+    return Array.from(teamMap.values());
   }
 
   async getTeamMentor(teamId: string): Promise<Mentor | null> {
-    const assignment = await this.assignmentRepository.findOne({
-      where: { teamId, isActive: true },
+    // Get mentor through scheduled sessions (the new connection method)
+    // Returns the mentor from the most recent booked session with this team
+    const session = await this.scheduledSessionRepository.findOne({
+      where: { teamId },
       relations: ["mentor"],
+      order: { scheduledAt: "DESC" },
     });
 
-    return assignment?.mentor || null;
+    return session?.mentor || null;
   }
 
   // ============ Sessions ============
 
   async createSession(mentorId: string, dto: CreateSessionDto): Promise<MentorSession> {
-    // Verify mentor-team assignment
-    const assignment = await this.assignmentRepository.findOne({
-      where: { mentorId, teamId: dto.teamId, isActive: true },
+    // Verify the team exists
+    const team = await this.teamRepository.findOne({
+      where: { id: dto.teamId },
     });
 
-    if (!assignment) {
-      throw new BadRequestException("Mentor is not assigned to this team");
+    if (!team) {
+      throw new NotFoundException("Team not found");
     }
 
     const session = this.sessionRepository.create({

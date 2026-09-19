@@ -13,6 +13,7 @@ function OrganizationLoginContent() {
         title="Organization Portal"
         subtitle="Sign in to track your team's progress and submissions"
         portalName="Organization Portal"
+        portalType="organization"
         imageSide="left"
       >
         <MagicLinkForm portal="organization" />

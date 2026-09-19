@@ -1,7 +1,6 @@
 "use client";
 
 import { use, useState, useRef, useEffect } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { StaffLayout } from "@/components/layouts";
@@ -11,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { PhoneInput } from "@/components/ui/phone-input";
 import {
   Select,
   SelectContent,
@@ -64,9 +64,9 @@ function EditMentorContent({ id }: { id: string }) {
         bio: mentor.bio || "",
         profileImageUrl: mentor.profileImageUrl || "",
         expertise: mentor.expertise || [],
-        calendlyLink: mentor.calendlyLink || "",
         linkedinUrl: mentor.linkedinUrl || "",
         maxTeams: mentor.maxTeams,
+        sessionRateOverride: mentor.sessionRateOverride ?? null,
         verticalScope: mentor.verticalScope || [],
         status: mentor.status,
       });
@@ -210,13 +210,14 @@ function EditMentorContent({ id }: { id: string }) {
             <div className="flex items-center gap-6">
               <div className="relative">
                 {imagePreview ? (
-                  <div className="relative h-24 w-24 rounded-full overflow-hidden bg-muted">
-                    <Image
-                      src={imagePreview}
-                      alt="Profile preview"
-                      fill
-                      className="object-cover"
-                    />
+                  <>
+                    <div className="h-24 w-24 rounded-full overflow-hidden bg-muted">
+                      <img
+                        src={imagePreview}
+                        alt="Profile preview"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={removeImage}
@@ -224,7 +225,7 @@ function EditMentorContent({ id }: { id: string }) {
                     >
                       <X className="h-3 w-3" />
                     </button>
-                  </div>
+                  </>
                 ) : (
                   <div className="h-24 w-24 rounded-full bg-muted flex items-center justify-center">
                     <User className="h-10 w-10 text-muted-foreground" />
@@ -298,12 +299,11 @@ function EditMentorContent({ id }: { id: string }) {
               </div>
               <div className="space-y-2">
                 <Label>Phone</Label>
-                <Input
+                <PhoneInput
                   value={formData.phone || ""}
-                  onChange={(e) =>
-                    setFormData((f) => ({ ...f, phone: e.target.value }))
+                  onChange={(value) =>
+                    setFormData((f) => ({ ...f, phone: value }))
                   }
-                  placeholder="+1234567890"
                 />
               </div>
               <div className="space-y-2">
@@ -325,6 +325,25 @@ function EditMentorContent({ id }: { id: string }) {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Session Rate Override ($)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={formData.sessionRateOverride ?? ""}
+                  onChange={(e) =>
+                    setFormData((f) => ({
+                      ...f,
+                      sessionRateOverride: e.target.value ? parseFloat(e.target.value) : null,
+                    }))
+                  }
+                  placeholder="Use cohort default"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave empty to use cohort default rate
+                </p>
               </div>
               <div className="space-y-2 sm:col-span-2">
                 <Label>Status</Label>
@@ -452,16 +471,6 @@ function EditMentorContent({ id }: { id: string }) {
           <div className="rounded-lg border bg-card p-6">
             <h2 className="font-semibold mb-4">Links</h2>
             <div className="grid gap-4">
-              <div className="space-y-2">
-                <Label>Calendly Link</Label>
-                <Input
-                  value={formData.calendlyLink || ""}
-                  onChange={(e) =>
-                    setFormData((f) => ({ ...f, calendlyLink: e.target.value }))
-                  }
-                  placeholder="https://calendly.com/your-link"
-                />
-              </div>
               <div className="space-y-2">
                 <Label>LinkedIn URL</Label>
                 <Input

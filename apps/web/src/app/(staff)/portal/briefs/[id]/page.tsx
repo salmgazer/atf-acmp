@@ -24,8 +24,11 @@ import {
   useBriefRevisions,
   useStartBriefReview,
   useReviewBrief,
+  useRestoreBriefRevision,
   type BriefStatus,
+  type BriefRevision,
 } from "@/lib/api/hooks/use-briefs";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import {
   ArrowLeft,
   Loader2,
@@ -44,6 +47,13 @@ import {
   ThumbsDown,
   RotateCcw,
   Video,
+  Pencil,
+  Eye,
+  User,
+  Building,
+  Bot,
+  Image,
+  Download,
 } from "lucide-react";
 
 const statusConfig: Record<BriefStatus, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; icon: typeof CheckCircle }> = {
@@ -55,17 +65,39 @@ const statusConfig: Record<BriefStatus, { label: string; variant: "default" | "s
   revision_requested: { label: "Revision Requested", variant: "outline", icon: AlertCircle },
 };
 
+const actionConfig: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; icon: typeof CheckCircle }> = {
+  submitted: { label: "Submitted", variant: "default", icon: Clock },
+  approved: { label: "Approved", variant: "default", icon: CheckCircle },
+  rejected: { label: "Rejected", variant: "destructive", icon: XCircle },
+  revision_requested: { label: "Revision Requested", variant: "outline", icon: AlertCircle },
+  updated: { label: "Updated", variant: "secondary", icon: Pencil },
+  restored: { label: "Restored", variant: "outline", icon: RotateCcw },
+};
+
+const actorTypeConfig: Record<string, { label: string; icon: typeof User }> = {
+  organization: { label: "Organization", icon: Building },
+  staff: { label: "Staff", icon: User },
+  system: { label: "System", icon: Bot },
+};
+
 function BriefReviewContent({ id }: { id: string }) {
   const router = useRouter();
+  const { user } = useAuthStore();
   const { data: brief, isLoading, error } = useBrief(id);
   const { data: revisions } = useBriefRevisions(id);
   const startReviewMutation = useStartBriefReview();
   const reviewMutation = useReviewBrief();
+  const restoreMutation = useRestoreBriefRevision();
 
   const [showApproveDialog, setShowApproveDialog] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [showRevisionDialog, setShowRevisionDialog] = useState(false);
+  const [showRevisionDetailDialog, setShowRevisionDetailDialog] = useState(false);
+  const [showRestoreDialog, setShowRestoreDialog] = useState(false);
+  const [selectedRevision, setSelectedRevision] = useState<BriefRevision | null>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
+  const [restoreComment, setRestoreComment] = useState("");
 
   if (isLoading) {
     return (
@@ -123,6 +155,32 @@ function BriefReviewContent({ id }: { id: string }) {
     });
     setShowRevisionDialog(false);
     setFeedback("");
+  };
+
+  const handleViewRevision = (revision: BriefRevision) => {
+    setSelectedRevision(revision);
+    setShowRevisionDetailDialog(true);
+  };
+
+  const handleOpenRestoreDialog = (revision: BriefRevision) => {
+    setSelectedRevision(revision);
+    setRestoreComment("");
+    setShowRestoreDialog(true);
+  };
+
+  const handleRestore = async () => {
+    if (!selectedRevision || !user) return;
+    
+    await restoreMutation.mutateAsync({
+      briefId: id,
+      revisionId: selectedRevision.id,
+      actorId: user.id,
+      actorName: `${user.firstName} ${user.lastName}`,
+      comment: restoreComment || undefined,
+    });
+    setShowRestoreDialog(false);
+    setSelectedRevision(null);
+    setRestoreComment("");
   };
 
   return (
@@ -185,6 +243,14 @@ function BriefReviewContent({ id }: { id: string }) {
               </Button>
             </div>
           )}
+
+          {/* Edit button - always available for staff */}
+          <Button asChild variant="outline">
+            <Link href={`/portal/briefs/${id}/edit`}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit Brief
+            </Link>
+          </Button>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">
@@ -256,34 +322,104 @@ function BriefReviewContent({ id }: { id: string }) {
               </div>
             )}
 
+            {/* Image Gallery Section */}
+            {brief.imageUrls && brief.imageUrls.length > 0 && (
+              <div className="rounded-lg border bg-card p-6">
+                <h2 className="flex items-center gap-2 text-lg font-semibold mb-4">
+                  <Image className="h-5 w-5" />
+                  Image Gallery ({brief.imageUrls.length})
+                </h2>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {brief.imageUrls.map((url, index) => (
+                    <button
+                      key={index}
+                      onClick={() => setSelectedImage(url)}
+                      className="aspect-square rounded-lg overflow-hidden bg-muted hover:opacity-90 transition-opacity cursor-pointer"
+                    >
+                      <img
+                        src={url}
+                        alt={`Gallery image ${index + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Revision History */}
             {revisions && revisions.length > 0 && (
               <div className="rounded-lg border bg-card p-6">
                 <h2 className="flex items-center gap-2 text-lg font-semibold mb-4">
                   <History className="h-5 w-5" />
-                  Review History
+                  Revision History
                 </h2>
-                <div className="space-y-4">
-                  {revisions.map((revision) => (
-                    <div
-                      key={revision.id}
-                      className="flex gap-4 p-3 rounded-md bg-muted/30"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-xs capitalize">
-                            {revision.action.replace("_", " ")}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground">
-                            {format(new Date(revision.createdAt), "MMM d, yyyy 'at' h:mm a")}
-                          </span>
+                <div className="space-y-3">
+                  {revisions.map((revision) => {
+                    const actionConf = actionConfig[revision.action] || { label: revision.action, variant: "secondary" as const, icon: Clock };
+                    const ActionIcon = actionConf.icon;
+                    const actorConf = revision.actorType ? actorTypeConfig[revision.actorType] : null;
+                    const ActorIcon = actorConf?.icon || User;
+                    const canRestore = revision.previousData && Object.keys(revision.previousData).length > 0;
+
+                    return (
+                      <div
+                        key={revision.id}
+                        className="flex gap-4 p-3 rounded-md bg-muted/30 hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant={actionConf.variant} className="text-xs">
+                              <ActionIcon className="mr-1 h-3 w-3" />
+                              {actionConf.label}
+                            </Badge>
+                            {revision.version && (
+                              <span className="text-xs text-muted-foreground">
+                                v{revision.version}
+                              </span>
+                            )}
+                            <span className="text-xs text-muted-foreground">
+                              {format(new Date(revision.createdAt), "MMM d, yyyy 'at' h:mm a")}
+                            </span>
+                          </div>
+                          {/* Actor info */}
+                          {(revision.actorName || revision.actorType) && (
+                            <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+                              <ActorIcon className="h-3 w-3" />
+                              <span>
+                                {revision.actorName || "Unknown"} 
+                                {actorConf && <span className="text-muted-foreground/70"> ({actorConf.label})</span>}
+                              </span>
+                            </div>
+                          )}
+                          {revision.comment && (
+                            <p className="mt-2 text-sm">{revision.comment}</p>
+                          )}
                         </div>
-                        {revision.comment && (
-                          <p className="mt-2 text-sm">{revision.comment}</p>
-                        )}
+                        <div className="flex items-start gap-2">
+                          {(revision.previousData || revision.newData) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleViewRevision(revision)}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {canRestore && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleOpenRestoreDialog(revision)}
+                              title="Restore to this version"
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -467,6 +603,215 @@ function BriefReviewContent({ id }: { id: string }) {
               Request Revision
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Revision Detail Dialog */}
+      <Dialog open={showRevisionDetailDialog} onOpenChange={setShowRevisionDetailDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              Revision Details
+              {selectedRevision?.version && (
+                <Badge variant="outline">v{selectedRevision.version}</Badge>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedRevision && format(new Date(selectedRevision.createdAt), "MMMM d, yyyy 'at' h:mm a")}
+              {selectedRevision?.actorName && ` by ${selectedRevision.actorName}`}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedRevision && (
+            <div className="space-y-4 py-4">
+              <div className="flex items-center gap-2">
+                <Badge variant={actionConfig[selectedRevision.action]?.variant || "secondary"}>
+                  {actionConfig[selectedRevision.action]?.label || selectedRevision.action}
+                </Badge>
+                {selectedRevision.actorType && (
+                  <Badge variant="outline" className="text-xs">
+                    {actorTypeConfig[selectedRevision.actorType]?.label || selectedRevision.actorType}
+                  </Badge>
+                )}
+              </div>
+
+              {selectedRevision.comment && (
+                <div className="rounded-lg bg-muted p-3">
+                  <p className="text-sm font-medium mb-1">Comment</p>
+                  <p className="text-sm text-muted-foreground">{selectedRevision.comment}</p>
+                </div>
+              )}
+
+              {selectedRevision.previousData && Object.keys(selectedRevision.previousData).length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-2">Previous State (Before Change)</p>
+                  <div className="space-y-2">
+                    {Object.entries(selectedRevision.previousData).map(([key, value]) => (
+                      <div key={key} className="rounded-lg border p-3">
+                        <p className="text-xs font-medium text-muted-foreground capitalize mb-1">
+                          {key.replace(/([A-Z])/g, ' $1').trim()}
+                        </p>
+                        <div className="text-sm">
+                          {typeof value === 'string' && value.includes('<') ? (
+                            <div 
+                              className="prose prose-sm max-w-none dark:prose-invert line-clamp-3"
+                              dangerouslySetInnerHTML={{ __html: value }} 
+                            />
+                          ) : Array.isArray(value) ? (
+                            <div className="flex flex-wrap gap-1">
+                              {value.map((item, i) => (
+                                <Badge key={i} variant="secondary" className="text-xs">
+                                  {typeof item === 'object' ? item.name || JSON.stringify(item) : item}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : typeof value === 'object' && value !== null ? (
+                            <pre className="text-xs bg-muted p-2 rounded overflow-auto">
+                              {JSON.stringify(value, null, 2)}
+                            </pre>
+                          ) : (
+                            <span>{String(value)}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedRevision.newData && Object.keys(selectedRevision.newData).length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-2">New State (After Change)</p>
+                  <div className="space-y-2">
+                    {Object.entries(selectedRevision.newData).map(([key, value]) => (
+                      <div key={key} className="rounded-lg border border-green-200 dark:border-green-900 bg-green-50/50 dark:bg-green-900/20 p-3">
+                        <p className="text-xs font-medium text-muted-foreground capitalize mb-1">
+                          {key.replace(/([A-Z])/g, ' $1').trim()}
+                        </p>
+                        <div className="text-sm">
+                          {typeof value === 'string' && value.includes('<') ? (
+                            <div 
+                              className="prose prose-sm max-w-none dark:prose-invert line-clamp-3"
+                              dangerouslySetInnerHTML={{ __html: value }} 
+                            />
+                          ) : Array.isArray(value) ? (
+                            <div className="flex flex-wrap gap-1">
+                              {value.map((item, i) => (
+                                <Badge key={i} variant="secondary" className="text-xs">
+                                  {typeof item === 'object' ? item.name || JSON.stringify(item) : item}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : typeof value === 'object' && value !== null ? (
+                            <pre className="text-xs bg-muted p-2 rounded overflow-auto">
+                              {JSON.stringify(value, null, 2)}
+                            </pre>
+                          ) : (
+                            <span>{String(value)}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRevisionDetailDialog(false)}>
+              Close
+            </Button>
+            {selectedRevision?.previousData && Object.keys(selectedRevision.previousData).length > 0 && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowRevisionDetailDialog(false);
+                  handleOpenRestoreDialog(selectedRevision);
+                }}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Restore This Version
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Restore Confirmation Dialog */}
+      <Dialog open={showRestoreDialog} onOpenChange={setShowRestoreDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Restore Previous Version</DialogTitle>
+            <DialogDescription>
+              This will restore the brief to the state before version {selectedRevision?.version} was created.
+              A new revision will be created to track this restoration.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-medium text-yellow-800 dark:text-yellow-200">
+                    This action will overwrite the current content
+                  </p>
+                  <p className="text-yellow-700 dark:text-yellow-300 mt-1">
+                    The current state will be saved in the revision history, so you can restore it later if needed.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Restore Comment (optional)</Label>
+              <Textarea
+                placeholder="Why are you restoring this version?"
+                value={restoreComment}
+                onChange={(e) => setRestoreComment(e.target.value)}
+                rows={2}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRestoreDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleRestore} disabled={restoreMutation.isPending}>
+              {restoreMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Restore Version
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Preview Modal */}
+      <Dialog open={!!selectedImage} onOpenChange={(open) => !open && setSelectedImage(null)}>
+        <DialogContent className="max-w-4xl p-0 overflow-hidden">
+          <div className="relative">
+            {selectedImage && (
+              <img
+                src={selectedImage}
+                alt="Gallery preview"
+                className="w-full h-auto max-h-[80vh] object-contain bg-black"
+              />
+            )}
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/70 to-transparent">
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    if (selectedImage) {
+                      window.open(selectedImage, '_blank');
+                    }
+                  }}
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Open in New Tab
+                </Button>
+              </div>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </StaffLayout>

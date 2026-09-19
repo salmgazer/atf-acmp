@@ -9,6 +9,7 @@ import * as admin from "firebase-admin";
 import { User, Role } from "../database/entities/user.entity";
 import { RefreshToken } from "../database/entities/refresh-token.entity";
 import { Participant } from "../database/entities/participant.entity";
+import { Cohort, CohortStatus } from "../database/entities/cohort.entity";
 import { FirebaseService } from "./firebase.service";
 import { PortalType, AuthResponseDto } from "./dto/auth.dto";
 
@@ -28,10 +29,17 @@ export class AuthService {
     private readonly refreshTokenRepository: Repository<RefreshToken>,
     @InjectRepository(Participant)
     private readonly participantRepository: Repository<Participant>,
+    @InjectRepository(Cohort)
+    private readonly cohortRepository: Repository<Cohort>,
     private readonly jwtService: JwtService,
     private readonly firebaseService: FirebaseService,
     private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * Blocked cohort statuses - users cannot login if their cohort is in these statuses
+   */
+  private readonly blockedCohortStatuses = [CohortStatus.DRAFT, CohortStatus.ARCHIVED];
 
   async verifyFirebaseToken(
     idToken: string,
@@ -126,9 +134,10 @@ export class AuthService {
     userAgent?: string,
     ipAddress?: string,
   ): Promise<AuthResponseDto> {
-    // Find participant by email
+    // Find participant by email with cohort relation
     const participant = await this.participantRepository.findOne({
       where: { email: email.toLowerCase() },
+      relations: ["cohort"],
     });
 
     if (!participant) {
@@ -137,6 +146,13 @@ export class AuthService {
 
     if (participant.status === "inactive") {
       throw new UnauthorizedException("Account is deactivated");
+    }
+
+    // Check cohort status - block login for DRAFT and ARCHIVED cohorts
+    if (participant.cohort && this.blockedCohortStatuses.includes(participant.cohort.status)) {
+      throw new UnauthorizedException(
+        "COHORT_NOT_ACCESSIBLE: Your cohort is no longer accessible. Please contact support if you need assistance."
+      );
     }
 
     // Verify password against stored hash
@@ -280,6 +296,7 @@ export class AuthService {
   ): Promise<AuthResponseDto> {
     const participant = await this.participantRepository.findOne({
       where: { id: refreshToken.participantId! },
+      relations: ["cohort"],
     });
 
     if (!participant) {
@@ -288,6 +305,14 @@ export class AuthService {
 
     if (participant.status === "inactive") {
       throw new UnauthorizedException("Account is deactivated");
+    }
+
+    // Check cohort status - block refresh for DRAFT and ARCHIVED cohorts
+    if (participant.cohort && this.blockedCohortStatuses.includes(participant.cohort.status)) {
+      await this.revokeRefreshToken(refreshToken.id, "Cohort no longer accessible");
+      throw new UnauthorizedException(
+        "COHORT_NOT_ACCESSIBLE: Your cohort is no longer accessible. Please contact support if you need assistance."
+      );
     }
 
     // Update last used timestamp

@@ -3,7 +3,7 @@
 import { useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore, canAccessPortal, getLoginPath, getDashboardPath, type Portal, type Role } from "@/lib/stores/auth-store";
-import { signOut } from "@/lib/auth";
+import { signOut, refreshAccessToken } from "@/lib/auth";
 import { api } from "@/lib/api/client";
 
 interface UseAuthOptions {
@@ -44,8 +44,8 @@ export function useAuth(options?: UseAuthOptions) {
 
       try {
         // Verify token with backend
-        const response = await api.get("/auth/me");
-        const userData = response.data;
+        const response = await api.get<{ id: string; email: string; role: Role }>("/auth/me");
+        const userData = response;
 
         // Check portal access
         if (portal && !canAccessPortal(userData.role, portal)) {
@@ -58,8 +58,22 @@ export function useAuth(options?: UseAuthOptions) {
         if (redirectIfAuthenticated && portal) {
           router.push(getDashboardPath(portal));
         }
-      } catch (error) {
-        // Token invalid, clear auth state
+      } catch (error: any) {
+        // Token verification failed - try to refresh the token
+        if (error?.response?.status === 401 || error?.message?.includes("401") || error?.message?.includes("Session expired")) {
+          try {
+            const newToken = await refreshAccessToken();
+            if (newToken) {
+              // Token refreshed, don't logout - the API client already updated the token
+              setLoading(false);
+              return;
+            }
+          } catch (refreshError) {
+            console.error("[useAuth] Token refresh failed:", refreshError);
+          }
+        }
+        
+        // Both token verification and refresh failed - clear auth state
         storeLogout();
         if (redirectIfUnauthenticated && portal) {
           router.push(getLoginPath(portal));

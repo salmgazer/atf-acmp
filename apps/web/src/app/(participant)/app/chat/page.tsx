@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { ParticipantLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { ChatSidebar } from "@/components/chat/chat-sidebar";
@@ -25,6 +26,9 @@ import { Loader2, Menu, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function ChatContent() {
+  const searchParams = useSearchParams();
+  const channelParam = searchParams.get("channel");
+  
   const { token } = useAuthStore();
   const { data: participant, isLoading: participantLoading } = useCurrentParticipant();
   const { data: channels, isLoading: channelsLoading } = useMyChannels();
@@ -47,6 +51,18 @@ function ChatContent() {
   // Auto-select channel when channels load
   useEffect(() => {
     if (channels && channels.length > 0 && !hasAutoSelected && !selectedChannelId) {
+      // Priority 0: If channel param specified, find by name/slug
+      if (channelParam) {
+        const targetChannel = channels.find(
+          (c) => c.channel.name.toLowerCase().replace(/\s+/g, "-") === channelParam.toLowerCase()
+        );
+        if (targetChannel) {
+          setSelectedChannelId(targetChannel.channel.id);
+          setHasAutoSelected(true);
+          return;
+        }
+      }
+
       // Priority 1: Team channel
       const teamChannel = channels.find((c) => c.channel.type === "team");
       if (teamChannel) {
@@ -80,7 +96,7 @@ function ChatContent() {
         setHasAutoSelected(true);
       }
     }
-  }, [channels, hasAutoSelected, selectedChannelId]);
+  }, [channels, hasAutoSelected, selectedChannelId, channelParam]);
 
   // Update active channel in context
   useEffect(() => {

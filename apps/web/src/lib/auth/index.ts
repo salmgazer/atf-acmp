@@ -26,7 +26,12 @@ export async function signInWithEmail(
 
   // Store refresh token for later use
   if (typeof window !== "undefined") {
-    localStorage.setItem("refresh_token", refreshToken);
+    console.log("[signInWithEmail] Storing refresh token:", !!refreshToken);
+    if (refreshToken) {
+      localStorage.setItem("refresh_token", refreshToken);
+    } else {
+      console.warn("[signInWithEmail] No refresh token in response!");
+    }
   }
 
   return { user, token: accessToken };

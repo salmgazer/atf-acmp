@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   FileText,
@@ -18,6 +19,7 @@ import {
   Moon,
   Monitor,
   Building2,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/stores";
@@ -38,6 +40,7 @@ import {
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/org/dashboard" },
   { icon: FileText, label: "My Briefs", href: "/org/briefs" },
+  { icon: Users, label: "Teams", href: "/org/teams" },
   { icon: Building2, label: "Profile", href: "/org/profile" },
 ];
 
@@ -48,12 +51,15 @@ interface OrganizationLayoutProps {
 export function OrganizationLayout({ children }: OrganizationLayoutProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { theme, setTheme } = useTheme();
   const { sidebarCollapsed, toggleSidebarCollapse } = useUIStore();
   const { user, logout } = useAuthStore();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const handleLogout = () => {
+    // Clear all cached queries to prevent stale data on next login
+    queryClient.clear();
     logout();
     router.push("/org/login");
   };

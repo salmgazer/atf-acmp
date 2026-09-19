@@ -23,6 +23,11 @@
       "@acmp/validators": ["../../packages/validators/src"]
     }
   },
+  "ts-node": {
+    "compilerOptions": {
+      "module": "commonjs"
+    }
+  },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }

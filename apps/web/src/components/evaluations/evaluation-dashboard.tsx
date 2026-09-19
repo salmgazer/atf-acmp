@@ -101,10 +101,10 @@ export function EvaluationDashboard({ cohortId, stages }: EvaluationDashboardPro
   });
   const { data: stats } = useEvaluationStats(cohortId, selectedStageId || null);
 
-  const { trigger: triggerBatch, isMutating: isTriggering } = useTriggerBatchEvaluation();
-  const { trigger: retryJob } = useRetryJob();
-  const { trigger: cancelJob } = useCancelJob();
-  const { trigger: publishEvaluations, isMutating: isPublishing } = usePublishEvaluations();
+  const triggerBatchMutation = useTriggerBatchEvaluation();
+  const retryJobMutation = useRetryJob();
+  const cancelJobMutation = useCancelJob();
+  const publishMutation = usePublishEvaluations();
 
   const evaluations = evaluationsData?.data || [];
   const jobs = jobsData?.data || [];
@@ -116,32 +116,29 @@ export function EvaluationDashboard({ cohortId, stages }: EvaluationDashboardPro
     }
 
     try {
-      const result = await triggerBatch({ cohortId, stageId: selectedStageId });
+      await triggerBatchMutation.mutateAsync({ cohortId, stageId: selectedStageId });
       queryClient.invalidateQueries({ queryKey: ["evaluations"] });
       setShowTriggerDialog(false);
-      toast.success(`Queued ${result.queued} evaluations, skipped ${result.skipped}`);
     } catch (error) {
-      toast.error("Failed to trigger evaluations");
+      // Error handled by mutation
     }
   };
 
   const handleRetry = async (jobId: string) => {
     try {
-      await retryJob({ jobId });
+      await retryJobMutation.mutateAsync(jobId);
       queryClient.invalidateQueries({ queryKey: ["evaluations", "jobs"] });
-      toast.success("Job queued for retry");
     } catch (error) {
-      toast.error("Failed to retry job");
+      // Error handled by mutation
     }
   };
 
   const handleCancel = async (jobId: string) => {
     try {
-      await cancelJob({ jobId });
+      await cancelJobMutation.mutateAsync(jobId);
       queryClient.invalidateQueries({ queryKey: ["evaluations", "jobs"] });
-      toast.success("Job cancelled");
     } catch (error) {
-      toast.error("Failed to cancel job");
+      // Error handled by mutation
     }
   };
 
@@ -152,12 +149,11 @@ export function EvaluationDashboard({ cohortId, stages }: EvaluationDashboardPro
     }
 
     try {
-      await publishEvaluations({ evaluationIds: selectedEvaluations });
+      await publishMutation.mutateAsync(selectedEvaluations);
       queryClient.invalidateQueries({ queryKey: ["evaluations"] });
       setSelectedEvaluations([]);
-      toast.success(`Published ${selectedEvaluations.length} evaluations`);
     } catch (error) {
-      toast.error("Failed to publish evaluations");
+      // Error handled by mutation
     }
   };
 
@@ -257,8 +253,8 @@ export function EvaluationDashboard({ cohortId, stages }: EvaluationDashboardPro
               <span className="text-sm text-muted-foreground">
                 {selectedEvaluations.length} selected
               </span>
-              <Button size="sm" onClick={handlePublish} disabled={isPublishing}>
-                {isPublishing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              <Button size="sm" onClick={handlePublish} disabled={publishMutation.isPending}>
+                {publishMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 <Send className="mr-2 h-4 w-4" />
                 Publish
               </Button>
@@ -289,12 +285,12 @@ export function EvaluationDashboard({ cohortId, stages }: EvaluationDashboardPro
           <DialogHeader>
             <DialogTitle>Trigger AI Evaluation</DialogTitle>
             <DialogDescription>
-              Queue all submitted teams for AI evaluation
+              Evaluate teams using their GitHub repositories
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Stage</Label>
+              <Label>Stage (for storing results)</Label>
               <Select value={selectedStageId} onValueChange={setSelectedStageId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select stage" />
@@ -307,15 +303,28 @@ export function EvaluationDashboard({ cohortId, stages }: EvaluationDashboardPro
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                Results will be saved under this stage
+              </p>
+            </div>
+            <div className="rounded-lg border bg-muted/50 p-3">
+              <div className="flex items-center gap-2 text-sm">
+                <Bot className="h-4 w-4 text-primary" />
+                <span className="font-medium">Code Evaluation Mode</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Will evaluate all teams with a GitHub repository set, analyzing code quality, 
+                commit history, documentation, and technical implementation.
+              </p>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowTriggerDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleTriggerEvaluation} disabled={isTriggering || !selectedStageId}>
-              {isTriggering && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Start Evaluation
+            <Button onClick={handleTriggerEvaluation} disabled={triggerBatchMutation.isPending || !selectedStageId}>
+              {triggerBatchMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Start Code Evaluation
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -391,6 +400,7 @@ function EvaluationsTable({
             <TableHead>AI Score</TableHead>
             <TableHead>Human Score</TableHead>
             <TableHead>Final</TableHead>
+            <TableHead>Tokens</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="w-12"></TableHead>
           </TableRow>
@@ -440,6 +450,15 @@ function EvaluationsTable({
                 )}
               </TableCell>
               <TableCell>
+                {evaluation.metrics?.tokensUsed ? (
+                  <span className="text-xs text-muted-foreground">
+                    {(evaluation.metrics.tokensUsed / 1000).toFixed(1)}k tokens
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">-</span>
+                )}
+              </TableCell>
+              <TableCell>
                 {evaluation.isPublished ? (
                   <Badge variant="default">Published</Badge>
                 ) : (
@@ -477,6 +496,15 @@ function EvaluationsTable({
   );
 }
 
+const stepLabels: Record<string, string> = {
+  FETCH_SUBMISSION: "Fetching submission...",
+  FETCH_GITHUB: "Analyzing GitHub repo...",
+  ANALYZE_CODE: "Running code analysis...",
+  ANALYZE_DOCUMENTS: "Processing documents...",
+  GENERATE_SCORES: "AI generating scores...",
+  SAVE_RESULTS: "Saving results...",
+};
+
 function JobsTable({
   jobs,
   isLoading,
@@ -507,86 +535,132 @@ function JobsTable({
     );
   }
 
-  return (
-    <Card>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Team</TableHead>
-            <TableHead>Stage</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Progress</TableHead>
-            <TableHead>Attempts</TableHead>
-            <TableHead>Created</TableHead>
-            <TableHead className="w-12"></TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {jobs.map((job) => {
-            const status = jobStatusConfig[job.status];
-            const StatusIcon = status.icon;
+  // Sort: processing first, then pending, then others by date
+  const sortedJobs = [...jobs].sort((a, b) => {
+    const order: Record<EvaluationJobStatus, number> = { processing: 0, pending: 1, failed: 2, completed: 3, cancelled: 4 };
+    if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
 
-            return (
-              <TableRow key={job.id}>
-                <TableCell className="font-medium">
-                  {job.team?.name || "Unknown"}
-                </TableCell>
-                <TableCell>
-                  {job.stage ? `Stage ${job.stage.number}` : "-"}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={status.variant}>
-                    <StatusIcon className={`mr-1 h-3 w-3 ${job.status === "processing" ? "animate-spin" : ""}`} />
-                    {status.label}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <div className="w-24 bg-secondary rounded-full h-2">
-                      <div
-                        className="bg-primary h-2 rounded-full transition-all"
-                        style={{ width: `${job.progress}%` }}
-                      />
+  return (
+    <div className="space-y-4">
+      {/* Live Processing Cards */}
+      {sortedJobs.filter(j => j.status === "processing").map((job) => (
+        <Card key={job.id} className="border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/20">
+          <CardContent className="pt-6">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                  <span className="font-semibold text-lg">{job.team?.name}</span>
+                  <Badge variant="secondary">Stage {job.stage?.number}</Badge>
+                </div>
+                <p className="text-sm text-blue-600 mt-1">
+                  {job.currentStep ? stepLabels[job.currentStep] || job.currentStep : "Processing..."}
+                </p>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-bold text-blue-600">{job.progress}%</div>
+                <div className="text-xs text-muted-foreground">Progress</div>
+              </div>
+            </div>
+            <div className="w-full bg-blue-200 dark:bg-blue-900 rounded-full h-3">
+              <div
+                className="bg-blue-600 h-3 rounded-full transition-all duration-500"
+                style={{ width: `${job.progress}%` }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+
+      {/* Jobs Table */}
+      <Card>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Team</TableHead>
+              <TableHead>Stage</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Progress</TableHead>
+              <TableHead>Duration</TableHead>
+              <TableHead>Created</TableHead>
+              <TableHead className="w-12"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sortedJobs.map((job) => {
+              const status = jobStatusConfig[job.status];
+              const StatusIcon = status.icon;
+
+              return (
+                <TableRow key={job.id} className={job.status === "processing" ? "bg-blue-50/50 dark:bg-blue-950/20" : ""}>
+                  <TableCell className="font-medium">
+                    {job.team?.name || "Unknown"}
+                  </TableCell>
+                  <TableCell>
+                    {job.stage ? `Stage ${job.stage.number}` : "-"}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={status.variant}>
+                      <StatusIcon className={`mr-1 h-3 w-3 ${job.status === "processing" ? "animate-spin" : ""}`} />
+                      {status.label}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 bg-secondary rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full transition-all ${job.status === "completed" ? "bg-green-600" : job.status === "failed" ? "bg-destructive" : "bg-primary"}`}
+                          style={{ width: `${job.progress}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground w-8">{job.progress}%</span>
                     </div>
-                    <span className="text-xs text-muted-foreground">{job.progress}%</span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {job.attempts}/{job.maxAttempts}
-                </TableCell>
-                <TableCell>
-                  {format(new Date(job.createdAt), "MMM d, h:mm a")}
-                </TableCell>
-                <TableCell>
-                  {(job.status === "failed" || job.status === "pending") && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {job.status === "failed" && job.attempts < job.maxAttempts && (
-                          <DropdownMenuItem onClick={() => onRetry(job.id)}>
-                            <RefreshCw className="mr-2 h-4 w-4" />
-                            Retry
-                          </DropdownMenuItem>
-                        )}
-                        {job.status === "pending" && (
-                          <DropdownMenuItem onClick={() => onCancel(job.id)}>
-                            <XCircle className="mr-2 h-4 w-4" />
-                            Cancel
-                          </DropdownMenuItem>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </Card>
+                  </TableCell>
+                  <TableCell>
+                    {job.processingTimeMs ? (
+                      <span className="text-xs">{(job.processingTimeMs / 1000).toFixed(1)}s</span>
+                    ) : job.startedAt ? (
+                      <span className="text-xs text-muted-foreground">Running...</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {format(new Date(job.createdAt), "MMM d, h:mm a")}
+                  </TableCell>
+                  <TableCell>
+                    {(job.status === "failed" || job.status === "pending") && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {job.status === "failed" && job.attempts < job.maxAttempts && (
+                            <DropdownMenuItem onClick={() => onRetry(job.id)}>
+                              <RefreshCw className="mr-2 h-4 w-4" />
+                              Retry
+                            </DropdownMenuItem>
+                          )}
+                          {job.status === "pending" && (
+                            <DropdownMenuItem onClick={() => onCancel(job.id)}>
+                              <XCircle className="mr-2 h-4 w-4" />
+                              Cancel
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </Card>
+    </div>
   );
 }

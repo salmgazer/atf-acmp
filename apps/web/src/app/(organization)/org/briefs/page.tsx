@@ -7,10 +7,10 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Button } from "@/components/ui/button";
 import {
   useBriefs,
-  useBriefStatistics,
   useDeleteBrief,
   type Brief,
   type BriefStatus,
+  type BriefQueryParams,
 } from "@/lib/api/hooks/use-briefs";
 import { useCurrentOrganization } from "@/lib/api/hooks/use-organizations";
 import {
@@ -45,6 +45,10 @@ import {
   Trash2,
   Users,
   Video,
+  TrendingUp,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -66,6 +70,23 @@ const statusTabs: { value: BriefStatus | "all"; label: string }[] = [
   { value: "revision_requested", label: "Needs Revision" },
 ];
 
+// Priority score badge styling based on score range
+function getPriorityBadgeStyle(score?: number | null): { bgClass: string; textClass: string; label: string } {
+  if (score === undefined || score === null) {
+    return { bgClass: "bg-muted", textClass: "text-muted-foreground", label: "—" };
+  }
+  if (score >= 140) {
+    return { bgClass: "bg-emerald-500/15", textClass: "text-emerald-600", label: String(score) };
+  }
+  if (score >= 100) {
+    return { bgClass: "bg-blue-500/15", textClass: "text-blue-600", label: String(score) };
+  }
+  if (score >= 50) {
+    return { bgClass: "bg-amber-500/15", textClass: "text-amber-600", label: String(score) };
+  }
+  return { bgClass: "bg-red-500/15", textClass: "text-red-600", label: String(score) };
+}
+
 function BriefRow({
   brief,
   onEdit,
@@ -77,6 +98,7 @@ function BriefRow({
 }) {
   const config = statusConfig[brief.status];
   const StatusIcon = config.icon;
+  const priorityStyle = getPriorityBadgeStyle(brief.priorityScore);
 
   return (
     <tr className="border-b border-border/50 hover:bg-muted transition-colors">
@@ -94,7 +116,7 @@ function BriefRow({
                 {brief.title}
               </Link>
               {brief.videoUrl && (
-                <Video className="h-4 w-4 shrink-0 text-primary" title="Has video pitch" />
+                <Video className="h-4 w-4 shrink-0 text-primary" aria-label="Has video pitch" />
               )}
             </div>
             <p className="text-sm text-muted-foreground line-clamp-1 max-w-md">
@@ -109,6 +131,12 @@ function BriefRow({
         ) : (
           <span className="text-sm text-muted-foreground">—</span>
         )}
+      </td>
+      <td className="p-4">
+        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${priorityStyle.bgClass} ${priorityStyle.textClass}`}>
+          <TrendingUp className="h-3 w-3" />
+          {priorityStyle.label}
+        </span>
       </td>
       <td className="p-4">
         <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -176,18 +204,40 @@ function BriefsContent() {
   const [search, setSearch] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [briefToDelete, setBriefToDelete] = useState<Brief | null>(null);
+  const [sortBy, setSortBy] = useState<BriefQueryParams["sortBy"]>("updatedAt");
+  const [sortOrder, setSortOrder] = useState<BriefQueryParams["sortOrder"]>("desc");
 
   const { data: briefsData, isLoading } = useBriefs({
     organizationId: currentOrg?.id,
     status: statusFilter === "all" ? undefined : statusFilter,
     search: search || undefined,
     limit: 100,
+    sortBy,
+    sortOrder,
   });
 
-  const { data: stats } = useBriefStatistics(cohortId);
+  // Also fetch all briefs without status filter to calculate org-specific stats
+  const { data: allBriefsData } = useBriefs({
+    organizationId: currentOrg?.id,
+    limit: 1000, // Get all briefs for accurate stats
+  });
+
   const deleteMutation = useDeleteBrief();
 
   const briefs = briefsData?.data || [];
+  const allBriefs = allBriefsData?.data || [];
+  
+  // Calculate org-specific stats from the briefs list
+  const stats = {
+    total: allBriefs.length,
+    draft: allBriefs.filter(b => b.status === "draft").length,
+    submitted: allBriefs.filter(b => b.status === "submitted").length,
+    inReview: allBriefs.filter(b => b.status === "in_review").length,
+    approved: allBriefs.filter(b => b.status === "approved").length,
+    rejected: allBriefs.filter(b => b.status === "rejected").length,
+    revisionRequested: allBriefs.filter(b => b.status === "revision_requested").length,
+  };
+  
   const hasActiveFilters = statusFilter !== "all";
   
   // hasCohort is true when org has a cohort assigned
@@ -206,6 +256,26 @@ function BriefsContent() {
   // Placeholder edit handler - navigates to edit page
   const handleEditClick = (brief: Brief) => {
     window.location.href = `/org/briefs/${brief.id}/edit`;
+  };
+
+  // Toggle sort order or change sort field
+  const handleSort = (field: BriefQueryParams["sortBy"]) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === "desc" ? "asc" : "desc");
+    } else {
+      setSortBy(field);
+      setSortOrder("desc");
+    }
+  };
+
+  // Get sort icon for a column
+  const getSortIcon = (field: BriefQueryParams["sortBy"]) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="h-3 w-3 ml-1 opacity-50" />;
+    }
+    return sortOrder === "desc" 
+      ? <ArrowDown className="h-3 w-3 ml-1" />
+      : <ArrowUp className="h-3 w-3 ml-1" />;
   };
 
   if (isOrgLoading) {
@@ -393,9 +463,26 @@ function BriefsContent() {
                     <tr>
                       <th className="text-left p-4 text-sm font-medium text-muted-foreground">Brief</th>
                       <th className="text-left p-4 text-sm font-medium text-muted-foreground">Vertical</th>
+                      <th 
+                        className="text-left p-4 text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
+                        onClick={() => handleSort("priority")}
+                      >
+                        <span className="inline-flex items-center">
+                          Priority
+                          {getSortIcon("priority")}
+                        </span>
+                      </th>
                       <th className="text-left p-4 text-sm font-medium text-muted-foreground">Teams</th>
                       <th className="text-left p-4 text-sm font-medium text-muted-foreground">Status</th>
-                      <th className="text-left p-4 text-sm font-medium text-muted-foreground">Updated</th>
+                      <th 
+                        className="text-left p-4 text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
+                        onClick={() => handleSort("updatedAt")}
+                      >
+                        <span className="inline-flex items-center">
+                          Updated
+                          {getSortIcon("updatedAt")}
+                        </span>
+                      </th>
                       <th className="text-left p-4 text-sm font-medium text-muted-foreground">Actions</th>
                     </tr>
                   </thead>

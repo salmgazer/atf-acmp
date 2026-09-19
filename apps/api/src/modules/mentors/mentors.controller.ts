@@ -50,10 +50,14 @@ import { CurrentUser } from "@/common/decorators/current-user.decorator";
 import { BulkThrottle, UploadThrottle } from "@/common/decorators/throttle.decorator";
 import { Role } from "@/database/entities/user.entity";
 import { UploadService } from "@/common/services/upload.service";
+import { Audit } from "@/common/decorators/audit.decorator";
+import { AuditInterceptor } from "@/common/interceptors/audit.interceptor";
+import { AuditAction } from "@/database/entities/audit-log.entity";
 
 @ApiTags("Mentors")
 @ApiBearerAuth()
 @Controller("mentors")
+@UseInterceptors(AuditInterceptor)
 export class MentorsController {
   constructor(
     private readonly mentorsService: MentorsService,
@@ -61,6 +65,13 @@ export class MentorsController {
   ) {}
 
   @Post()
+  @Audit({
+    action: AuditAction.CREATE,
+    entityType: "Mentor",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => `${result?.firstName} ${result?.lastName}`,
+    getDescription: (result) => `Created mentor: ${result?.firstName} ${result?.lastName}`,
+  })
   @ApiOperation({ summary: "Create a new mentor" })
   @ApiResponse({ status: 201, type: Mentor })
   async create(@Body() dto: CreateMentorDto): Promise<Mentor> {
@@ -100,6 +111,13 @@ export class MentorsController {
   }
 
   @Patch(":id")
+  @Audit({
+    action: AuditAction.UPDATE,
+    entityType: "Mentor",
+    getEntityId: (result) => result?.id,
+    getEntityName: (result) => `${result?.firstName} ${result?.lastName}`,
+    getDescription: (result) => `Updated mentor: ${result?.firstName} ${result?.lastName}`,
+  })
   @ApiOperation({ summary: "Update a mentor" })
   @ApiResponse({ status: 200, type: Mentor })
   async update(
@@ -193,6 +211,12 @@ export class MentorsController {
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Audit({
+    action: AuditAction.DELETE,
+    entityType: "Mentor",
+    getEntityId: (_, args) => args[0]?.id,
+    getDescription: (_, args) => `Deleted mentor: ${args[0]?.id}`,
+  })
   @ApiOperation({ summary: "Delete a mentor" })
   async delete(@Param("id", ParseUUIDPipe) id: string): Promise<void> {
     return this.mentorsService.delete(id);
@@ -201,6 +225,12 @@ export class MentorsController {
   // ============ Assignments ============
 
   @Post(":id/assign")
+  @Audit({
+    action: AuditAction.ASSIGNMENT,
+    entityType: "MentorAssignment",
+    getEntityId: (result) => result?.id,
+    getDescription: (result) => `Assigned mentor to team`,
+  })
   @ApiOperation({ summary: "Assign mentor to a team" })
   async assignToTeam(
     @Param("id", ParseUUIDPipe) id: string,
@@ -211,6 +241,11 @@ export class MentorsController {
 
   @Post(":id/unassign")
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Audit({
+    action: AuditAction.ASSIGNMENT,
+    entityType: "MentorAssignment",
+    getDescription: () => `Unassigned mentor from team`,
+  })
   @ApiOperation({ summary: "Unassign mentor from a team" })
   async unassignFromTeam(
     @Param("id", ParseUUIDPipe) id: string,
@@ -289,11 +324,17 @@ export class SessionsController {
 @ApiTags("Admin - Mentors")
 @ApiBearerAuth()
 @Controller("admin/mentors")
+@UseInterceptors(AuditInterceptor)
 export class AdminMentorsController {
   constructor(private readonly mentorsService: MentorsService) {}
 
   @Post("sync-users")
   @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: AuditAction.BULK_ACTION,
+    entityType: "Mentor",
+    getDescription: (result) => `Synced mentor users: ${result?.created || 0} created, ${result?.skipped || 0} skipped`,
+  })
   @ApiOperation({ summary: "Sync mentor users - creates User records for mentors who don't have them" })
   @ApiResponse({ status: 200, schema: { type: "object", properties: { created: { type: "number" }, skipped: { type: "number" } } } })
   async syncMentorUsers(
@@ -306,6 +347,11 @@ export class AdminMentorsController {
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(FileInterceptor("file"))
   @UploadThrottle()
+  @Audit({
+    action: AuditAction.BULK_IMPORT,
+    entityType: "Mentor",
+    getDescription: (result) => `Bulk imported ${result?.created || 0} mentors`,
+  })
   @ApiOperation({ summary: "Bulk import mentors from CSV" })
   @ApiConsumes("multipart/form-data")
   @ApiResponse({ status: 200, type: BulkImportResultDto })
@@ -374,7 +420,10 @@ export class AdminMentorsController {
 @UseGuards(JwtAuthGuard)
 @Controller("mentor-portal")
 export class MentorPortalController {
-  constructor(private readonly mentorsService: MentorsService) {}
+  constructor(
+    private readonly mentorsService: MentorsService,
+    private readonly uploadService: UploadService,
+  ) {}
 
   private async getMentorFromUser(user: { email: string }): Promise<Mentor> {
     const mentor = await this.mentorsService.findByEmail(user.email);
@@ -404,10 +453,51 @@ export class MentorPortalController {
       bio: dto.bio,
       profileImageUrl: dto.profileImageUrl,
       expertise: dto.expertise,
-      calendlyLink: dto.calendlyLink,
       linkedinUrl: dto.linkedinUrl,
     };
     return this.mentorsService.update(mentor.id, allowedFields);
+  }
+
+  @Post("me/profile-picture")
+  @UseInterceptors(FileInterceptor("file"))
+  @ApiOperation({ summary: "Upload profile picture for current mentor" })
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        file: {
+          type: "string",
+          format: "binary",
+          description: "Profile picture image (JPEG, PNG, WebP)",
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, type: Mentor })
+  async uploadMyProfilePicture(
+    @CurrentUser() user: { email: string },
+    @UploadedFile() file: Express.Multer.File
+  ): Promise<Mentor> {
+    if (!file) {
+      throw new BadRequestException("No file uploaded");
+    }
+
+    const mentor = await this.getMentorFromUser(user);
+
+    // Delete old profile picture if exists
+    if (mentor.profileImageUrl) {
+      const oldKey = this.uploadService.extractKeyFromUrl(mentor.profileImageUrl);
+      if (oldKey) {
+        await this.uploadService.deleteFile(oldKey);
+      }
+    }
+
+    // Upload new image
+    const result = await this.uploadService.uploadProfilePicture(file, "mentors", mentor.id);
+
+    // Update mentor with new URL
+    return this.mentorsService.update(mentor.id, { profileImageUrl: result.url });
   }
 
   @Get("my/teams")

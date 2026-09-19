@@ -19,6 +19,32 @@ export interface BriefResource {
   type: string;
 }
 
+export interface SecondaryContact {
+  name?: string;
+  role?: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface ScoringAnswers {
+  q1?: string;
+  q1_text?: string;
+  q2?: string;
+  q2_text?: string;
+  q3?: string;
+  q3_text?: string;
+  q4?: string;
+  q4_text?: string;
+  q5?: string;
+  q5_text?: string;
+  q6?: string;
+  q6_text?: string;
+  q7?: string;
+  q7_text?: string;
+  q8?: string;
+  q8_text?: string;
+}
+
 export interface Brief {
   id: string;
   title: string;
@@ -53,14 +79,32 @@ export interface Brief {
   revisionCount: number;
   createdAt: string;
   updatedAt: string;
+  // Fields from onboard-organization form
+  whatChanges?: string;
+  affectedCount?: string;
+  dataDescription?: string;
+  dataAccess?: string;
+  secondaryContact?: SecondaryContact;
+  scoringAnswers?: ScoringAnswers;
+  // Scoring results
+  fitScore?: number;
+  fitBand?: string;
+  scoreOverride?: string;
+  depthScore?: number;
+  breadthScore?: number;
+  impactScore?: number;
+  impactBand?: string;
+  priorityScore?: number;
 }
 
 export interface BriefRevision {
   id: string;
   briefId: string;
   action: string;
+  version: number;
   actorId?: string;
   actorName?: string;
+  actorType?: "organization" | "staff" | "system";
   comment?: string;
   previousData?: Record<string, any>;
   newData?: Record<string, any>;
@@ -78,6 +122,13 @@ export interface CreateBriefDto {
   tags?: string[];
   resources?: BriefResource[];
   maxTeams?: number;
+  // Fields from onboard-organization form
+  whatChanges?: string;
+  affectedCount?: string;
+  dataDescription?: string;
+  dataAccess?: string;
+  secondaryContact?: SecondaryContact;
+  scoringAnswers?: ScoringAnswers;
 }
 
 export interface UpdateBriefDto {
@@ -91,6 +142,36 @@ export interface UpdateBriefDto {
   maxTeams?: number;
   videoUrl?: string;
   imageUrls?: string[];
+  // Fields from onboard-organization form
+  whatChanges?: string;
+  affectedCount?: string;
+  dataDescription?: string;
+  dataAccess?: string;
+  secondaryContact?: SecondaryContact;
+  scoringAnswers?: ScoringAnswers;
+}
+
+export interface StaffUpdateBriefDto {
+  title?: string;
+  description?: string;
+  problemStatement?: string;
+  expectedOutcomes?: string;
+  verticalId?: string;
+  tags?: string[];
+  resources?: BriefResource[];
+  maxTeams?: number;
+  editComment?: string;
+  // Fields from onboard-organization form
+  whatChanges?: string;
+  affectedCount?: string;
+  dataDescription?: string;
+  dataAccess?: string;
+  secondaryContact?: SecondaryContact;
+  scoringAnswers?: ScoringAnswers;
+}
+
+export interface RestoreRevisionDto {
+  comment?: string;
 }
 
 export interface ReviewBriefDto {
@@ -107,6 +188,8 @@ export interface BriefQueryParams {
   search?: string;
   page?: number;
   limit?: number;
+  sortBy?: "priority" | "fitScore" | "impactScore" | "createdAt" | "updatedAt";
+  sortOrder?: "asc" | "desc";
 }
 
 export interface PaginatedBriefs {
@@ -137,6 +220,7 @@ export const briefKeys = {
   details: () => [...briefKeys.all, "detail"] as const,
   detail: (id: string) => [...briefKeys.details(), id] as const,
   revisions: (id: string) => [...briefKeys.detail(id), "revisions"] as const,
+  revision: (briefId: string, revisionId: string) => [...briefKeys.revisions(briefId), revisionId] as const,
   statistics: (cohortId?: string) => [...briefKeys.all, "statistics", cohortId] as const,
 };
 
@@ -153,9 +237,14 @@ export function useBriefs(params?: BriefQueryParams) {
       if (params?.search) searchParams.set("search", params.search);
       if (params?.page) searchParams.set("page", String(params.page));
       if (params?.limit) searchParams.set("limit", String(params.limit));
+      if (params?.sortBy) searchParams.set("sortBy", params.sortBy);
+      if (params?.sortOrder) searchParams.set("sortOrder", params.sortOrder);
 
       return api.get<PaginatedBriefs>(`/briefs?${searchParams.toString()}`);
     },
+    // Only run when organizationId filter is NOT provided, OR when it IS provided and has a value
+    // This prevents fetching all briefs when org portal waits for currentOrg to load
+    enabled: params?.organizationId !== undefined ? !!params.organizationId : true,
   });
 }
 
@@ -357,6 +446,115 @@ export function useUploadBriefVideoForExisting() {
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to upload video");
+    },
+  });
+}
+
+export function useUploadBriefImage() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, file }: { id: string; file: File }) => {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      return api.post<{ url: string; imageUrls: string[] }>(`/briefs/${id}/upload-image`, formData);
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: briefKeys.detail(variables.id) });
+      toast.success("Image uploaded successfully");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to upload image");
+    },
+  });
+}
+
+export function useRemoveBriefImage() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, index }: { id: string; index: number }) => {
+      return api.delete<{ imageUrls: string[] }>(`/briefs/${id}/images/${index}`);
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: briefKeys.detail(variables.id) });
+      toast.success("Image removed");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to remove image");
+    },
+  });
+}
+
+export function useBriefRevision(briefId: string, revisionId: string) {
+  return useQuery({
+    queryKey: briefKeys.revision(briefId, revisionId),
+    queryFn: () => api.get<BriefRevision>(`/briefs/${briefId}/revisions/${revisionId}`),
+    enabled: !!briefId && !!revisionId,
+  });
+}
+
+export function useStaffUpdateBrief() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, data, actorId, actorName }: { 
+      id: string; 
+      data: StaffUpdateBriefDto;
+      actorId: string;
+      actorName: string;
+    }) => {
+      const params = new URLSearchParams();
+      params.set("actorId", actorId);
+      params.set("actorName", actorName);
+      return api.patch<Brief>(`/briefs/${id}/staff?${params.toString()}`, data);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: briefKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: briefKeys.revisions(data.id) });
+      queryClient.setQueryData(briefKeys.detail(data.id), data);
+      toast.success("Brief updated successfully");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to update brief");
+    },
+  });
+}
+
+export function useRestoreBriefRevision() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ 
+      briefId, 
+      revisionId, 
+      actorId, 
+      actorName,
+      comment 
+    }: { 
+      briefId: string; 
+      revisionId: string;
+      actorId: string;
+      actorName: string;
+      comment?: string;
+    }) => {
+      const params = new URLSearchParams();
+      params.set("actorId", actorId);
+      params.set("actorName", actorName);
+      return api.post<Brief>(
+        `/briefs/${briefId}/revisions/${revisionId}/restore?${params.toString()}`,
+        { comment }
+      );
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: briefKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: briefKeys.revisions(data.id) });
+      queryClient.setQueryData(briefKeys.detail(data.id), data);
+      toast.success("Brief restored to previous version");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to restore brief");
     },
   });
 }

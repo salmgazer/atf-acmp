@@ -27,6 +27,7 @@ export interface Participant {
   firebaseUid?: string;
   mustChangePassword: boolean;
   onboardingComplete: boolean;
+  profileImageUrl?: string;
   status: ParticipantStatus;
   cohortId: string;
   createdAt: string;
@@ -348,6 +349,38 @@ export function useDeleteParticipant() {
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to delete participant");
+    },
+  });
+}
+
+export function useUploadMyProfilePicture() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
+      
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"}/participants/me/profile-picture`,
+        {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: "Upload failed" }));
+        throw new Error(error.message || "Failed to upload profile picture");
+      }
+
+      return response.json() as Promise<Participant>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: participantKeys.current() });
     },
   });
 }

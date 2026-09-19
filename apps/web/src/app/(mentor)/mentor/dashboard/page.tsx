@@ -209,21 +209,6 @@ function DashboardContent() {
             </div>
           )}
         </div>
-
-        {/* Calendly Link */}
-        {profile?.calendlyLink && (
-          <div className="rounded-lg border bg-card p-4">
-            <h2 className="font-semibold">Your Booking Link</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Share this with your teams to schedule sessions
-            </p>
-            <Button asChild variant="outline" className="mt-3 w-full">
-              <a href={profile.calendlyLink} target="_blank" rel="noopener noreferrer">
-                Open Calendly
-              </a>
-            </Button>
-          </div>
-        )}
       </div>
     </MentorLayout>
   );

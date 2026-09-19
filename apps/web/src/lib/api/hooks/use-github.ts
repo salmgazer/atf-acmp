@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetcher } from "../client";
+import { api } from "../client";
 
 export interface GitHubRepoMetadata {
   name: string;
@@ -63,7 +63,7 @@ export interface GitHubRepoAnalysis {
 export function useGitHubAnalysis(githubUrl: string | undefined) {
   return useQuery<GitHubRepoAnalysis>({
     queryKey: ["github", "analysis", githubUrl],
-    queryFn: () => fetcher(`/github/analyze?url=${encodeURIComponent(githubUrl!)}`),
+    queryFn: () => api.get<GitHubRepoAnalysis>(`/github/analyze?url=${encodeURIComponent(githubUrl!)}`),
     enabled: !!githubUrl,
     refetchOnWindowFocus: false,
     staleTime: 60000, // 1 minute
@@ -74,7 +74,7 @@ export function useGitHubAnalysis(githubUrl: string | undefined) {
 export function useGitHubMetadata(githubUrl: string | undefined) {
   return useQuery<GitHubRepoMetadata>({
     queryKey: ["github", "metadata", githubUrl],
-    queryFn: () => fetcher(`/github/metadata?url=${encodeURIComponent(githubUrl!)}`),
+    queryFn: () => api.get<GitHubRepoMetadata>(`/github/metadata?url=${encodeURIComponent(githubUrl!)}`),
     enabled: !!githubUrl,
     refetchOnWindowFocus: false,
   });
@@ -84,7 +84,7 @@ export function useGitHubMetadata(githubUrl: string | undefined) {
 export function useGitHubLanguages(githubUrl: string | undefined) {
   return useQuery<{ languages: GitHubLanguages; percentages: { [key: string]: number } }>({
     queryKey: ["github", "languages", githubUrl],
-    queryFn: () => fetcher(`/github/languages?url=${encodeURIComponent(githubUrl!)}`),
+    queryFn: () => api.get<{ languages: GitHubLanguages; percentages: { [key: string]: number } }>(`/github/languages?url=${encodeURIComponent(githubUrl!)}`),
     enabled: !!githubUrl,
     refetchOnWindowFocus: false,
   });
@@ -98,7 +98,7 @@ export function useGitHubCommits(githubUrl: string | undefined, count?: number) 
 
   return useQuery<GitHubCommit[]>({
     queryKey: ["github", "commits", githubUrl, count],
-    queryFn: () => fetcher(`/github/commits?${params.toString()}`),
+    queryFn: () => api.get<GitHubCommit[]>(`/github/commits?${params.toString()}`),
     enabled: !!githubUrl,
     refetchOnWindowFocus: false,
   });
@@ -108,7 +108,7 @@ export function useGitHubCommits(githubUrl: string | undefined, count?: number) 
 export function useGitHubContributors(githubUrl: string | undefined) {
   return useQuery<GitHubContributor[]>({
     queryKey: ["github", "contributors", githubUrl],
-    queryFn: () => fetcher(`/github/contributors?url=${encodeURIComponent(githubUrl!)}`),
+    queryFn: () => api.get<GitHubContributor[]>(`/github/contributors?url=${encodeURIComponent(githubUrl!)}`),
     enabled: !!githubUrl,
     refetchOnWindowFocus: false,
   });
@@ -118,7 +118,7 @@ export function useGitHubContributors(githubUrl: string | undefined) {
 export function useGitHubReadme(githubUrl: string | undefined) {
   return useQuery<{ readme: string | null }>({
     queryKey: ["github", "readme", githubUrl],
-    queryFn: () => fetcher(`/github/readme?url=${encodeURIComponent(githubUrl!)}`),
+    queryFn: () => api.get<{ readme: string | null }>(`/github/readme?url=${encodeURIComponent(githubUrl!)}`),
     enabled: !!githubUrl,
     refetchOnWindowFocus: false,
   });

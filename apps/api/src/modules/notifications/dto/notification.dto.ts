@@ -88,12 +88,20 @@ export class BulkNotificationDto {
   body: string;
 
   @IsOptional()
+  @IsString()
+  summary?: string;
+
+  @IsOptional()
   @IsObject()
   data?: Record<string, any>;
 
   @IsOptional()
   @IsString()
   actionUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  iconName?: string;
 
   @IsOptional()
   @IsEnum(NotificationPriority)

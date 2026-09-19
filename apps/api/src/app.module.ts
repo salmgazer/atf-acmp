@@ -1,8 +1,9 @@
 import { Module } from "@nestjs/common";
-import { APP_FILTER, APP_GUARD } from "@nestjs/core";
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
+import { ScheduleModule } from "@nestjs/schedule";
 import { AuthModule } from "./auth/auth.module";
 import { EmailModule } from "./email/email.module";
 import { HealthModule } from "./health/health.module";
@@ -30,8 +31,12 @@ import { CertificatesModule } from "./modules/certificates/certificates.module";
 import { AnnouncementsModule } from "./modules/announcements/announcements.module";
 import { SetupModule } from "./modules/setup/setup.module";
 import { AuditModule } from "./modules/audit/audit.module";
+import { ActivityModule } from "./modules/activity/activity.module";
+import { PublicModule } from "./modules/public/public.module";
+import { CalendarModule } from "./modules/calendar/calendar.module";
 import { UploadModule } from "./common/services/upload.module";
 import { GlobalExceptionFilter } from "./common/filters/http-exception.filter";
+import { ActivityInterceptor } from "./common/interceptors/activity.interceptor";
 import configuration from "./config/configuration";
 import { dataSourceOptions } from "./database/data-source";
 
@@ -61,6 +66,9 @@ import { dataSourceOptions } from "./database/data-source";
         limit: 1000, // 1000 requests per hour
       },
     ]),
+
+    // Task Scheduling
+    ScheduleModule.forRoot(),
 
     // Database
     TypeOrmModule.forRootAsync({
@@ -99,6 +107,9 @@ import { dataSourceOptions } from "./database/data-source";
     AnnouncementsModule,
     SetupModule,
     AuditModule,
+    ActivityModule,
+    PublicModule,
+    CalendarModule,
     UploadModule,
   ],
   providers: [
@@ -111,6 +122,11 @@ import { dataSourceOptions } from "./database/data-source";
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    // Global activity logging interceptor
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ActivityInterceptor,
     },
   ],
 })

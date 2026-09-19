@@ -16,6 +16,7 @@ import {
   type OrganizationStatus,
 } from "@/lib/api/hooks/use-organizations";
 import { useCohorts } from "@/lib/api/hooks/use-cohorts";
+import { useStaffCohortStore } from "@/lib/stores/staff-cohort-store";
 import { OrganizationFormDialog } from "@/components/organizations/organization-form-dialog";
 import {
   Dialog,
@@ -174,7 +175,8 @@ function OrganizationRow({
 
 function OrganizationsContent() {
   const [statusFilter, setStatusFilter] = useState<OrganizationStatus | "all">("all");
-  const [cohortFilter, setCohortFilter] = useState<string | "all">("all");
+  const [selectedCohortId, setSelectedCohortId] = useState<string | null>(null);
+  const [hasInitialized, setHasInitialized] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
@@ -183,20 +185,26 @@ function OrganizationsContent() {
   const [showFormDialog, setShowFormDialog] = useState(false);
   const [editingOrg, setEditingOrg] = useState<Organization | null>(null);
 
+  // Get global cohort from store (set by sidebar)
+  const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
+  
   const { data: cohortsData } = useCohorts({ limit: 100 });
   const cohorts = cohortsData?.data || [];
-  const activeCohort = cohorts.find((c) => c.status === "active");
-
-  // Set active cohort as default filter when cohorts load
+  
+  // Initialize local cohort from global when component mounts or global changes (if not yet set locally)
   useEffect(() => {
-    if (activeCohort && cohortFilter === "all") {
-      setCohortFilter(activeCohort.id);
+    if (globalCohortId && !hasInitialized) {
+      setSelectedCohortId(null); // null means "use global"
+      setHasInitialized(true);
     }
-  }, [activeCohort]);
+  }, [globalCohortId, hasInitialized]);
+
+  // Use local cohort if explicitly set, otherwise fall back to global
+  const effectiveCohortId = selectedCohortId ?? globalCohortId ?? undefined;
 
   const { data: orgsData, isLoading } = useOrganizations({
     status: statusFilter === "all" ? undefined : statusFilter,
-    cohortId: cohortFilter === "all" ? undefined : cohortFilter,
+    cohortId: effectiveCohortId,
     search: search || undefined,
     limit: 100,
   });
@@ -206,7 +214,7 @@ function OrganizationsContent() {
   const sendInviteMutation = useSendOrganizationInvite();
 
   const organizations = orgsData?.data || [];
-  const hasActiveFilters = statusFilter !== "all" || (cohortFilter !== "all" && cohortFilter !== activeCohort?.id);
+  const hasActiveFilters = statusFilter !== "all" || (selectedCohortId !== null && selectedCohortId !== globalCohortId);
 
   const handleApprove = async (org: Organization) => {
     await approveMutation.mutateAsync({ id: org.id });
@@ -357,22 +365,12 @@ function OrganizationsContent() {
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-muted-foreground">Cohort:</span>
               <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => setCohortFilter("all")}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                    cohortFilter === "all"
-                      ? "bg-zinc-900 text-white"
-                      : "bg-card text-muted-foreground border border-border hover:bg-muted"
-                  }`}
-                >
-                  All
-                </button>
                 {cohorts.map((cohort) => (
                   <button
                     key={cohort.id}
-                    onClick={() => setCohortFilter(cohort.id)}
+                    onClick={() => setSelectedCohortId(cohort.id === globalCohortId ? null : cohort.id)}
                     className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                      cohortFilter === cohort.id
+                      (selectedCohortId ?? globalCohortId) === cohort.id
                         ? "bg-zinc-900 text-white"
                         : "bg-card text-muted-foreground border border-border hover:bg-muted"
                     }`}
@@ -390,7 +388,7 @@ function OrganizationsContent() {
               <button
                 onClick={() => {
                   setStatusFilter("all");
-                  setCohortFilter(activeCohort?.id || "all");
+                  setSelectedCohortId(null);
                 }}
                 className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
               >

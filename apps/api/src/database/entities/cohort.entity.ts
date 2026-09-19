@@ -81,4 +81,13 @@ export class Cohort extends BaseEntity {
 
   @Column({ name: "stage_names", type: "jsonb", default: {} })
   stageNames: StageNames;
+
+  @Column({
+    name: "session_rate",
+    type: "decimal",
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  sessionRate: number; // Default rate paid per mentor session (can be overridden per mentor)
 }

@@ -12,6 +12,10 @@ import { User } from "../database/entities/user.entity";
 import { VerificationCode } from "../database/entities/verification-code.entity";
 import { RefreshToken } from "../database/entities/refresh-token.entity";
 import { Participant } from "../database/entities/participant.entity";
+import { TeamMember } from "../database/entities/team.entity";
+import { Cohort } from "../database/entities/cohort.entity";
+import { Organization } from "../database/entities/organization.entity";
+import { Mentor } from "../database/entities/mentor.entity";
 
 @Module({
   imports: [
@@ -26,7 +30,7 @@ import { Participant } from "../database/entities/participant.entity";
       }),
       inject: [ConfigService],
     }),
-    TypeOrmModule.forFeature([User, VerificationCode, RefreshToken, Participant]),
+    TypeOrmModule.forFeature([User, VerificationCode, RefreshToken, Participant, TeamMember, Cohort, Organization, Mentor]),
   ],
   controllers: [AuthController],
   providers: [AuthService, FirebaseService, MagicLinkService, JwtStrategy],

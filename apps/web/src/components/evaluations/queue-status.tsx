@@ -19,11 +19,17 @@ import {
   usePauseQueue,
   useResumeQueue,
 } from "@/lib/api/hooks/use-evaluations";
+import { useQueryClient } from "@tanstack/react-query";
 
 export function QueueStatus() {
-  const { data: status, isLoading, mutate: refreshStatus } = useQueueStatus();
-  const { trigger: pauseQueue, isMutating: isPausing } = usePauseQueue();
-  const { trigger: resumeQueue, isMutating: isResuming } = useResumeQueue();
+  const queryClient = useQueryClient();
+  const { data: status, isLoading } = useQueueStatus();
+  const { mutateAsync: pauseQueue, isPending: isPausing } = usePauseQueue();
+  const { mutateAsync: resumeQueue, isPending: isResuming } = useResumeQueue();
+
+  const refreshStatus = () => {
+    queryClient.invalidateQueries({ queryKey: ["queue-status"] });
+  };
 
   const handlePause = async () => {
     try {

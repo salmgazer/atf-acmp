@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   ParseUUIDPipe,
+  UseInterceptors,
 } from "@nestjs/common";
 import {
   ApiTags,
@@ -32,10 +33,14 @@ import {
   UpdateAIWeightDto,
   PublishEvaluationsDto,
 } from "./dto/evaluation.dto";
+import { Audit } from "@/common/decorators/audit.decorator";
+import { AuditInterceptor } from "@/common/interceptors/audit.interceptor";
+import { AuditAction } from "@/database/entities/audit-log.entity";
 
 @ApiTags("evaluations-admin")
 @Controller("admin/evaluations")
 @UseGuards(JwtAuthGuard, RolesGuard)
+@UseInterceptors(AuditInterceptor)
 @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
 @ApiBearerAuth()
 export class EvaluationsController {
@@ -159,6 +164,12 @@ export class EvaluationsController {
   // ============ Human Scoring ============
 
   @Post(":id/human-score")
+  @Audit({
+    action: AuditAction.UPDATE,
+    entityType: "Evaluation",
+    getEntityId: (result) => result?.id,
+    getDescription: (result) => `Submitted human score for evaluation: ${result?.id}`,
+  })
   @ApiOperation({ summary: "Submit human evaluator score for an evaluation" })
   @ApiParam({ name: "id", description: "Evaluation ID" })
   @ApiResponse({ status: 200, description: "Human score submitted" })
@@ -171,6 +182,12 @@ export class EvaluationsController {
   }
 
   @Patch(":id/ai-weight")
+  @Audit({
+    action: AuditAction.UPDATE,
+    entityType: "Evaluation",
+    getEntityId: (result) => result?.id,
+    getDescription: (result) => `Updated AI weight for evaluation: ${result?.id}`,
+  })
   @ApiOperation({ summary: "Update AI score weight for an evaluation" })
   @ApiParam({ name: "id", description: "Evaluation ID" })
   @ApiResponse({ status: 200, description: "AI weight updated" })
@@ -184,6 +201,11 @@ export class EvaluationsController {
   // ============ Publishing ============
 
   @Post("publish")
+  @Audit({
+    action: AuditAction.STATUS_CHANGE,
+    entityType: "Evaluation",
+    getDescription: (result) => `Published evaluations`,
+  })
   @ApiOperation({ summary: "Publish evaluations to make them visible to teams" })
   @ApiResponse({ status: 200, description: "Evaluations published" })
   async publishEvaluations(@Body() dto: PublishEvaluationsDto) {
@@ -192,6 +214,11 @@ export class EvaluationsController {
   }
 
   @Post("unpublish")
+  @Audit({
+    action: AuditAction.STATUS_CHANGE,
+    entityType: "Evaluation",
+    getDescription: (result) => `Unpublished evaluations`,
+  })
   @ApiOperation({ summary: "Unpublish evaluations" })
   @ApiResponse({ status: 200, description: "Evaluations unpublished" })
   async unpublishEvaluations(@Body() dto: PublishEvaluationsDto) {

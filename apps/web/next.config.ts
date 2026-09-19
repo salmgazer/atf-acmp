@@ -26,6 +26,11 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "firebasestorage.googleapis.com",
       },
+      {
+        // Local MinIO for development
+        protocol: "http",
+        hostname: "localhost",
+      },
     ],
   },
   experimental: {

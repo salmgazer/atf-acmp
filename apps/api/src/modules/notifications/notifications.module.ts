@@ -10,6 +10,7 @@ import {
 import { NotificationsService } from "./notifications.service";
 import { NotificationsGateway } from "./notifications.gateway";
 import { NotificationTriggersService } from "./notification-triggers.service";
+import { OneSignalService } from "./onesignal.service";
 import {
   NotificationsController,
   AdminNotificationsController,
@@ -28,7 +29,17 @@ import {
     }),
   ],
   controllers: [NotificationsController, AdminNotificationsController],
-  providers: [NotificationsService, NotificationsGateway, NotificationTriggersService],
-  exports: [NotificationsService, NotificationsGateway, NotificationTriggersService],
+  providers: [
+    NotificationsService,
+    NotificationsGateway,
+    NotificationTriggersService,
+    OneSignalService,
+  ],
+  exports: [
+    NotificationsService,
+    NotificationsGateway,
+    NotificationTriggersService,
+    OneSignalService,
+  ],
 })
 export class NotificationsModule {}

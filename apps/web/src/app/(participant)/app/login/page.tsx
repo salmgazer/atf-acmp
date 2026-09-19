@@ -13,6 +13,7 @@ function ParticipantLoginContent() {
         title="Welcome back"
         subtitle="Sign in to continue your AI challenge journey"
         portalName="Participant Portal"
+        portalType="participant"
         imageSide="left"
       >
         <EmailPasswordForm

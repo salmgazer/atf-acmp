@@ -60,7 +60,7 @@ export function HumanScoringForm({ evaluationId }: HumanScoringFormProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: evaluation, isLoading } = useEvaluation(evaluationId);
-  const { trigger: submitScore, isMutating: isSubmitting } = useSubmitHumanScore();
+  const { mutateAsync: submitScore, isPending: isSubmitting } = useSubmitHumanScore();
   const [error, setError] = useState<string | null>(null);
 
   const {

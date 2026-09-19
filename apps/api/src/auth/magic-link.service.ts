@@ -12,6 +12,9 @@ import {
   VerificationCode,
   VerificationCodeType,
 } from "../database/entities/verification-code.entity";
+import { Organization } from "../database/entities/organization.entity";
+import { Mentor } from "../database/entities/mentor.entity";
+import { Cohort, CohortStatus } from "../database/entities/cohort.entity";
 import { AuthService } from "./auth.service";
 import { AuthResponseDto, PortalType } from "./dto/auth.dto";
 import { EmailService } from "../email/email.service";
@@ -23,11 +26,20 @@ export class MagicLinkService {
   private readonly maxAttempts = 5;
   private readonly rateLimitMinutes = 1;
 
+  /**
+   * Blocked cohort statuses - users cannot login if their cohort is in these statuses
+   */
+  private readonly blockedCohortStatuses = [CohortStatus.DRAFT, CohortStatus.ARCHIVED];
+
   constructor(
     @InjectRepository(VerificationCode)
     private readonly verificationCodeRepository: Repository<VerificationCode>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Organization)
+    private readonly organizationRepository: Repository<Organization>,
+    @InjectRepository(Mentor)
+    private readonly mentorRepository: Repository<Mentor>,
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
     private readonly emailService: EmailService
@@ -55,6 +67,14 @@ export class MagicLinkService {
 
     if (!user.isActive) {
       this.logger.warn(`Magic link requested for inactive user: ${normalizedEmail}`);
+      return;
+    }
+
+    // Check cohort status for organization and mentor portals
+    const cohortCheck = await this.checkUserCohortAccess(normalizedEmail, portal);
+    if (!cohortCheck.hasAccess) {
+      this.logger.warn(`Magic link blocked for ${normalizedEmail}: ${cohortCheck.reason}`);
+      // Don't reveal cohort status during code request - silently fail
       return;
     }
 
@@ -163,6 +183,17 @@ export class MagicLinkService {
       throw new UnauthorizedException("Account is deactivated");
     }
 
+    // Check cohort status for organization and mentor portals
+    const portal = verificationCode.portal as PortalType | undefined;
+    if (portal && portal !== PortalType.STAFF) {
+      const cohortCheck = await this.checkUserCohortAccess(normalizedEmail, portal);
+      if (!cohortCheck.hasAccess) {
+        throw new UnauthorizedException(
+          "COHORT_NOT_ACCESSIBLE: Your cohort is no longer accessible. Please contact support if you need assistance."
+        );
+      }
+    }
+
     // Update last login
     user.lastLoginAt = new Date();
     await this.userRepository.save(user);
@@ -191,6 +222,52 @@ export class MagicLinkService {
       expiresAt: LessThan(new Date(Date.now() - 24 * 60 * 60 * 1000)), // 24 hours old
     });
     return result.affected || 0;
+  }
+
+  /**
+   * Check if user has access based on their cohort status
+   */
+  private async checkUserCohortAccess(
+    email: string,
+    portal: PortalType
+  ): Promise<{ hasAccess: boolean; reason?: string }> {
+    if (portal === PortalType.ORGANIZATION) {
+      const organization = await this.organizationRepository.findOne({
+        where: { email },
+        relations: ["cohort"],
+      });
+
+      if (!organization) {
+        return { hasAccess: true }; // Let other validation handle missing org
+      }
+
+      if (organization.cohort && this.blockedCohortStatuses.includes(organization.cohort.status)) {
+        return {
+          hasAccess: false,
+          reason: `Organization cohort is ${organization.cohort.status}`,
+        };
+      }
+    }
+
+    if (portal === PortalType.MENTOR) {
+      const mentor = await this.mentorRepository.findOne({
+        where: { email },
+        relations: ["cohort"],
+      });
+
+      if (!mentor) {
+        return { hasAccess: true }; // Let other validation handle missing mentor
+      }
+
+      if (mentor.cohort && this.blockedCohortStatuses.includes(mentor.cohort.status)) {
+        return {
+          hasAccess: false,
+          reason: `Mentor cohort is ${mentor.cohort.status}`,
+        };
+      }
+    }
+
+    return { hasAccess: true };
   }
 
   private generateCode(): string {
