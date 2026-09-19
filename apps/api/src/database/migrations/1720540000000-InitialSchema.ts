@@ -7,7 +7,7 @@ import * as path from "path";
  * This migration reads from the accompanying .sql file which contains
  * the full schema dump from the development database.
  * 
- * Consolidated from 40 individual migrations on 2026-09-19.
+ * Consolidated from 40 individual migrations.
  */
 export class InitialSchema1720540000000 implements MigrationInterface {
   name = "InitialSchema1720540000000";

@@ -112,6 +112,9 @@ jobs:
         run: |
           echo "Running database migrations..."
           
+          # Create the log group if it doesn't exist (execution role may not have CreateLogGroup permission)
+          aws logs create-log-group --log-group-name "/aws/ecs/acmp-staging/migrations" 2>/dev/null || echo "Log group already exists or will be created"
+          
           # Get network configuration from a running task (ECS Express Mode doesn't expose it via describe-services)
           TASK_ARN=$(aws ecs list-tasks \
             --cluster ${{ env.ECS_CLUSTER }} \
@@ -184,8 +187,7 @@ jobs:
                   "options": {
                     "awslogs-group": "/aws/ecs/acmp-staging/migrations",
                     "awslogs-region": "${{ env.AWS_REGION }}",
-                    "awslogs-stream-prefix": "migration",
-                    "awslogs-create-group": "true"
+                    "awslogs-stream-prefix": "migration"
                   }
                 }
               }
