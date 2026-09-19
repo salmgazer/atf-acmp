@@ -80,3 +80,33 @@ variable "max_tasks" {
   type        = number
   default     = 2
 }
+
+
+# Google Calendar Integration
+variable "google_service_account_email" {
+  description = "Google Service Account email for Calendar API"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "google_private_key" {
+  description = "Google Service Account private key (PEM format)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "google_admin_email" {
+  description = "Google Workspace admin email for domain-wide delegation"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "google_calendar_email" {
+  description = "Google Calendar email to manage events"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

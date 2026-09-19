@@ -17,3 +17,10 @@ web_cpu           = 256
 web_memory        = 512
 min_tasks         = 1
 max_tasks         = 2
+
+
+# Google Calendar Integration (optional)
+# google_service_account_email = "your-service-account@your-project.iam.gserviceaccount.com"
+# google_private_key           = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+# google_admin_email           = "admin@yourdomain.com"
+# google_calendar_email        = "calendar@yourdomain.com"

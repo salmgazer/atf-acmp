@@ -5,11 +5,15 @@
 output "github_secrets" {
   description = "Add these to GitHub → Settings → Secrets"
   value = {
-    AWS_ROLE_ARN          = aws_iam_role.github_actions.arn
-    AWS_ACCOUNT_ID        = data.aws_caller_identity.current.account_id
-    DATABASE_PASSWORD_ARN = aws_secretsmanager_secret.db_password.arn
-    JWT_SECRET_ARN        = aws_secretsmanager_secret.jwt_secret.arn
-    MAILCHIMP_API_KEY_ARN = aws_secretsmanager_secret.mailchimp_api_key.arn
+    AWS_ROLE_ARN                       = aws_iam_role.github_actions.arn
+    AWS_ACCOUNT_ID                     = data.aws_caller_identity.current.account_id
+    DATABASE_PASSWORD_ARN              = aws_secretsmanager_secret.db_password.arn
+    JWT_SECRET_ARN                     = aws_secretsmanager_secret.jwt_secret.arn
+    MAILCHIMP_API_KEY_ARN              = aws_secretsmanager_secret.mailchimp_api_key.arn
+    GOOGLE_SERVICE_ACCOUNT_EMAIL_ARN   = length(aws_secretsmanager_secret.google_service_account_email) > 0 ? aws_secretsmanager_secret.google_service_account_email[0].arn : ""
+    GOOGLE_PRIVATE_KEY_ARN             = length(aws_secretsmanager_secret.google_private_key) > 0 ? aws_secretsmanager_secret.google_private_key[0].arn : ""
+    GOOGLE_ADMIN_EMAIL_ARN             = length(aws_secretsmanager_secret.google_admin_email) > 0 ? aws_secretsmanager_secret.google_admin_email[0].arn : ""
+    GOOGLE_CALENDAR_EMAIL_ARN          = length(aws_secretsmanager_secret.google_calendar_email) > 0 ? aws_secretsmanager_secret.google_calendar_email[0].arn : ""
   }
 }
 

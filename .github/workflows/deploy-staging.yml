@@ -326,7 +326,11 @@ jobs:
             [
               {"name": "DATABASE_PASSWORD", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-database-password-0ZwEXK"},
               {"name": "JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-jwt-secret-gK3vud"},
-              {"name": "MAILCHIMP_API_KEY", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-mailchimp-api-key-Nfy935"}
+              {"name": "MAILCHIMP_API_KEY", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-mailchimp-api-key-Nfy935"},
+              {"name": "GOOGLE_SERVICE_ACCOUNT_EMAIL", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-google-service-account-email-IJlGG8"},
+              {"name": "GOOGLE_PRIVATE_KEY", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-google-private-key-EH2Pp6"},
+              {"name": "GOOGLE_ADMIN_EMAIL", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-google-admin-email-JRh1Ue"},
+              {"name": "GOOGLE_CALENDAR_EMAIL", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-google-calendar-email-VRefrd"}
             ]
 
   # ----------------------------------------------------------------------------

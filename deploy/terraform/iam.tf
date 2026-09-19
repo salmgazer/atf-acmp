@@ -35,11 +35,18 @@ resource "aws_iam_role_policy" "ecs_secrets_access" {
       Action = [
         "secretsmanager:GetSecretValue"
       ]
-      Resource = [
-        aws_secretsmanager_secret.db_password.arn,
-        aws_secretsmanager_secret.jwt_secret.arn,
-        aws_secretsmanager_secret.mailchimp_api_key.arn
-      ]
+      Resource = concat(
+        [
+          aws_secretsmanager_secret.db_password.arn,
+          aws_secretsmanager_secret.jwt_secret.arn,
+          aws_secretsmanager_secret.mailchimp_api_key.arn
+        ],
+        # Google Calendar secrets (conditionally added)
+        length(aws_secretsmanager_secret.google_service_account_email) > 0 ? [aws_secretsmanager_secret.google_service_account_email[0].arn] : [],
+        length(aws_secretsmanager_secret.google_private_key) > 0 ? [aws_secretsmanager_secret.google_private_key[0].arn] : [],
+        length(aws_secretsmanager_secret.google_admin_email) > 0 ? [aws_secretsmanager_secret.google_admin_email[0].arn] : [],
+        length(aws_secretsmanager_secret.google_calendar_email) > 0 ? [aws_secretsmanager_secret.google_calendar_email[0].arn] : []
+      )
     }]
   })
 }
