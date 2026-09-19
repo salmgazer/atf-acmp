@@ -88,7 +88,7 @@ export default function SetupPage() {
 
   if (isCheckingStatus) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
@@ -96,7 +96,7 @@ export default function SetupPage() {
 
   if (setupComplete) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <Card className="w-full max-w-md mx-4">
           <CardContent className="pt-6">
             <div className="text-center space-y-4">
@@ -114,7 +114,7 @@ export default function SetupPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-lg">
         <CardHeader className="text-center space-y-4">
           <div className="mx-auto">
@@ -134,12 +134,12 @@ export default function SetupPage() {
         </CardHeader>
 
         <CardContent>
-          <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <div className="mb-6 p-4 bg-accent border border-border rounded-lg">
             <div className="flex items-start gap-3">
-              <Shield className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
-              <div className="text-sm text-blue-800 dark:text-blue-200">
-                <p className="font-medium">Super Admin Account</p>
-                <p className="mt-1 text-blue-700 dark:text-blue-300">
+              <Shield className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+              <div className="text-sm">
+                <p className="font-medium text-foreground">Super Admin Account</p>
+                <p className="mt-1 text-muted-foreground">
                   This account will have full access to the platform and can invite other staff members.
                 </p>
               </div>
