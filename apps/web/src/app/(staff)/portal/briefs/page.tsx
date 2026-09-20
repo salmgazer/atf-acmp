@@ -120,10 +120,18 @@ function BriefRow({ brief }: { brief: Brief }) {
         )}
       </td>
       <td className="p-4">
-        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${priorityStyle.bgClass} ${priorityStyle.textClass}`}>
-          <TrendingUp className="h-3 w-3" />
-          {priorityStyle.label}
-        </span>
+        <div className="flex flex-col gap-1">
+          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${priorityStyle.bgClass} ${priorityStyle.textClass}`}>
+            <TrendingUp className="h-3 w-3" />
+            {priorityStyle.label}
+          </span>
+          {brief.scoreOverride && (
+            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-orange-500/15 text-orange-600" title={brief.scoreOverride}>
+              <AlertCircle className="h-3 w-3" />
+              {brief.scoreOverride.replace('Score override: ', '')}
+            </span>
+          )}
+        </div>
       </td>
       <td className="p-4">
         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${config.bgClass} ${config.textClass}`}>
