@@ -421,8 +421,11 @@ export class MentorsService {
           phone: row.phone?.trim(),
           company: row.company?.trim(),
           title: row.title?.trim(),
+          bio: row.bio?.trim(),
           expertise: row.expertise || [],
           maxTeams: row.maxTeams || 3,
+          linkedinUrl: row.linkedinUrl?.trim(),
+          sessionRateOverride: row.sessionRateOverride,
           cohortId,
           status: MentorStatus.IMPORTED,
         });

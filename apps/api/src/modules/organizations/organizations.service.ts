@@ -334,6 +334,8 @@ export class OrganizationsService {
           country: orgRow.country,
           industry: orgRow.industry,
           website: orgRow.website,
+          description: orgRow.description,
+          cohortId: orgRow.cohortId || dto.cohortId,
           status: OrganizationStatus.PENDING,
         });
 

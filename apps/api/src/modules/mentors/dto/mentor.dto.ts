@@ -223,8 +223,11 @@ export class BulkImportMentorDto {
   phone?: string;
   company?: string;
   title?: string;
+  bio?: string;
   expertise?: string[];
   maxTeams?: number;
+  linkedinUrl?: string;
+  sessionRateOverride?: number;
 }
 
 export class BulkImportResultDto {

@@ -206,6 +206,11 @@ export class BulkImportOrganizationRowDto {
   website?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string;
+
+  @IsOptional()
   @IsUUID()
   cohortId?: string;
 }
@@ -215,6 +220,10 @@ export class BulkImportOrganizationsDto {
   @ValidateNested({ each: true })
   @Type(() => BulkImportOrganizationRowDto)
   organizations: BulkImportOrganizationRowDto[];
+
+  @IsOptional()
+  @IsUUID()
+  cohortId?: string;
 }
 
 export class ImportResultDto {

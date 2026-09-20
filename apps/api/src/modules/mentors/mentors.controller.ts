@@ -382,10 +382,18 @@ export class AdminMentorsController {
           organization: "company",
           title: "title",
           job_title: "title",
+          bio: "bio",
           expertise: "expertise",
           skills: "expertise",
           max_teams: "maxTeams",
           maxteams: "maxTeams",
+          linkedin: "linkedinUrl",
+          linkedin_url: "linkedinUrl",
+          linkedinurl: "linkedinUrl",
+          session_rate: "sessionRateOverride",
+          session_rate_override: "sessionRateOverride",
+          sessionrateoverride: "sessionRateOverride",
+          rate: "sessionRateOverride",
         };
         return mappings[h] || h;
       },
@@ -404,10 +412,13 @@ export class AdminMentorsController {
       phone: row.phone,
       company: row.company,
       title: row.title,
+      bio: row.bio,
       expertise: row.expertise
         ? row.expertise.split(",").map((e: string) => e.trim())
         : [],
       maxTeams: row.maxTeams ? parseInt(row.maxTeams, 10) : 3,
+      linkedinUrl: row.linkedinUrl,
+      sessionRateOverride: row.sessionRateOverride ? parseFloat(row.sessionRateOverride) : undefined,
     }));
 
     return this.mentorsService.bulkImport(cohortId, mentors);
