@@ -324,6 +324,10 @@ export class CohortsService {
   }
 
   private async attachStageCounts(cohorts: Cohort[]): Promise<CohortWithStageCount[]> {
+    if (cohorts.length === 0) {
+      return [];
+    }
+
     const cohortIds = cohorts.map((c) => c.id);
     
     // Get stage counts in bulk
