@@ -102,8 +102,8 @@ export function OpportunityStep({
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-semibold text-slate-900 dark:text-white">AI Opportunity Brief</h2>
-        <p className="mt-1 text-slate-600 dark:text-slate-400">
+        <h2 className="text-2xl font-semibold text-foreground">AI Opportunity Brief</h2>
+        <p className="mt-1 text-muted-foreground">
           Describe a challenge or opportunity where AI might help. You can add up to 3 briefs.
         </p>
       </div>
@@ -117,8 +117,8 @@ export function OpportunityStep({
               onClick={() => setActiveIndex(index)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 activeIndex === index
-                  ? "bg-[#1B2A4A] dark:bg-[#F90036] text-white"
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
               } ${errors[index] ? "ring-2 ring-red-500" : ""}`}
             >
               Opportunity {index + 1}
@@ -130,15 +130,15 @@ export function OpportunityStep({
       {/* Opportunity Form */}
       <div className="space-y-6">
         {/* Title */}
-        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-6">
+        <div className="rounded-xl border border-border bg-card p-6">
           <div className="flex items-center gap-2 mb-4">
             <Lightbulb className="h-5 w-5 text-[#E8913A]" />
-            <h3 className="font-medium text-slate-900 dark:text-white">The Opportunity</h3>
+            <h3 className="font-medium text-foreground">The Opportunity</h3>
           </div>
 
           <div className="space-y-4">
             <div>
-              <Label htmlFor="title" className="text-slate-700 dark:text-slate-300">Opportunity Title *</Label>
+              <Label htmlFor="title" className="text-foreground">Opportunity Title *</Label>
               <Input
                 id="title"
                 value={opp.title}
@@ -150,7 +150,7 @@ export function OpportunityStep({
             </div>
 
             <div>
-              <Label htmlFor="description" className="text-slate-700 dark:text-slate-300">
+              <Label htmlFor="description" className="text-foreground">
                 Describe the opportunity and who it affects *
               </Label>
               <Textarea
@@ -169,15 +169,15 @@ export function OpportunityStep({
         </div>
 
         {/* Impact */}
-        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-6">
+        <div className="rounded-xl border border-border bg-card p-6">
           <div className="flex items-center gap-2 mb-4">
             <Users className="h-5 w-5 text-[#17A589]" />
-            <h3 className="font-medium text-slate-900 dark:text-white">Expected Impact</h3>
+            <h3 className="font-medium text-foreground">Expected Impact</h3>
           </div>
 
           <div className="space-y-4">
             <div>
-              <Label htmlFor="whatChanges" className="text-slate-700 dark:text-slate-300">If this were addressed, what would change? *</Label>
+              <Label htmlFor="whatChanges" className="text-foreground">If this were addressed, what would change? *</Label>
               <Textarea
                 id="whatChanges"
                 value={opp.whatChanges}
@@ -192,7 +192,7 @@ export function OpportunityStep({
             </div>
 
             <div>
-              <Label htmlFor="howMany" className="text-slate-700 dark:text-slate-300">Roughly how many people would be affected? *</Label>
+              <Label htmlFor="howMany" className="text-foreground">Roughly how many people would be affected? *</Label>
               <Input
                 id="howMany"
                 type="number"
@@ -210,15 +210,15 @@ export function OpportunityStep({
         </div>
 
         {/* Data */}
-        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-6">
+        <div className="rounded-xl border border-border bg-card p-6">
           <div className="flex items-center gap-2 mb-4">
-            <Database className="h-5 w-5 text-[#F90036]" />
-            <h3 className="font-medium text-slate-900 dark:text-white">Data Availability</h3>
+            <Database className="h-5 w-5 text-primary" />
+            <h3 className="font-medium text-foreground">Data Availability</h3>
           </div>
 
           <div className="space-y-4">
             <div>
-              <Label htmlFor="dataDescription" className="text-slate-700 dark:text-slate-300">What records and data exist related to this? *</Label>
+              <Label htmlFor="dataDescription" className="text-foreground">What records and data exist related to this? *</Label>
               <Textarea
                 id="dataDescription"
                 value={opp.dataDescription}
@@ -233,7 +233,7 @@ export function OpportunityStep({
             </div>
 
             <div>
-              <Label htmlFor="dataAccess" className="text-slate-700 dark:text-slate-300">Can this data be shared with a project team? *</Label>
+              <Label htmlFor="dataAccess" className="text-foreground">Can this data be shared with a project team? *</Label>
               <Input
                 id="dataAccess"
                 value={opp.dataAccess}
@@ -249,17 +249,17 @@ export function OpportunityStep({
         </div>
 
         {/* Secondary Contact (Optional) */}
-        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-6">
-          <h3 className="font-medium text-slate-900 dark:text-white mb-4">
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h3 className="font-medium text-foreground mb-4">
             Secondary Contact (Optional)
           </h3>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+          <p className="text-sm text-muted-foreground mb-4">
             Add another person who can speak to this opportunity.
           </p>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <Label htmlFor="contact2Name" className="text-slate-700 dark:text-slate-300">Name</Label>
+              <Label htmlFor="contact2Name" className="text-foreground">Name</Label>
               <Input
                 id="contact2Name"
                 value={opp.secondaryContact?.name || ""}
@@ -272,7 +272,7 @@ export function OpportunityStep({
               />
             </div>
             <div>
-              <Label htmlFor="contact2Role" className="text-slate-700 dark:text-slate-300">Role</Label>
+              <Label htmlFor="contact2Role" className="text-foreground">Role</Label>
               <Input
                 id="contact2Role"
                 value={opp.secondaryContact?.role || ""}
@@ -285,7 +285,7 @@ export function OpportunityStep({
               />
             </div>
             <div>
-              <Label htmlFor="contact2Email" className="text-slate-700 dark:text-slate-300">Email</Label>
+              <Label htmlFor="contact2Email" className="text-foreground">Email</Label>
               <Input
                 id="contact2Email"
                 type="email"
@@ -299,7 +299,7 @@ export function OpportunityStep({
               />
             </div>
             <div>
-              <Label htmlFor="contact2Phone" className="text-slate-700 dark:text-slate-300">Phone</Label>
+              <Label htmlFor="contact2Phone" className="text-foreground">Phone</Label>
               <PhoneInput
                 id="contact2Phone"
                 value={opp.secondaryContact?.phone || ""}
@@ -343,7 +343,7 @@ export function OpportunityStep({
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <Button onClick={handleNext} className="bg-[#1B2A4A] hover:bg-[#1B2A4A]/90 dark:bg-[#F90036] dark:hover:bg-[#F90036]/90">
+        <Button onClick={handleNext} className="bg-primary hover:bg-primary/90">
           Continue to Fit Questions
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>

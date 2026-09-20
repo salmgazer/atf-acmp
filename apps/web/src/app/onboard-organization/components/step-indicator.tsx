@@ -42,8 +42,8 @@ export function StepIndicator({ steps, currentStep, onStepClick }: StepIndicator
                     className={cn(
                       "flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-all border-2",
                       isCompleted && "bg-[#17A589] border-[#17A589] text-white",
-                      isCurrent && "bg-[#1B2A4A] dark:bg-[#F90036] border-[#1B2A4A] dark:border-[#F90036] text-white",
-                      !isCompleted && !isCurrent && "bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-400 dark:text-slate-500"
+                      isCurrent && "bg-primary border-primary text-primary-foreground",
+                      !isCompleted && !isCurrent && "bg-card border-border text-muted-foreground"
                     )}
                   >
                     {isCompleted ? <Check className="h-4 w-4" /> : step.id}
@@ -53,7 +53,7 @@ export function StepIndicator({ steps, currentStep, onStepClick }: StepIndicator
                   <span
                     className={cn(
                       "mt-1 text-xs font-medium hidden sm:block whitespace-nowrap",
-                      isCurrent ? "text-[#1B2A4A] dark:text-white" : isCompleted ? "text-[#17A589]" : "text-slate-400 dark:text-slate-500"
+                      isCurrent ? "text-foreground" : isCompleted ? "text-[#17A589]" : "text-muted-foreground"
                     )}
                   >
                     {step.name}
@@ -65,7 +65,7 @@ export function StepIndicator({ steps, currentStep, onStepClick }: StepIndicator
                   <div
                     className={cn(
                       "h-0.5 flex-1 mx-2",
-                      isCompleted ? "bg-[#17A589]" : "bg-slate-200 dark:bg-slate-700"
+                      isCompleted ? "bg-[#17A589]" : "bg-border"
                     )}
                   />
                 )}

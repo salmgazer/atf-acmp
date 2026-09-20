@@ -28,9 +28,9 @@ export function SuccessStep({ orgName, opportunityCount, opportunityTitles }: Su
   const reviewText = opportunityCount === 1 ? "it" : "each one";
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] dark:bg-slate-900">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+      <header className="border-b border-border bg-card">
         <div className="mx-auto max-w-4xl px-4 py-4">
           <div className="flex items-center justify-center sm:justify-start">
             {mounted ? (
@@ -58,12 +58,12 @@ export function SuccessStep({ orgName, opportunityCount, opportunityTitles }: Su
           </div>
 
           {/* Title */}
-          <h1 className="text-3xl font-bold text-[#1B2A4A] dark:text-white mb-4">
+          <h1 className="text-3xl font-bold text-foreground mb-4">
             Thank you for your submission!
           </h1>
 
           {/* Message */}
-          <p className="text-lg text-slate-600 dark:text-slate-300 mb-8">
+          <p className="text-lg text-muted-foreground mb-8">
             We have received your {briefText}. A country lead will review {reviewText} and be in touch with next steps.
           </p>
 
@@ -72,26 +72,26 @@ export function SuccessStep({ orgName, opportunityCount, opportunityTitles }: Su
             <p className="text-sm text-[#17A589] dark:text-[#2DD4A8] font-medium mb-1">
               📧 Check your inbox
             </p>
-            <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+            <p className="text-sm text-muted-foreground leading-relaxed">
               We've sent a welcome email to your registered email address with instructions on how to access the Organization Portal. To log in, simply enter your email and we'll send you a verification code.
             </p>
           </div>
 
           {/* Briefs Submitted */}
           <div className="text-left mb-6">
-            <h3 className="text-xs font-bold tracking-wider uppercase text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700 pb-2 mb-4">
+            <h3 className="text-xs font-bold tracking-wider uppercase text-muted-foreground border-b border-border pb-2 mb-4">
               Briefs submitted
             </h3>
             <div className="space-y-3">
               {opportunityTitles.map((title, index) => (
                 <div
                   key={index}
-                  className="rounded-lg bg-[#F7F8FA] dark:bg-slate-800 p-4 border border-slate-200 dark:border-slate-700"
+                  className="rounded-lg bg-secondary p-4 border border-border"
                 >
-                  <p className="font-semibold text-[#1B2A4A] dark:text-white mb-1">
+                  <p className="font-semibold text-foreground mb-1">
                     Brief {index + 1}: {title}
                   </p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                  <p className="text-sm text-muted-foreground">
                     Received — under review
                   </p>
                 </div>
@@ -100,8 +100,8 @@ export function SuccessStep({ orgName, opportunityCount, opportunityTitles }: Su
           </div>
 
           {/* Note */}
-          <div className="rounded-lg bg-[#F7F8FA] dark:bg-slate-800 p-4 text-left border border-slate-200 dark:border-slate-700">
-            <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+          <div className="rounded-lg bg-secondary p-4 text-left border border-border">
+            <p className="text-sm text-muted-foreground leading-relaxed">
               A country lead will review each brief and be in touch. Briefs that are selected are matched with a student team, who will build a working solution and present it at Demo Day.
             </p>
           </div>
@@ -109,8 +109,8 @@ export function SuccessStep({ orgName, opportunityCount, opportunityTitles }: Su
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 mt-auto">
-        <div className="mx-auto max-w-4xl px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
+      <footer className="border-t border-border bg-card mt-auto">
+        <div className="mx-auto max-w-4xl px-4 py-6 text-center text-sm text-muted-foreground">
           <p>Africa Technology Foundation © {new Date().getFullYear()}</p>
         </div>
       </footer>

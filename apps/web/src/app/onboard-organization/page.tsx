@@ -148,9 +148,9 @@ export default function OnboardOrganizationPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 sticky top-0 z-20">
+      <header className="border-b border-border bg-card sticky top-0 z-20">
         <div className="mx-auto max-w-4xl px-4 py-4">
           <div className="flex items-center justify-between">
             <Image
@@ -175,7 +175,7 @@ export default function OnboardOrganizationPage() {
       </header>
 
       {/* Progress Steps - also sticky, positioned below header */}
-      <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 sticky top-[73px] z-10">
+      <div className="border-b border-border bg-card sticky top-[73px] z-10">
         <div className="mx-auto max-w-4xl px-4 py-3">
           <StepIndicator steps={STEPS} currentStep={currentStep} onStepClick={goToStep} />
         </div>
@@ -226,8 +226,8 @@ export default function OnboardOrganizationPage() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 mt-auto">
-        <div className="mx-auto max-w-4xl px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
+      <footer className="border-t border-border bg-card mt-auto">
+        <div className="mx-auto max-w-4xl px-4 py-6 text-center text-sm text-muted-foreground">
           <p>Africa Technology Foundation © {new Date().getFullYear()}</p>
         </div>
       </footer>

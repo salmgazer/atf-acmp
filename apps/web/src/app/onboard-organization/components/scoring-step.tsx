@@ -157,8 +157,8 @@ export function ScoringStep({
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-semibold text-[#1B2A4A] dark:text-white">AI-Challenge Fit Assessment</h2>
-        <p className="mt-1 text-slate-600 dark:text-slate-300">
+        <h2 className="text-2xl font-semibold text-foreground">AI-Challenge Fit Assessment</h2>
+        <p className="mt-1 text-muted-foreground">
           Answer these questions to see how well this opportunity fits the AI Challenge criteria.
         </p>
       </div>
@@ -172,12 +172,8 @@ export function ScoringStep({
               onClick={() => setActiveIndex(index)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 activeIndex === index
-                  ? isDark
-                    ? "bg-[#F90036] text-white"
-                    : "bg-[#1B2A4A] text-white"
-                  : isDark
-                  ? "bg-slate-700 text-slate-200 hover:bg-slate-600"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
               } ${errors[index] ? "ring-2 ring-red-500" : ""}`}
             >
               {o.title || `Opportunity ${index + 1}`}
@@ -187,9 +183,9 @@ export function ScoringStep({
       )}
 
       {/* Current opportunity title */}
-      <div className="rounded-lg bg-slate-50 dark:bg-slate-800 p-4 border border-slate-200 dark:border-slate-700">
-        <p className="text-sm text-slate-500 dark:text-slate-400">Assessing:</p>
-        <p className="font-medium text-[#1B2A4A] dark:text-white">{opp.title || "Untitled Opportunity"}</p>
+      <div className="rounded-lg bg-secondary p-4 border border-border">
+        <p className="text-sm text-muted-foreground">Assessing:</p>
+        <p className="font-medium text-foreground">{opp.title || "Untitled Opportunity"}</p>
       </div>
 
       {/* Verdict Thermometer - Shows real-time score */}
@@ -205,7 +201,7 @@ export function ScoringStep({
 
       {/* Fit Questions */}
       <div className="space-y-6">
-        <h3 className="font-medium text-[#1B2A4A] dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2">
+        <h3 className="font-medium text-foreground border-b border-border pb-2">
           Fit Questions (determines AI-Challenge suitability)
         </h3>
 
@@ -226,7 +222,7 @@ export function ScoringStep({
 
       {/* Impact Questions */}
       <div className="space-y-6">
-        <h3 className="font-medium text-[#1B2A4A] dark:text-white border-b border-slate-200 dark:border-slate-700 pb-2">
+        <h3 className="font-medium text-foreground border-b border-border pb-2">
           Impact Questions (measures potential reach)
         </h3>
 
@@ -256,11 +252,11 @@ export function ScoringStep({
 
       {/* Navigation */}
       <div className="flex justify-between">
-        <Button variant="outline" onClick={onBack} className="dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700">
+        <Button variant="outline" onClick={onBack}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back
         </Button>
-        <Button onClick={handleNext} className={isDark ? "bg-[#F90036] hover:bg-[#F90036]/90" : "bg-[#1B2A4A] hover:bg-[#1B2A4A]/90"}>
+        <Button onClick={handleNext} className="bg-primary hover:bg-primary/90">
           Review & Submit
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
@@ -292,19 +288,19 @@ function QuestionCard({
 }: QuestionCardProps) {
   return (
     <div
-      className={`rounded-xl border bg-white dark:bg-slate-800 p-6 shadow-sm ${
-        hasError ? "border-red-500" : "border-slate-200 dark:border-slate-700"
+      className={`rounded-xl border bg-card p-6 shadow-sm ${
+        hasError ? "border-red-500" : "border-border"
       }`}
     >
       <div className="mb-4">
         <div className="flex items-start gap-3">
-          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs text-white ${isDark ? "bg-[#F90036]" : "bg-[#1B2A4A]"}`}>
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs bg-primary text-primary-foreground">
             {number}
           </span>
           <div>
-            <p className="font-medium text-[#1B2A4A] dark:text-white">{question}</p>
+            <p className="font-medium text-foreground">{question}</p>
             {helpText && (
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1">
+              <p className="mt-1 text-sm text-muted-foreground flex items-center gap-1">
                 <HelpCircle className="h-3 w-3" />
                 {helpText}
               </p>
@@ -326,7 +322,7 @@ function QuestionCard({
             <RadioGroupItem value={option.value} id={`${number}-${option.value}`} />
             <Label
               htmlFor={`${number}-${option.value}`}
-              className="font-normal cursor-pointer text-slate-700 dark:text-slate-200"
+              className="font-normal cursor-pointer text-foreground"
             >
               {option.label}
             </Label>
