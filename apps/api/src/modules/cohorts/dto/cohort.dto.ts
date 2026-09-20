@@ -15,11 +15,6 @@ import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger";
 import { CohortStatus } from "../../../database/entities/cohort.entity";
 
 export class DeadlinesDto {
-  @ApiPropertyOptional({ description: "Registration end date (ISO 8601)" })
-  @IsDateString()
-  @IsOptional()
-  registrationEnd?: string;
-
   @ApiPropertyOptional({ description: "Team formation end date (ISO 8601)" })
   @IsDateString()
   @IsOptional()

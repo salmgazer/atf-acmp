@@ -6,7 +6,6 @@ import { toast } from "sonner";
 
 // Types
 export interface CohortDeadlines {
-  registrationEnd?: string;
   teamFormationEnd?: string;
   briefSelectionEnd?: string;
   stage1End?: string;

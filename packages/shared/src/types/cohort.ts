@@ -1,8 +1,8 @@
 export type CohortStatus = "draft" | "active" | "evaluation" | "completed" | "archived";
 
 export interface CohortDeadlines {
-  registrationEnd: string;
   teamFormationEnd: string;
+  briefSelectionEnd: string;
   stage1End: string;
   stage2End: string;
   stage3End: string;

@@ -48,7 +48,6 @@ const cohortFormSchema = z.object({
   sessionRate: z.coerce.number().min(0).optional(),
   countries: z.array(z.string()).min(1, "Select at least one country"),
   deadlines: z.object({
-    registrationEnd: z.string().optional(),
     teamFormationEnd: z.string().optional(),
     briefSelectionEnd: z.string().optional(),
   }),
@@ -97,7 +96,6 @@ export function CohortForm({ cohort, onSubmit, onCancel, isLoading }: CohortForm
       sessionRate: cohort?.sessionRate || 0,
       countries: cohort?.countries || [],
       deadlines: {
-        registrationEnd: cohort?.deadlines?.registrationEnd?.split("T")[0] || "",
         teamFormationEnd: cohort?.deadlines?.teamFormationEnd?.split("T")[0] || "",
         briefSelectionEnd: cohort?.deadlines?.briefSelectionEnd?.split("T")[0] || "",
       },
@@ -324,20 +322,7 @@ export function CohortForm({ cohort, onSubmit, onCancel, isLoading }: CohortForm
         </div>
         <Separator />
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="space-y-2">
-            <Label htmlFor="registrationEnd">Registration End</Label>
-            <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="registrationEnd"
-                type="date"
-                className="pl-10"
-                {...register("deadlines.registrationEnd")}
-              />
-            </div>
-          </div>
-
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="teamFormationEnd">Team Formation End</Label>
             <div className="relative">

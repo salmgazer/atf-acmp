@@ -13,8 +13,8 @@ export interface OrganizationCohort {
   description?: string;
   status: string;
   deadlines?: {
-    registrationEnd?: string;
     teamFormationEnd?: string;
+    briefSelectionEnd?: string;
     stage1End?: string;
     stage2End?: string;
     stage3End?: string;

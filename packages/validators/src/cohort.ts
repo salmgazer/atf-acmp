@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 export const cohortDeadlinesSchema = z.object({
-  registrationEnd: z.string().datetime(),
   teamFormationEnd: z.string().datetime(),
+  briefSelectionEnd: z.string().datetime(),
   stage1End: z.string().datetime(),
   stage2End: z.string().datetime(),
   stage3End: z.string().datetime(),

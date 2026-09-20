@@ -10,7 +10,6 @@ export enum CohortStatus {
 }
 
 export interface CohortDeadlines {
-  registrationEnd: string;
   teamFormationEnd: string;
   briefSelectionEnd: string;
   stage1End: string;
