@@ -31,13 +31,17 @@ export class EmailService {
     this.fromName = this.configService.get<string>("email.fromName") || "ATF AI Challenge";
     this.frontendUrl = this.configService.get<string>("FRONTEND_URL", "https://challenge.atf.africa");
 
-    // Initialize SMTP transporter for local development
+    // Initialize SMTP transporter (used if SMTP_HOST is configured)
     const smtpHost = this.configService.get<string>("SMTP_HOST");
     if (smtpHost) {
+      const smtpPort = this.configService.get<number>("SMTP_PORT", 587);
+      // secure: true for port 465 (SSL), false for port 587 (STARTTLS)
+      const smtpSecure = this.configService.get<string>("SMTP_SECURE", "false") === "true" || smtpPort === 465;
+      
       this.smtpTransporter = nodemailer.createTransport({
         host: smtpHost,
-        port: this.configService.get<number>("SMTP_PORT", 1025),
-        secure: false,
+        port: smtpPort,
+        secure: smtpSecure,
         auth: this.configService.get<string>("SMTP_USER")
           ? {
               user: this.configService.get<string>("SMTP_USER"),
@@ -45,7 +49,7 @@ export class EmailService {
             }
           : undefined,
       });
-      this.logger.log(`SMTP configured: ${smtpHost}:${this.configService.get<number>("SMTP_PORT", 1025)}`);
+      this.logger.log(`SMTP configured: ${smtpHost}:${smtpPort} (secure: ${smtpSecure})`);
     }
   }
 

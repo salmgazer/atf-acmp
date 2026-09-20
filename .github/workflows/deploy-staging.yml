@@ -320,7 +320,12 @@ jobs:
               {"name": "CORS_ORIGINS", "value": "${{ vars.CORS_ORIGIN }}"},
               {"name": "FRONTEND_URL", "value": "${{ vars.FRONTEND_URL }}"},
               {"name": "MAILCHIMP_FROM_EMAIL", "value": "${{ vars.MAILCHIMP_FROM_EMAIL }}"},
-              {"name": "MAILCHIMP_FROM_NAME", "value": "${{ vars.MAILCHIMP_FROM_NAME }}"}
+              {"name": "MAILCHIMP_FROM_NAME", "value": "${{ vars.MAILCHIMP_FROM_NAME }}"},
+              {"name": "SMTP_HOST", "value": "${{ vars.SMTP_HOST }}"},
+              {"name": "SMTP_PORT", "value": "${{ vars.SMTP_PORT }}"},
+              {"name": "SMTP_SECURE", "value": "${{ vars.SMTP_SECURE }}"},
+              {"name": "SMTP_FROM_EMAIL", "value": "${{ vars.SMTP_FROM_EMAIL }}"},
+              {"name": "SMTP_FROM_NAME", "value": "${{ vars.SMTP_FROM_NAME }}"}
             ]
           secrets: |
             [
@@ -330,7 +335,9 @@ jobs:
               {"name": "GOOGLE_SERVICE_ACCOUNT_EMAIL", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-google-service-account-email-IJlGG8"},
               {"name": "GOOGLE_PRIVATE_KEY", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-google-private-key-EH2Pp6"},
               {"name": "GOOGLE_ADMIN_EMAIL", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-google-admin-email-JRh1Ue"},
-              {"name": "GOOGLE_CALENDAR_EMAIL", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-google-calendar-email-VRefrd"}
+              {"name": "GOOGLE_CALENDAR_EMAIL", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-google-calendar-email-VRefrd"},
+              {"name": "SMTP_USER", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-smtp-user-HPmpzH"},
+              {"name": "SMTP_PASS", "valueFrom": "arn:aws:secretsmanager:eu-central-1:${{ secrets.AWS_ACCOUNT_ID }}:secret:acmp-staging-smtp-pass-DL3yjF"}
             ]
 
   # ----------------------------------------------------------------------------

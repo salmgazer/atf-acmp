@@ -110,3 +110,52 @@ variable "google_calendar_email" {
   sensitive   = true
   default     = ""
 }
+
+
+# ==============================================================================
+# SMTP Configuration
+# ==============================================================================
+
+variable "smtp_host" {
+  description = "SMTP server hostname"
+  type        = string
+  default     = ""
+}
+
+variable "smtp_port" {
+  description = "SMTP server port"
+  type        = string
+  default     = "587"
+}
+
+variable "smtp_secure" {
+  description = "Use SSL/TLS for SMTP (true for port 465)"
+  type        = string
+  default     = "false"
+}
+
+variable "smtp_user" {
+  description = "SMTP authentication username"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "smtp_pass" {
+  description = "SMTP authentication password"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "smtp_from_email" {
+  description = "Email address to send from"
+  type        = string
+  default     = ""
+}
+
+variable "smtp_from_name" {
+  description = "Display name for sent emails"
+  type        = string
+  default     = ""
+}

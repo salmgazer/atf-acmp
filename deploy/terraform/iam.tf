@@ -45,7 +45,10 @@ resource "aws_iam_role_policy" "ecs_secrets_access" {
         length(aws_secretsmanager_secret.google_service_account_email) > 0 ? [aws_secretsmanager_secret.google_service_account_email[0].arn] : [],
         length(aws_secretsmanager_secret.google_private_key) > 0 ? [aws_secretsmanager_secret.google_private_key[0].arn] : [],
         length(aws_secretsmanager_secret.google_admin_email) > 0 ? [aws_secretsmanager_secret.google_admin_email[0].arn] : [],
-        length(aws_secretsmanager_secret.google_calendar_email) > 0 ? [aws_secretsmanager_secret.google_calendar_email[0].arn] : []
+        length(aws_secretsmanager_secret.google_calendar_email) > 0 ? [aws_secretsmanager_secret.google_calendar_email[0].arn] : [],
+        # SMTP secrets (conditionally added)
+        length(aws_secretsmanager_secret.smtp_user) > 0 ? [aws_secretsmanager_secret.smtp_user[0].arn] : [],
+        length(aws_secretsmanager_secret.smtp_pass) > 0 ? [aws_secretsmanager_secret.smtp_pass[0].arn] : []
       )
     }]
   })
@@ -98,7 +101,7 @@ resource "aws_iam_role" "github_actions" {
         StringLike = {
           "token.actions.githubusercontent.com:sub" = [
             "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/*",
-            "repo:${var.github_org}/${var.github_repo}:environment:*"
+            "repo:${var.github_org}/${var.github_repo}:environment:staging"
           ]
         }
       }

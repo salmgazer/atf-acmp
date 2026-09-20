@@ -122,3 +122,40 @@ resource "aws_secretsmanager_secret_version" "google_calendar_email" {
   secret_id     = aws_secretsmanager_secret.google_calendar_email[0].id
   secret_string = var.google_calendar_email
 }
+
+
+# ==============================================================================
+# SMTP Secrets
+# ==============================================================================
+
+resource "aws_secretsmanager_secret" "smtp_user" {
+  count = var.smtp_user != "" ? 1 : 0
+  name  = "acmp-${var.environment}-smtp-user"
+  
+  tags = {
+    Name        = "acmp-${var.environment}-smtp-user"
+    Environment = var.environment
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "smtp_user" {
+  count         = var.smtp_user != "" ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.smtp_user[0].id
+  secret_string = var.smtp_user
+}
+
+resource "aws_secretsmanager_secret" "smtp_pass" {
+  count = var.smtp_pass != "" ? 1 : 0
+  name  = "acmp-${var.environment}-smtp-pass"
+  
+  tags = {
+    Name        = "acmp-${var.environment}-smtp-pass"
+    Environment = var.environment
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "smtp_pass" {
+  count         = var.smtp_pass != "" ? 1 : 0
+  secret_id     = aws_secretsmanager_secret.smtp_pass[0].id
+  secret_string = var.smtp_pass
+}
