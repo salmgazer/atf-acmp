@@ -9,10 +9,18 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   useBulkImportOrganizations,
   type BulkImportOrganizationRow,
   type ImportResult,
 } from "@/lib/api/hooks/use-organizations";
+import { useCohorts } from "@/lib/api/hooks/use-cohorts";
 import {
   ArrowLeft,
   Upload,
@@ -70,6 +78,16 @@ function parseCSV(text: string): BulkImportOrganizationRow[] {
         case "website":
           row.website = value;
           break;
+        case "description":
+        case "desc":
+        case "about":
+          row.description = value;
+          break;
+        case "cohortid":
+        case "cohort_id":
+        case "cohort":
+          row.cohortId = value;
+          break;
       }
     });
 
@@ -83,11 +101,15 @@ function parseCSV(text: string): BulkImportOrganizationRow[] {
 
 function ImportOrganizationsContent() {
   const router = useRouter();
+  const [selectedCohortId, setSelectedCohortId] = useState("");
   const [csvText, setCsvText] = useState("");
   const [parsedRows, setParsedRows] = useState<BulkImportOrganizationRow[]>([]);
   const [importResults, setImportResults] = useState<ImportResult[] | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
+  const { data: cohortsData } = useCohorts({ limit: 100 });
+  const cohorts = cohortsData?.data || [];
+  
   const importMutation = useBulkImportOrganizations();
 
   const handleTextChange = (text: string) => {
@@ -119,13 +141,16 @@ function ImportOrganizationsContent() {
   );
 
   const handleImport = async () => {
-    if (parsedRows.length === 0) return;
-    const result = await importMutation.mutateAsync(parsedRows);
+    if (parsedRows.length === 0 || !selectedCohortId) return;
+    const result = await importMutation.mutateAsync({
+      organizations: parsedRows,
+      cohortId: selectedCohortId,
+    });
     setImportResults(result.results);
   };
 
   const downloadTemplate = () => {
-    const template = "name,email,contactPerson,contactPhone,country,industry,website\nAcme Corp,contact@acme.com,John Doe,+1234567890,United States,Technology,https://acme.com";
+    const template = "name,email,contact_person,contact_phone,country,industry,website,description\nAcme Corp,contact@acme.com,John Doe,+1234567890,Ghana,Technology,https://acme.com,Leading tech company in Africa";
     const blob = new Blob([template], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -155,6 +180,26 @@ function ImportOrganizationsContent() {
               Bulk import organizations from CSV file or paste data directly
             </p>
           </div>
+        </div>
+
+        {/* Cohort Selection */}
+        <div className="rounded-xl border border-border bg-card p-4">
+          <Label className="text-foreground font-medium">Select Cohort *</Label>
+          <p className="text-sm text-muted-foreground mb-3">
+            All imported organizations will be assigned to this cohort
+          </p>
+          <Select value={selectedCohortId} onValueChange={setSelectedCohortId}>
+            <SelectTrigger className="w-full max-w-md">
+              <SelectValue placeholder="Select a cohort" />
+            </SelectTrigger>
+            <SelectContent>
+              {cohorts.map((cohort) => (
+                <SelectItem key={cohort.id} value={cohort.id}>
+                  {cohort.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Template Download */}
@@ -241,7 +286,7 @@ function ImportOrganizationsContent() {
               </h2>
               <Button
                 onClick={handleImport}
-                disabled={importMutation.isPending}
+                disabled={importMutation.isPending || !selectedCohortId}
                 className="gap-2"
               >
                 {importMutation.isPending && (

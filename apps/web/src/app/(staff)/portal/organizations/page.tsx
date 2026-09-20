@@ -49,11 +49,14 @@ import {
   SlidersHorizontal,
   X,
   Upload,
+  Download,
   Mail,
   MoreHorizontal,
   Plus,
   Pencil,
 } from "lucide-react";
+import { toast } from "sonner";
+import { api } from "@/lib/api/client";
 import { format } from "date-fns";
 
 const statusConfig: Record<OrganizationStatus, { label: string; bgClass: string; textClass: string; icon: typeof CheckCircle }> = {
@@ -184,6 +187,7 @@ function OrganizationsContent() {
   const [showFilters, setShowFilters] = useState(false);
   const [showFormDialog, setShowFormDialog] = useState(false);
   const [editingOrg, setEditingOrg] = useState<Organization | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Get global cohort from store (set by sidebar)
   const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
@@ -251,6 +255,79 @@ function OrganizationsContent() {
     setShowFormDialog(open);
     if (!open) {
       setEditingOrg(null);
+    }
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (search) params.set("search", search);
+      if (effectiveCohortId) params.set("cohortId", effectiveCohortId);
+      params.set("limit", "10000");
+
+      const response = await api.get<{ data: Organization[] }>(`/organizations?${params.toString()}`);
+      const allOrgs = response.data;
+
+      if (allOrgs.length === 0) {
+        toast.error("No organizations to export");
+        return;
+      }
+
+      const headers = [
+        "Name",
+        "Email",
+        "Website",
+        "Industry",
+        "Country",
+        "Contact Person",
+        "Contact Phone",
+        "Description",
+        "Status",
+        "Created At",
+      ];
+
+      const rows = allOrgs.map((o) => [
+        o.name,
+        o.email,
+        o.website || "",
+        o.industry || "",
+        o.country || "",
+        o.contactPerson || "",
+        o.contactPhone || "",
+        o.description || "",
+        o.status,
+        format(new Date(o.createdAt), "yyyy-MM-dd HH:mm:ss"),
+      ]);
+
+      const escapeCSV = (value: string) => {
+        if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      };
+
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((row) => row.map(escapeCSV).join(",")),
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const cohortName = cohorts.find((c) => c.id === effectiveCohortId)?.name || "all";
+      const timestamp = format(new Date(), "yyyy-MM-dd");
+      link.download = `organizations_${cohortName.replace(/\s+/g, "_")}_${timestamp}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Exported ${allOrgs.length} organizations`);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to export organizations");
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -322,6 +399,18 @@ function OrganizationsContent() {
             )}
           </button>
           <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-50"
+            >
+              {isExporting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
+              Export CSV
+            </button>
             <Button variant="outline" onClick={handleAddClick} className="gap-2">
               <Plus className="h-4 w-4" />
               Add

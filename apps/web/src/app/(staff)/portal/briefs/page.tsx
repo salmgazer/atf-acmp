@@ -37,7 +37,10 @@ import {
   ArrowUp,
   ArrowDown,
   TrendingUp,
+  Download,
 } from "lucide-react";
+import { toast } from "sonner";
+import { api } from "@/lib/api/client";
 import { formatDistanceToNow, format } from "date-fns";
 
 const statusConfig: Record<BriefStatus, { label: string; bgClass: string; textClass: string; icon: typeof CheckCircle }> = {
@@ -169,6 +172,7 @@ function BriefsReviewContent() {
   const [showFilters, setShowFilters] = useState(false);
   const [sortBy, setSortBy] = useState<BriefQueryParams["sortBy"]>("createdAt");
   const [sortOrder, setSortOrder] = useState<BriefQueryParams["sortOrder"]>("desc");
+  const [isExporting, setIsExporting] = useState(false);
 
   const { data: cohortsData } = useCohorts({ limit: 100 });
   const cohorts = cohortsData?.data || [];
@@ -227,6 +231,84 @@ function BriefsReviewContent() {
     return sortOrder === "desc" 
       ? <ArrowDown className="h-3 w-3 ml-1" />
       : <ArrowUp className="h-3 w-3 ml-1" />;
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (effectiveCohortId) params.set("cohortId", effectiveCohortId);
+      if (apiStatus) params.set("status", apiStatus);
+      if (search) params.set("search", search);
+      params.set("limit", "10000");
+
+      const response = await api.get<{ data: Brief[] }>(`/briefs?${params.toString()}`);
+      let allBriefs = response.data;
+
+      // Apply pending filter if needed
+      if (statusFilter === "pending") {
+        allBriefs = allBriefs.filter(b => ["submitted", "in_review"].includes(b.status));
+      }
+
+      if (allBriefs.length === 0) {
+        toast.error("No briefs to export");
+        return;
+      }
+
+      const headers = [
+        "Title",
+        "Organization",
+        "Vertical",
+        "Status",
+        "Priority Score",
+        "Max Teams",
+        "Teams Count",
+        "Submitted At",
+        "Approved At",
+        "Created At",
+      ];
+
+      const rows = allBriefs.map((b) => [
+        b.title,
+        b.organization?.name || "",
+        b.vertical?.name || "",
+        b.status,
+        b.priorityScore !== null && b.priorityScore !== undefined ? String(b.priorityScore) : "",
+        String(b.maxTeams),
+        String(b.teamsCount),
+        b.submittedAt ? formatDistanceToNow(new Date(b.submittedAt), { addSuffix: true }) : "",
+        b.approvedAt ? format(new Date(b.approvedAt), "yyyy-MM-dd HH:mm:ss") : "",
+        format(new Date(b.createdAt), "yyyy-MM-dd HH:mm:ss"),
+      ]);
+
+      const escapeCSV = (value: string) => {
+        if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      };
+
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((row) => row.map(escapeCSV).join(",")),
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const cohortName = cohorts.find((c) => c.id === effectiveCohortId)?.name || "all";
+      const timestamp = format(new Date(), "yyyy-MM-dd");
+      link.download = `briefs_${cohortName.replace(/\s+/g, "_")}_${timestamp}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Exported ${allBriefs.length} briefs`);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to export briefs");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -300,6 +382,18 @@ function BriefsReviewContent() {
                 1
               </span>
             )}
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-50"
+          >
+            {isExporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            Export CSV
           </button>
         </div>
 

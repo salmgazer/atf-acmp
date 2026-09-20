@@ -26,7 +26,10 @@ import {
   SlidersHorizontal,
   X,
   UserMinus,
+  Download,
 } from "lucide-react";
+import { toast } from "sonner";
+import { api } from "@/lib/api/client";
 import { format } from "date-fns";
 
 const statusConfig: Record<
@@ -117,6 +120,7 @@ function TeamsContent() {
   const [briefFilter, setBriefFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Get global cohort from store (set by sidebar)
   const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
@@ -163,6 +167,78 @@ function TeamsContent() {
     setSelectedCohortId(null);
     setBriefFilter("all");
     setPage(1);
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (search) params.set("search", search);
+      if (effectiveCohortId) params.set("cohortId", effectiveCohortId);
+      if (briefFilter !== "all") params.set("hasbrief", briefFilter === "with" ? "true" : "false");
+      params.set("limit", "10000");
+
+      const response = await api.get<{ data: Team[] }>(`/teams?${params.toString()}`);
+      const allTeams = response.data;
+
+      if (allTeams.length === 0) {
+        toast.error("No teams to export");
+        return;
+      }
+
+      const headers = [
+        "Team Name",
+        "Invite Code",
+        "Member Count",
+        "Brief",
+        "Organization",
+        "Mentor",
+        "Status",
+        "GitHub Repo",
+        "Created At",
+      ];
+
+      const rows = allTeams.map((t) => [
+        t.name,
+        t.inviteCode,
+        String(t.members?.length || t.memberCount || 0),
+        t.brief?.title || "",
+        t.brief?.organization?.name || "",
+        t.mentor ? `${t.mentor.firstName} ${t.mentor.lastName}` : "",
+        t.status,
+        t.githubRepoUrl || "",
+        format(new Date(t.createdAt), "yyyy-MM-dd HH:mm:ss"),
+      ]);
+
+      const escapeCSV = (value: string) => {
+        if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      };
+
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((row) => row.map(escapeCSV).join(",")),
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const cohortName = cohorts.find((c) => c.id === effectiveCohortId)?.name || "all";
+      const timestamp = format(new Date(), "yyyy-MM-dd");
+      link.download = `teams_${cohortName.replace(/\s+/g, "_")}_${timestamp}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Exported ${allTeams.length} teams`);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to export teams");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -261,6 +337,18 @@ function TeamsContent() {
                 {activeFilterCount}
               </span>
             )}
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-50"
+          >
+            {isExporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            Export CSV
           </button>
         </div>
 

@@ -76,6 +76,8 @@ export interface BulkImportOrganizationRow {
   country?: string;
   industry?: string;
   website?: string;
+  description?: string;
+  cohortId?: string;
 }
 
 export interface ImportResult {
@@ -293,8 +295,8 @@ export function useBulkImportOrganizations() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (organizations: BulkImportOrganizationRow[]) =>
-      api.post<BulkImportResult>("/organizations/bulk-import", { organizations }),
+    mutationFn: ({ organizations, cohortId }: { organizations: BulkImportOrganizationRow[]; cohortId: string }) =>
+      api.post<BulkImportResult>("/organizations/bulk-import", { organizations, cohortId }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: organizationKeys.all });
       if (data.failureCount === 0) {

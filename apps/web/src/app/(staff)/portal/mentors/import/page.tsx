@@ -44,8 +44,11 @@ interface ParsedMentor {
   phone?: string;
   company?: string;
   title?: string;
+  bio?: string;
   expertise?: string;
   maxTeams?: string;
+  linkedinUrl?: string;
+  sessionRateOverride?: string;
   isValid: boolean;
   errors: string[];
 }
@@ -113,6 +116,15 @@ function ImportContent() {
       const maxTeamsIndex = headers.findIndex((h) =>
         ["max teams", "max_teams", "maxteams", "capacity"].includes(h)
       );
+      const bioIndex = headers.findIndex((h) =>
+        ["bio", "biography", "about"].includes(h)
+      );
+      const linkedinIndex = headers.findIndex((h) =>
+        ["linkedin", "linkedin_url", "linkedinurl", "linkedin url"].includes(h)
+      );
+      const sessionRateIndex = headers.findIndex((h) =>
+        ["session_rate", "session_rate_override", "sessionrateoverride", "rate", "session rate"].includes(h)
+      );
 
       const parsed: ParsedMentor[] = [];
 
@@ -136,8 +148,11 @@ function ImportContent() {
           phone: phoneIndex >= 0 ? values[phoneIndex] : undefined,
           company: companyIndex >= 0 ? values[companyIndex] : undefined,
           title: titleIndex >= 0 ? values[titleIndex] : undefined,
+          bio: bioIndex >= 0 ? values[bioIndex] : undefined,
           expertise: expertiseIndex >= 0 ? values[expertiseIndex] : undefined,
           maxTeams: maxTeamsIndex >= 0 ? values[maxTeamsIndex] : undefined,
+          linkedinUrl: linkedinIndex >= 0 ? values[linkedinIndex] : undefined,
+          sessionRateOverride: sessionRateIndex >= 0 ? values[sessionRateIndex] : undefined,
           isValid: errors.length === 0,
           errors,
         });
@@ -167,9 +182,9 @@ function ImportContent() {
   };
 
   const downloadTemplate = () => {
-    const template = `email,first_name,last_name,phone,company,title,expertise,max_teams
-john.doe@example.com,John,Doe,+1234567890,TechCorp,Senior Engineer,"AI, Machine Learning, Python",3
-jane.smith@example.com,Jane,Smith,+0987654321,StartupInc,Product Manager,"Product Strategy, UX, Agile",4`;
+    const template = `email,first_name,last_name,phone,company,title,bio,expertise,max_teams,linkedin_url,session_rate
+john.doe@example.com,John,Doe,+1234567890,TechCorp,Senior Engineer,"10+ years in software development","AI, Machine Learning, Python",3,https://linkedin.com/in/johndoe,
+jane.smith@example.com,Jane,Smith,+0987654321,StartupInc,Product Manager,"Experienced product leader","Product Strategy, UX, Agile",4,https://linkedin.com/in/janesmith,50`;
 
     const blob = new Blob([template], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -268,7 +283,7 @@ jane.smith@example.com,Jane,Smith,+0987654321,StartupInc,Product Manager,"Produc
           <div className="mt-4 text-sm text-muted-foreground">
             <p className="font-medium">Required columns:</p>
             <ul className="list-disc list-inside mt-1">
-              <li>email - Mentor's email address</li>
+              <li>email - Mentor&apos;s email address</li>
               <li>first_name - First name</li>
               <li>last_name - Last name</li>
             </ul>
@@ -277,8 +292,11 @@ jane.smith@example.com,Jane,Smith,+0987654321,StartupInc,Product Manager,"Produc
               <li>phone - Phone number</li>
               <li>company - Company/Organization</li>
               <li>title - Job title</li>
+              <li>bio - Short biography</li>
               <li>expertise - Comma-separated skills</li>
               <li>max_teams - Maximum teams (default: 3)</li>
+              <li>linkedin_url - LinkedIn profile URL</li>
+              <li>session_rate - Session rate override ($)</li>
             </ul>
           </div>
         </div>

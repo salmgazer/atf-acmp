@@ -23,12 +23,15 @@ import {
   Eye,
   Loader2,
   Upload,
+  Download,
   MapPin,
   GraduationCap,
   SlidersHorizontal,
   X,
 } from "lucide-react";
 import { format } from "date-fns";
+import { toast } from "sonner";
+import { api } from "@/lib/api/client";
 
 const statusConfig: Record<
   ParticipantStatus,
@@ -129,6 +132,7 @@ function ParticipantsContent() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(25);
   const [showFilters, setShowFilters] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Get global cohort from store (set by sidebar)
   const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
@@ -166,6 +170,87 @@ function ParticipantsContent() {
   ].filter(Boolean).length;
 
   const hasActiveFilters = activeFilterCount > 0;
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      // Fetch all participants with current filters (no pagination limit)
+      const params = new URLSearchParams();
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (search) params.set("search", search);
+      if (effectiveCohortId) params.set("cohortId", effectiveCohortId);
+      params.set("limit", "10000"); // Large limit to get all
+
+      const response = await api.get<{ data: Participant[] }>(`/participants?${params.toString()}`);
+      const allParticipants = response.data;
+
+      if (allParticipants.length === 0) {
+        toast.error("No participants to export");
+        return;
+      }
+
+      // Generate CSV content
+      const headers = [
+        "Participant ID",
+        "Email",
+        "First Name",
+        "Last Name",
+        "Country",
+        "Institution",
+        "Phone Number",
+        "Status",
+        "Onboarding Complete",
+        "Skills",
+        "Interests",
+        "Created At",
+      ];
+
+      const rows = allParticipants.map((p) => [
+        p.participantId,
+        p.email,
+        p.firstName,
+        p.lastName,
+        p.country,
+        p.institution || "",
+        p.phoneNumber || "",
+        p.status,
+        p.onboardingComplete ? "Yes" : "No",
+        (p.skills || []).join("; "),
+        (p.interests || []).join("; "),
+        format(new Date(p.createdAt), "yyyy-MM-dd HH:mm:ss"),
+      ]);
+
+      // Escape CSV values
+      const escapeCSV = (value: string) => {
+        if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      };
+
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((row) => row.map(escapeCSV).join(",")),
+      ].join("\n");
+
+      // Download the file
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const cohortName = cohorts.find((c) => c.id === effectiveCohortId)?.name || "all";
+      const timestamp = format(new Date(), "yyyy-MM-dd");
+      link.download = `participants_${cohortName.replace(/\s+/g, "_")}_${timestamp}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Exported ${allParticipants.length} participants`);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to export participants");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const clearFilters = () => {
     setStatusFilter("all");
@@ -251,6 +336,18 @@ function ParticipantsContent() {
                 {activeFilterCount}
               </span>
             )}
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-50"
+          >
+            {isExporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            Export CSV
           </button>
           <Link
             href="/portal/participants/import"

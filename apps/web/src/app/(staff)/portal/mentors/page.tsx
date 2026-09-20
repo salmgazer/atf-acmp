@@ -41,6 +41,7 @@ import {
   Clock,
   XCircle,
   Upload,
+  Download,
   SlidersHorizontal,
   X,
   MoreHorizontal,
@@ -55,6 +56,8 @@ import {
   Users,
   HelpCircle,
 } from "lucide-react";
+import { toast } from "sonner";
+import { api } from "@/lib/api/client";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, startOfWeek, endOfWeek, parseISO, isToday } from "date-fns";
 
 const statusConfig: Record<
@@ -517,6 +520,7 @@ function MentorsContent() {
   const [capacityFilter, setCapacityFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
   
@@ -563,6 +567,90 @@ function MentorsContent() {
     setSelectedCohortId(null);
     setCapacityFilter("all");
     setPage(1);
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (search) params.set("search", search);
+      if (effectiveCohortId) params.set("cohortId", effectiveCohortId);
+      if (capacityFilter !== "all") params.set("hasCapacity", capacityFilter === "available" ? "true" : "false");
+      params.set("limit", "10000");
+
+      const response = await api.get<{ data: Mentor[] }>(`/mentors?${params.toString()}`);
+      const allMentors = response.data;
+
+      if (allMentors.length === 0) {
+        toast.error("No mentors to export");
+        return;
+      }
+
+      const headers = [
+        "Email",
+        "First Name",
+        "Last Name",
+        "Phone",
+        "Company",
+        "Title",
+        "Expertise",
+        "LinkedIn URL",
+        "Max Teams",
+        "Status",
+        "Session Rate Override",
+        "Confirmed Sessions",
+        "Completed Sessions",
+        "Unpaid Amount",
+        "Created At",
+      ];
+
+      const rows = allMentors.map((m) => [
+        m.email,
+        m.firstName,
+        m.lastName,
+        m.phone || "",
+        m.company || "",
+        m.title || "",
+        (m.expertise || []).join("; "),
+        m.linkedinUrl || "",
+        String(m.maxTeams),
+        m.status,
+        m.sessionRateOverride !== null && m.sessionRateOverride !== undefined ? String(m.sessionRateOverride) : "",
+        String(m.confirmedSessions || 0),
+        String(m.completedSessions || 0),
+        String(m.unpaidAmount || 0),
+        format(new Date(m.createdAt), "yyyy-MM-dd HH:mm:ss"),
+      ]);
+
+      const escapeCSV = (value: string) => {
+        if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      };
+
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((row) => row.map(escapeCSV).join(",")),
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const cohortName = cohorts.find((c) => c.id === effectiveCohortId)?.name || "all";
+      const timestamp = format(new Date(), "yyyy-MM-dd");
+      link.download = `mentors_${cohortName.replace(/\s+/g, "_")}_${timestamp}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Exported ${allMentors.length} mentors`);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to export mentors");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   return (
@@ -680,6 +768,18 @@ function MentorsContent() {
                     {activeFilterCount}
                   </span>
                 )}
+              </button>
+              <button
+                onClick={handleExport}
+                disabled={isExporting}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-50"
+              >
+                {isExporting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                Export CSV
               </button>
               <Link
                 href="/portal/mentors/import"

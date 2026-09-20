@@ -22,7 +22,11 @@ import {
   Search,
   SlidersHorizontal,
   X,
+  Download,
 } from "lucide-react";
+import { toast } from "sonner";
+import { api } from "@/lib/api/client";
+import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -51,6 +55,7 @@ function CohortsContent() {
   const [duplicateDialog, setDuplicateDialog] = useState<Cohort | null>(null);
   const [duplicateName, setDuplicateName] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const hasActiveFilters = statusFilter !== "all";
 
@@ -82,6 +87,99 @@ function CohortsContent() {
   const openDuplicateDialog = (cohort: Cohort) => {
     setDuplicateName(`${cohort.name} (Copy)`);
     setDuplicateDialog(cohort);
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      params.set("limit", "10000");
+
+      const response = await api.get<{ data: Cohort[] }>(`/cohorts?${params.toString()}`);
+      let allCohorts = response.data;
+
+      // Apply search filter locally
+      if (searchQuery) {
+        allCohorts = allCohorts.filter(
+          (cohort) =>
+            cohort.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            cohort.description?.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }
+
+      if (allCohorts.length === 0) {
+        toast.error("No cohorts to export");
+        return;
+      }
+
+      const headers = [
+        "Name",
+        "Description",
+        "Status",
+        "Team Size Min",
+        "Team Size Max",
+        "Brief Cap",
+        "Max Teams Per Brief",
+        "Session Rate",
+        "Countries",
+        "Verticals",
+        "Team Formation End",
+        "Brief Selection End",
+        "Stage 1 End",
+        "Stage 2 End",
+        "Stage 3 End",
+        "Demo Day",
+        "Created At",
+      ];
+
+      const rows = allCohorts.map((c) => [
+        c.name,
+        c.description || "",
+        c.status,
+        String(c.teamSizeMin),
+        String(c.teamSizeMax),
+        String(c.briefCap),
+        String(c.maxTeamsPerBrief),
+        c.sessionRate !== null && c.sessionRate !== undefined ? String(c.sessionRate) : "",
+        (c.countries || []).join("; "),
+        (c.verticals || []).join("; "),
+        c.deadlines?.teamFormationEnd || "",
+        c.deadlines?.briefSelectionEnd || "",
+        c.deadlines?.stage1End || "",
+        c.deadlines?.stage2End || "",
+        c.deadlines?.stage3End || "",
+        c.deadlines?.demoDay || "",
+        format(new Date(c.createdAt), "yyyy-MM-dd HH:mm:ss"),
+      ]);
+
+      const escapeCSV = (value: string) => {
+        if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      };
+
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((row) => row.map(escapeCSV).join(",")),
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const timestamp = format(new Date(), "yyyy-MM-dd");
+      link.download = `cohorts_${timestamp}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Exported ${allCohorts.length} cohorts`);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to export cohorts");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const filteredCohorts =
@@ -150,6 +248,18 @@ function CohortsContent() {
               <List className="h-4 w-4 text-muted-foreground" />
             </button>
           </div>
+          <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-50"
+          >
+            {isExporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            Export CSV
+          </button>
           <Button asChild className="bg-zinc-900 text-white hover:bg-zinc-800">
             <Link href="/portal/cohorts/new">
               <Plus className="mr-2 h-4 w-4" />
