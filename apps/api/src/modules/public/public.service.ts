@@ -8,7 +8,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, DataSource } from "typeorm";
 import { ConfigService } from "@nestjs/config";
 import { Organization, OrganizationStatus, OrganizationUser, OrganizationUserRole } from "@/database/entities/organization.entity";
-import { Brief, BriefStatus, BriefFitBand, BriefImpactBand } from "@/database/entities/brief.entity";
+import { Brief, BriefStatus } from "@/database/entities/brief.entity";
 import { Cohort, CohortStatus } from "@/database/entities/cohort.entity";
 import { User, Role } from "@/database/entities/user.entity";
 import { BriefScoringService } from "@/modules/briefs/brief-scoring.service";
@@ -201,12 +201,12 @@ export class PublicService {
 
           // Scoring results
           fitScore: scores.fitScore,
-          fitBand: scores.fitBand as BriefFitBand,
+          fitBand: scores.fitBand,
           scoreOverride: scores.scoreOverride || undefined,
           depthScore: scores.depthScore || undefined,
           breadthScore: scores.breadthScore || undefined,
           impactScore: scores.impactScore || undefined,
-          impactBand: scores.impactBand as BriefImpactBand || undefined,
+          impactBand: scores.impactBand || undefined,
           priorityScore: scores.priorityScore,
         };
 
