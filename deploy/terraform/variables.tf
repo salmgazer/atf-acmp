@@ -25,6 +25,18 @@ variable "github_repo" {
   default     = "atf-acmp"
 }
 
+variable "github_org_id" {
+  description = "GitHub organization/user numeric ID (gh api /users/<username> --jq .id)"
+  type        = string
+  default     = "8851830"
+}
+
+variable "github_repo_id" {
+  description = "GitHub repository numeric ID (gh api /repos/<org>/<repo> --jq .id)"
+  type        = string
+  default     = "1361583319"
+}
+
 variable "db_password" {
   description = "RDS master password"
   type        = string

@@ -100,8 +100,12 @@ resource "aws_iam_role" "github_actions" {
         }
         StringLike = {
           "token.actions.githubusercontent.com:sub" = [
+            # Classic format (older repos)
             "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/*",
-            "repo:${var.github_org}/${var.github_repo}:environment:staging"
+            "repo:${var.github_org}/${var.github_repo}:environment:staging",
+            "repo:${var.github_org}/${var.github_repo}:*",
+            # Immutable-ID format (repos created after July 15, 2026)
+            "repo:${var.github_org}@${var.github_org_id}/${var.github_repo}@${var.github_repo_id}:*"
           ]
         }
       }
@@ -131,7 +135,10 @@ resource "aws_iam_role_policy" "github_pass_role" {
       Action = "iam:PassRole"
       Resource = [
         aws_iam_role.ecs_task_execution.arn,
-        aws_iam_role.ecs_infrastructure.arn
+        aws_iam_role.ecs_infrastructure.arn,
+        # Also allow passing the non-suffixed roles that AWS/workflow uses
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/ecsTaskExecutionRole",
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/ecsInfrastructureRoleForExpressServices"
       ]
     }]
   })
