@@ -81,6 +81,14 @@ export class CreateStageDto {
   @IsOptional()
   @IsBoolean()
   requiresManualApproval?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresAiEvaluation?: boolean;
+
+  @IsOptional()
+  @IsString()
+  evaluationPrompt?: string;
 }
 
 export class UpdateStageDto {
@@ -150,6 +158,14 @@ export class UpdateStageDto {
   @IsOptional()
   @IsBoolean()
   requiresManualApproval?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresAiEvaluation?: boolean;
+
+  @IsOptional()
+  @IsString()
+  evaluationPrompt?: string;
 }
 
 // ============ Submission DTOs ============
@@ -287,6 +303,8 @@ export class StageResponseDto {
   sortOrder: number;
   unlocksMentorClaim: boolean;
   requiresManualApproval: boolean;
+  requiresAiEvaluation: boolean;
+  evaluationPrompt?: string;
   isOpen: boolean;
   isPastDeadline: boolean;
   submissionCount?: number;

@@ -45,6 +45,8 @@ export interface Stage {
   sortOrder: number;
   unlocksMentorClaim: boolean;
   requiresManualApproval: boolean;
+  requiresAiEvaluation: boolean;
+  evaluationPrompt?: string;
   isOpen?: boolean;
   isPastDeadline?: boolean;
   stats?: {
@@ -77,6 +79,8 @@ export interface CreateStageInput {
   sortOrder?: number;
   unlocksMentorClaim?: boolean;
   requiresManualApproval?: boolean;
+  requiresAiEvaluation?: boolean;
+  evaluationPrompt?: string;
 }
 
 export interface UpdateStageInput {
@@ -95,6 +99,8 @@ export interface UpdateStageInput {
   sortOrder?: number;
   unlocksMentorClaim?: boolean;
   requiresManualApproval?: boolean;
+  requiresAiEvaluation?: boolean;
+  evaluationPrompt?: string;
 }
 
 // Query keys

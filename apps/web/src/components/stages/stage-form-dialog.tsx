@@ -65,6 +65,8 @@ interface FormValues {
   isActive: boolean;
   unlocksMentorClaim: boolean;
   requiresManualApproval: boolean;
+  requiresAiEvaluation: boolean;
+  evaluationPrompt: string;
 }
 
 export function StageFormDialog({
@@ -113,6 +115,8 @@ export function StageFormDialog({
       isActive: true,
       unlocksMentorClaim: false,
       requiresManualApproval: false,
+      requiresAiEvaluation: false,
+      evaluationPrompt: "",
     },
   });
 
@@ -184,6 +188,8 @@ export function StageFormDialog({
         isActive: stage.isActive,
         unlocksMentorClaim: stage.unlocksMentorClaim || false,
         requiresManualApproval: stage.requiresManualApproval || false,
+        requiresAiEvaluation: stage.requiresAiEvaluation || false,
+        evaluationPrompt: stage.evaluationPrompt || "",
       });
     } else {
       reset({
@@ -211,6 +217,8 @@ export function StageFormDialog({
         isActive: true,
         unlocksMentorClaim: false,
         requiresManualApproval: false,
+        requiresAiEvaluation: false,
+        evaluationPrompt: "",
       });
     }
   }, [stage, nextNumber, reset]);
@@ -284,6 +292,8 @@ export function StageFormDialog({
           isActive: data.isActive,
           unlocksMentorClaim: data.unlocksMentorClaim,
           requiresManualApproval: data.requiresManualApproval,
+          requiresAiEvaluation: data.requiresAiEvaluation,
+          evaluationPrompt: data.evaluationPrompt || undefined,
         };
         await updateMutation.mutateAsync({ id: stage.id, data: updateData });
       } else {
@@ -302,6 +312,8 @@ export function StageFormDialog({
           requirements,
           unlocksMentorClaim: data.unlocksMentorClaim,
           requiresManualApproval: data.requiresManualApproval,
+          requiresAiEvaluation: data.requiresAiEvaluation,
+          evaluationPrompt: data.evaluationPrompt || undefined,
         };
         await createMutation.mutateAsync(createData);
       }
@@ -788,6 +800,34 @@ export function StageFormDialog({
                   onCheckedChange={(v) => setValue("requiresManualApproval", v)}
                 />
               </div>
+
+              <div className="flex items-center justify-between p-4 border rounded-lg bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
+                <div>
+                  <Label>AI Evaluation</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Enable AI-powered evaluation for submissions in this stage
+                  </p>
+                </div>
+                <Switch
+                  checked={watch("requiresAiEvaluation")}
+                  onCheckedChange={(v) => setValue("requiresAiEvaluation", v)}
+                />
+              </div>
+
+              {watch("requiresAiEvaluation") && (
+                <div className="space-y-2 p-4 border rounded-lg border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20">
+                  <Label htmlFor="evaluationPrompt">AI Evaluation Prompt</Label>
+                  <Textarea
+                    id="evaluationPrompt"
+                    placeholder="Enter the prompt that will guide AI in evaluating submissions for this stage. Be specific about criteria, scoring rubric, and what aspects to focus on..."
+                    rows={6}
+                    {...register("evaluationPrompt")}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    This prompt tells the AI how to evaluate submissions. Include scoring criteria, what to look for, and how to provide feedback.
+                  </p>
+                </div>
+              )}
 
               {isEditing && (
                 <div className="flex items-center justify-between p-4 border rounded-lg">

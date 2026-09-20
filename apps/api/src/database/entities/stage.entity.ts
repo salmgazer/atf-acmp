@@ -107,6 +107,12 @@ export class Stage extends BaseEntity {
   @Column({ name: "requires_manual_approval", default: false })
   requiresManualApproval: boolean; // Staff must manually approve submissions before they count as evaluated
 
+  @Column({ name: "requires_ai_evaluation", default: false })
+  requiresAiEvaluation: boolean; // Whether this stage should be evaluated by AI
+
+  @Column({ name: "evaluation_prompt", type: "text", nullable: true })
+  evaluationPrompt?: string; // Custom AI prompt for evaluating submissions in this stage
+
   @OneToMany(() => Submission, (submission) => submission.stage)
   submissions: Submission[];
 

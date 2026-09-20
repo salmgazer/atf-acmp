@@ -16,6 +16,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Loader2, Bot } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { EvaluationDashboard } from "@/components/evaluations";
 
 export default function EvaluationsPage() {
@@ -84,14 +85,34 @@ export default function EvaluationsPage() {
 
           {/* Content */}
           {selectedCohortId ? (
-            <EvaluationDashboard
-              cohortId={selectedCohortId}
-              stages={stages?.map((s) => ({
-                id: s.id,
-                name: s.name,
-                number: s.number,
-              }))}
-            />
+            stages?.filter((s) => s.requiresAiEvaluation).length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <Bot className="h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium mb-1">No AI Evaluation Stages</h3>
+                  <p className="text-muted-foreground text-center max-w-md mb-4">
+                    This cohort doesn&apos;t have any stages configured for AI evaluation yet.
+                    Enable AI evaluation on stages to use this feature.
+                  </p>
+                  <Button variant="outline" asChild>
+                    <a href={`/portal/cohorts/${selectedCohortId}/stages`}>
+                      Configure Stages
+                    </a>
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <EvaluationDashboard
+                cohortId={selectedCohortId}
+                stages={stages
+                  ?.filter((s) => s.requiresAiEvaluation)
+                  .map((s) => ({
+                    id: s.id,
+                    name: s.name,
+                    number: s.number,
+                  }))}
+              />
+            )
           ) : (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12">

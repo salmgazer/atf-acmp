@@ -23,6 +23,7 @@ import {
   AlignLeft,
   Users,
   ClipboardCheck,
+  Bot,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -175,6 +176,12 @@ export function StageList({ cohortId }: StageListProps) {
                             <Badge variant="outline" className="text-xs text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30">
                               <ClipboardCheck className="h-3 w-3 mr-1" />
                               Requires Approval
+                            </Badge>
+                          )}
+                          {stage.requiresAiEvaluation && (
+                            <Badge variant="outline" className="text-xs text-blue-600 border-blue-300 bg-blue-50 dark:bg-blue-950/30">
+                              <Bot className="h-3 w-3 mr-1" />
+                              AI Evaluation
                             </Badge>
                           )}
                         </div>
