@@ -207,6 +207,7 @@ export class PublicService {
           breadthScore: scores.breadthScore || undefined,
           impactScore: scores.impactScore || undefined,
           impactBand: scores.impactBand || undefined,
+          priorityScore: scores.priorityScore,
         };
 
         const brief = queryRunner.manager.create(Brief, briefData);

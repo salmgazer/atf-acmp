@@ -62,6 +62,7 @@ export interface ScoringResult {
   breadthScore: number | null;
   impactScore: number | null;
   impactBand: BriefImpactBand | null;
+  priorityScore: number;
 }
 
 @Injectable()
@@ -78,6 +79,9 @@ export class BriefScoringService {
     const breadthScore = this.getBreadthScore(answers.q8);
     const impactScore = this.calcImpactScore(depthScore, breadthScore);
     const impactBand = this.getImpactBand(impactScore);
+    
+    // Calculate priority score (fitScore + impactScore * 10, with overrides penalized)
+    const priorityScore = this.calcPriorityScore(fitScore, impactScore, override);
 
     return {
       fitScore,
@@ -87,6 +91,7 @@ export class BriefScoringService {
       breadthScore,
       impactScore,
       impactBand,
+      priorityScore,
     };
   }
 
@@ -200,6 +205,26 @@ export class BriefScoringService {
       return BriefImpactBand.MODERATE_IMPACT;
     }
     return BriefImpactBand.LOWER_IMPACT;
+  }
+
+  /**
+   * Calculate priority score (combined metric for sorting)
+   * Formula: fitScore + impactScore * 10, with -50 penalty for override cases
+   * Score range: roughly -50 to 190 (max fitScore 100 + max impactScore 9 * 10)
+   */
+  private calcPriorityScore(
+    fitScore: number,
+    impactScore: number | null,
+    override: string | null
+  ): number {
+    let priority = fitScore;
+    if (impactScore !== null) {
+      priority += impactScore * 10;
+    }
+    if (override) {
+      priority -= 50; // Penalize override cases
+    }
+    return priority;
   }
 
   /**
