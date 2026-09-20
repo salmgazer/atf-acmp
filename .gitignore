@@ -48,6 +48,11 @@ junit.xml
 *.tsbuildinfo
 next-env.d.ts
 
+# Compiled JS in source folders (from Docker/monorepo build artifacts)
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts
+
 # Misc
 *.pem
 *.tmp
