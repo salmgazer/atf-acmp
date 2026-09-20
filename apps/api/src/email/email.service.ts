@@ -16,6 +16,13 @@ interface WelcomeEmailParams {
   portalUrl: string;
 }
 
+interface ParticipantWelcomeEmailParams {
+  to: string;
+  firstName: string;
+  participantId: string;
+  portalUrl: string;
+}
+
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
@@ -57,7 +64,7 @@ export class EmailService {
    * Get the ATF logo URL for emails
    */
   private getLogoUrl(): string {
-    return `${this.frontendUrl}/logos/full/Full-color-logo.png`;
+    return `${this.frontendUrl}/logos/email-logo.png`;
   }
 
   /**
@@ -106,6 +113,15 @@ export class EmailService {
 
     const subject = "Welcome to ATF AI Challenge";
     const html = this.getWelcomeTemplate(firstName, temporaryPassword, portalUrl);
+
+    await this.sendEmail(to, subject, html);
+  }
+
+  async sendParticipantWelcomeEmail(params: ParticipantWelcomeEmailParams): Promise<void> {
+    const { to, firstName, participantId, portalUrl } = params;
+
+    const subject = "Welcome to ATF AI Challenge";
+    const html = this.getParticipantWelcomeTemplate(firstName, participantId, portalUrl);
 
     await this.sendEmail(to, subject, html);
   }
@@ -284,6 +300,61 @@ export class EmailService {
                       </tr>
                     </table>
                     ` : ""}
+                  </td>
+                </tr>
+                ${this.getEmailFooter()}
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `;
+  }
+
+  private getParticipantWelcomeTemplate(firstName: string, participantId: string, portalUrl: string): string {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Welcome to ATF AI Challenge</title>
+      </head>
+      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f9fafb;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9fafb; padding: 40px 20px;">
+          <tr>
+            <td align="center">
+              <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);">
+                ${this.getEmailHeader()}
+                <tr>
+                  <td style="padding: 0 40px 32px 40px;">
+                    <h1 style="margin: 0 0 24px 0; color: #111827; font-size: 24px; font-weight: 600; text-align: center;">Welcome to ATF AI Challenge!</h1>
+                    <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+                      Hi ${firstName},
+                    </p>
+                    <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+                      You have been registered as a participant in the ATF AI Challenge. We&apos;re excited to have you on board!
+                    </p>
+                    <p style="margin: 0 0 24px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+                      To access your account, use your <strong>email address</strong> and your <strong>Participant ID</strong> as your initial password.
+                    </p>
+                    <div style="background: #f3f4f6; border-radius: 8px; padding: 20px; margin: 0 0 24px 0;">
+                      <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 14px;">Your Participant ID:</p>
+                      <p style="margin: 0; font-size: 18px; font-weight: 600; color: #111827;">${participantId}</p>
+                    </div>
+                    <p style="margin: 0 0 24px 0; color: #dc2626; font-size: 14px; line-height: 1.6;">
+                      <strong>Important:</strong> You will be required to change your password on first login.
+                    </p>
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td align="center" style="padding: 8px 0;">
+                          <a href="${portalUrl}" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
+                            Login to Your Account
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
                   </td>
                 </tr>
                 ${this.getEmailFooter()}

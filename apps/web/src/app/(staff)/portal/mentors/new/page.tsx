@@ -310,6 +310,25 @@ function NewMentorContent() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label>Session Rate Override ($)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={formData.sessionRateOverride ?? ""}
+                  onChange={(e) =>
+                    setFormData((f) => ({
+                      ...f,
+                      sessionRateOverride: e.target.value ? parseFloat(e.target.value) : undefined,
+                    }))
+                  }
+                  placeholder="Use cohort default"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave empty to use cohort default rate
+                </p>
+              </div>
             </div>
           </div>
 

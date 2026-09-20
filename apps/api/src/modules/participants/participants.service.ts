@@ -6,6 +6,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
+import { ConfigService } from "@nestjs/config";
 import { Repository, ILike, In } from "typeorm";
 import * as bcrypt from "bcrypt";
 import {
@@ -16,6 +17,7 @@ import {
 import { Cohort } from "@/database/entities/cohort.entity";
 import { NotificationsService } from "@/modules/notifications/notifications.service";
 import { NotificationRecipientType, NotificationType, NotificationPriority } from "@/database/entities/notification.entity";
+import { EmailService } from "@/email/email.service";
 import {
   CreateParticipantDto,
   UpdateParticipantDto,
@@ -40,7 +42,9 @@ export class ParticipantsService {
     private readonly preferenceRepository: Repository<ParticipantPreference>,
     @InjectRepository(Cohort)
     private readonly cohortRepository: Repository<Cohort>,
-    private readonly notificationsService: NotificationsService
+    private readonly notificationsService: NotificationsService,
+    private readonly emailService: EmailService,
+    private readonly configService: ConfigService,
   ) {}
 
   async create(dto: CreateParticipantDto): Promise<Participant> {
@@ -206,6 +210,7 @@ export class ParticipantsService {
     const results: ImportResultDto[] = [];
     let successCount = 0;
     let failureCount = 0;
+    const successfulImports: { email: string; firstName: string; participantId: string }[] = [];
 
     // Verify cohort exists
     const cohort = await this.cohortRepository.findOne({
@@ -278,6 +283,13 @@ export class ParticipantsService {
         existingEmailSet.add(row.email);
         existingIdSet.add(row.participantId);
 
+        // Track successful imports for welcome emails
+        successfulImports.push({
+          email: row.email,
+          firstName: row.firstName,
+          participantId: row.participantId,
+        });
+
         results.push({
           success: true,
           participantId: row.participantId,
@@ -296,6 +308,31 @@ export class ParticipantsService {
         });
         failureCount++;
       }
+    }
+
+    // Send welcome emails if requested (don't block on email failures)
+    if (dto.sendWelcomeEmail !== false && successfulImports.length > 0) {
+      const frontendUrl = this.configService.get<string>("FRONTEND_URL", "https://challenge.atf.africa");
+      const portalUrl = `${frontendUrl}/app/login`;
+
+      // Send emails asynchronously - don't wait for all to complete
+      Promise.all(
+        successfulImports.map(async (participant) => {
+          try {
+            await this.emailService.sendParticipantWelcomeEmail({
+              to: participant.email,
+              firstName: participant.firstName,
+              participantId: participant.participantId,
+              portalUrl,
+            });
+            this.logger.log(`Welcome email sent to ${participant.email}`);
+          } catch (error) {
+            this.logger.warn(`Failed to send welcome email to ${participant.email}: ${error}`);
+          }
+        })
+      ).catch((error) => {
+        this.logger.error(`Error sending welcome emails: ${error}`);
+      });
     }
 
     return {
