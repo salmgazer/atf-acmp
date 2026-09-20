@@ -9,12 +9,14 @@ import { ParticipantsController } from "./participants.controller";
 import { ParticipantsService } from "./participants.service";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { UploadModule } from "@/common/services/upload.module";
+import { CohortsModule } from "../cohorts/cohorts.module";
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Participant, ParticipantPreference, Cohort]),
     NotificationsModule,
     UploadModule,
+    CohortsModule,
   ],
   controllers: [ParticipantsController],
   providers: [ParticipantsService],

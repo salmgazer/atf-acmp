@@ -280,6 +280,64 @@ export class CohortsService {
   }
 
   /**
+   * Add all participants in a cohort to forum channels (for backfilling)
+   */
+  async addAllParticipantsToForumChannels(cohortId: string): Promise<{ added: number; skipped: number }> {
+    const forumChannels = await this.chatChannelRepository.find({
+      where: {
+        cohortId,
+        type: ChannelType.ANNOUNCEMENT,
+        isArchived: false,
+      },
+    });
+
+    if (forumChannels.length === 0) {
+      this.logger.warn(`No active forum channels found for cohort ${cohortId}`);
+      return { added: 0, skipped: 0 };
+    }
+
+    // Get all participants with completed onboarding
+    const participants = await this.participantRepository.find({
+      where: {
+        cohortId,
+        onboardingComplete: true,
+      },
+    });
+
+    let added = 0;
+    let skipped = 0;
+
+    for (const participant of participants) {
+      for (const channel of forumChannels) {
+        const existing = await this.channelMemberRepository.findOne({
+          where: {
+            channelId: channel.id,
+            memberId: participant.id,
+            memberType: SenderType.PARTICIPANT,
+          },
+        });
+
+        if (!existing) {
+          const member = this.channelMemberRepository.create({
+            channelId: channel.id,
+            memberId: participant.id,
+            memberType: SenderType.PARTICIPANT,
+            memberName: `${participant.firstName} ${participant.lastName}`,
+            isAdmin: false,
+          });
+          await this.channelMemberRepository.save(member);
+          added++;
+        } else {
+          skipped++;
+        }
+      }
+    }
+
+    this.logger.log(`Backfill complete for cohort ${cohortId}: added ${added} memberships, skipped ${skipped} existing`);
+    return { added, skipped };
+  }
+
+  /**
    * Update forum chat channels when cohort status changes
    * - ACTIVE: Unarchive all forum channels
    * - Other statuses: Archive all forum channels

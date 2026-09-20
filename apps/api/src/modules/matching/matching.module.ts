@@ -6,6 +6,7 @@ import { TeamFormationService } from "./team-formation.service";
 import { Team, TeamMember, TeamInvitation } from "@/database/entities/team.entity";
 import { Brief } from "@/database/entities/brief.entity";
 import { Cohort } from "@/database/entities/cohort.entity";
+import { Vertical } from "@/database/entities/vertical.entity";
 import {
   Participant,
   ParticipantPreference,
@@ -19,6 +20,7 @@ import {
       TeamInvitation,
       Brief,
       Cohort,
+      Vertical,
       Participant,
       ParticipantPreference,
     ]),

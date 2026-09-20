@@ -18,6 +18,7 @@ import { Cohort } from "@/database/entities/cohort.entity";
 import { NotificationsService } from "@/modules/notifications/notifications.service";
 import { NotificationRecipientType, NotificationType, NotificationPriority } from "@/database/entities/notification.entity";
 import { EmailService } from "@/email/email.service";
+import { CohortsService } from "@/modules/cohorts/cohorts.service";
 import {
   CreateParticipantDto,
   UpdateParticipantDto,
@@ -45,6 +46,7 @@ export class ParticipantsService {
     private readonly notificationsService: NotificationsService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
+    private readonly cohortsService: CohortsService,
   ) {}
 
   async create(dto: CreateParticipantDto): Promise<Participant> {
@@ -385,6 +387,13 @@ export class ParticipantsService {
       });
     } catch (error) {
       this.logger.warn(`Failed to send welcome notification: ${error}`);
+    }
+
+    // Add participant to forum chat channels
+    try {
+      await this.cohortsService.addParticipantToForumChannels(participant);
+    } catch (error) {
+      this.logger.warn(`Failed to add participant to forum channels: ${error}`);
     }
 
     return this.findOne(id);

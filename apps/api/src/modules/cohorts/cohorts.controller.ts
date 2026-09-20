@@ -182,4 +182,13 @@ export class CohortsController {
   async initializeForum(@Param("id") id: string): Promise<{ message: string; categoriesCreated: number }> {
     return this.cohortsService.initializeForumCategories(id);
   }
+
+  @Post(":id/backfill-forum-members")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @ApiOperation({ summary: "Add all onboarded participants to forum channels (backfill)" })
+  @ApiParam({ name: "id", description: "Cohort ID" })
+  @ApiResponse({ status: 200, description: "Forum members backfilled" })
+  async backfillForumMembers(@Param("id") id: string): Promise<{ added: number; skipped: number }> {
+    return this.cohortsService.addAllParticipantsToForumChannels(id);
+  }
 }
