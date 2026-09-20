@@ -32,7 +32,7 @@ services:
 
   # MinIO - S3-compatible storage for development
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: acmp-minio
     restart: unless-stopped
     ports:
@@ -52,7 +52,7 @@ services:
 
   # MinIO setup - creates default bucket on startup
   minio-setup:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     container_name: acmp-minio-setup
     depends_on:
       minio:

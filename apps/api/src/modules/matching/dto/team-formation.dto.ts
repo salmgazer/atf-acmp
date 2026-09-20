@@ -176,6 +176,11 @@ export class ManualTeamAssignmentDto {
   @IsOptional()
   @IsUUID("4")
   leadParticipantId?: string;
+
+  @ApiPropertyOptional({ description: "Participant ID to be team co-lead" })
+  @IsOptional()
+  @IsUUID("4")
+  coLeadParticipantId?: string;
 }
 
 export class FinalizeTeamFormationDto {
@@ -222,11 +227,15 @@ export class ProposedTeamDto {
     skills: string[];
     interests: string[];
     isProposedLead: boolean;
+    isProposedCoLead: boolean;
     skillProfile: SkillProfile;
   }>;
 
   @ApiProperty({ description: "Proposed team lead participant ID" })
   leadParticipantId: string;
+
+  @ApiProperty({ description: "Proposed team co-lead participant ID" })
+  coLeadParticipantId: string;
 
   @ApiProperty({ description: "Team compatibility score (0-100)" })
   compatibilityScore: number;

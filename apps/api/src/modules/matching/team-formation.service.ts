@@ -144,6 +144,10 @@ export class TeamFormationService {
   /**
    * Brief-centric round-robin team formation
    * Assigns briefs to teams (not teams to briefs) for fair distribution
+   * 
+   * Supports two-phase workflow:
+   * - Phase 1: If no briefs exist, form teams using legacy algorithm (teams without briefs)
+   * - Phase 2: Later, when briefs are approved, assign them to existing teams
    */
   private async runBriefCentricFormation(
     cohortId: string,
@@ -182,6 +186,37 @@ export class TeamFormationService {
     const teamsWithoutBriefs = await this.getTeamsWithoutBriefs(cohortId);
     this.logger.log(`Found ${teamsWithoutBriefs.length} existing teams without briefs`);
 
+    // Calculate total briefs that need teams
+    const totalBriefsNeedingTeams = Array.from(briefsByVertical.values())
+      .flat()
+      .filter((b) => b.teamsCount < b.maxTeams).length;
+
+    // ====== SMART MODE SELECTION ======
+    // If no approved briefs exist, fall back to legacy team formation
+    // This enables a two-phase workflow: form teams first, assign briefs later
+    if (totalBriefsNeedingTeams === 0 && remainingParticipants.length > 0) {
+      this.logger.log(
+        `No approved briefs found. Using legacy team formation for ${remainingParticipants.length} participants.`,
+      );
+      
+      // If there are existing teams without briefs, we can still propose brief assignments later
+      if (teamsWithoutBriefs.length > 0) {
+        warnings.push(
+          `${teamsWithoutBriefs.length} team(s) exist without briefs. Approve briefs and run again to assign them.`,
+        );
+      }
+      
+      // Use legacy formation to create teams without brief assignment
+      return this.runLegacyTeamFormation(cohortId, cohort, participantsWithPrefs, config, warnings);
+    }
+
+    // If briefs exist but no participants to form new teams, just do brief assignment to existing teams
+    if (totalBriefsNeedingTeams > 0 && remainingParticipants.length === 0 && teamsWithoutBriefs.length > 0) {
+      this.logger.log(
+        `Brief assignment mode: ${totalBriefsNeedingTeams} briefs to assign to ${teamsWithoutBriefs.length} existing teams`,
+      );
+    }
+
     // ====== PHASE 3: ROUND-ROBIN BRIEF ASSIGNMENT ======
     const proposedTeams: ProposedTeamDto[] = [];
     const proposedBriefAssignments: ProposedBriefAssignmentDto[] = [];
@@ -193,11 +228,6 @@ export class TeamFormationService {
     // Track brief index for each vertical (for round-robin)
     const verticalBriefIndex: Map<string, number> = new Map();
     verticals.forEach((v) => verticalBriefIndex.set(v.id, 0));
-
-    // Calculate total briefs that need teams
-    const totalBriefsNeedingTeams = Array.from(briefsByVertical.values())
-      .flat()
-      .filter((b) => b.teamsCount < b.maxTeams).length;
 
     this.logger.log(`Brief-centric formation: ${totalBriefsNeedingTeams} briefs need teams, ${remainingParticipants.length} available participants`);
 
@@ -658,7 +688,7 @@ export class TeamFormationService {
       selectedParticipants,
       config,
     );
-    const leadParticipant = this.selectTeamLead(selectedParticipants, config.leadSelectionStrategy);
+    const { lead: leadParticipant, coLead: coLeadParticipant } = this.selectTeamLeadAndCoLead(selectedParticipants, config.leadSelectionStrategy);
     const countries = [...new Set(selectedParticipants.map((p) => p.participant.country))];
 
     return {
@@ -674,9 +704,11 @@ export class TeamFormationService {
         skills: p.skills,
         interests: p.interests,
         isProposedLead: p.participant.id === leadParticipant.participant.id,
+        isProposedCoLead: p.participant.id === coLeadParticipant.participant.id && p.participant.id !== leadParticipant.participant.id,
         skillProfile: p.skillProfile,
       })),
       leadParticipantId: leadParticipant.participant.id,
+      coLeadParticipantId: coLeadParticipant.participant.id,
       compatibilityScore: score,
       scoreBreakdown: breakdown,
       countries,
@@ -875,6 +907,7 @@ export class TeamFormationService {
       participantIds: string[];
       teamName: string;
       leadParticipantId: string;
+      coLeadParticipantId: string;
       briefId?: string;
     }> = [];
 
@@ -885,12 +918,22 @@ export class TeamFormationService {
       );
 
       if (filteredParticipantIds.length >= (cohort.teamSizeMin || 3)) {
+        // Determine lead - use proposed if still in team, otherwise first participant
+        const leadId = filteredParticipantIds.includes(proposedTeam.leadParticipantId)
+          ? proposedTeam.leadParticipantId
+          : filteredParticipantIds[0];
+        
+        // Determine co-lead - use proposed if still in team and different from lead, otherwise second participant
+        let coLeadId = proposedTeam.coLeadParticipantId;
+        if (!filteredParticipantIds.includes(coLeadId) || coLeadId === leadId) {
+          coLeadId = filteredParticipantIds.find((id) => id !== leadId) || leadId;
+        }
+
         teamsToCreate.push({
           participantIds: filteredParticipantIds,
           teamName: proposedTeam.suggestedName,
-          leadParticipantId: filteredParticipantIds.includes(proposedTeam.leadParticipantId)
-            ? proposedTeam.leadParticipantId
-            : filteredParticipantIds[0],
+          leadParticipantId: leadId,
+          coLeadParticipantId: coLeadId,
           briefId: proposedTeam.assignedBriefId,
         });
       }
@@ -899,10 +942,14 @@ export class TeamFormationService {
     // Apply manual team overrides
     if (dto.manualTeams) {
       for (const manualTeam of dto.manualTeams) {
+        const leadId = manualTeam.leadParticipantId || manualTeam.participantIds[0];
+        const coLeadId = manualTeam.coLeadParticipantId || manualTeam.participantIds.find((id) => id !== leadId) || leadId;
+        
         teamsToCreate.push({
           participantIds: manualTeam.participantIds,
           teamName: manualTeam.teamName || `Team ${teamsToCreate.length + 1}`,
-          leadParticipantId: manualTeam.leadParticipantId || manualTeam.participantIds[0],
+          leadParticipantId: leadId,
+          coLeadParticipantId: coLeadId,
         });
       }
     }
@@ -915,6 +962,7 @@ export class TeamFormationService {
           teamData.teamName,
           teamData.participantIds,
           teamData.leadParticipantId,
+          teamData.coLeadParticipantId,
           teamData.briefId,
         );
         createdTeamCount++;
@@ -1199,9 +1247,9 @@ export class TeamFormationService {
         if (idx >= 0) available.splice(idx, 1);
       }
 
-      // Calculate compatibility and select lead
+      // Calculate compatibility and select lead and co-lead
       const { score, breakdown, skillBalance } = this.calculateTeamCompatibility(team, config);
-      const leadParticipant = this.selectTeamLead(team, config.leadSelectionStrategy);
+      const { lead: leadParticipant, coLead: coLeadParticipant } = this.selectTeamLeadAndCoLead(team, config.leadSelectionStrategy);
       const countries = [...new Set(team.map((p) => p.participant.country))];
 
       const proposedTeam: ProposedTeamDto = {
@@ -1217,9 +1265,11 @@ export class TeamFormationService {
           skills: p.skills,
           interests: p.interests,
           isProposedLead: p.participant.id === leadParticipant.participant.id,
+          isProposedCoLead: p.participant.id === coLeadParticipant.participant.id && p.participant.id !== leadParticipant.participant.id,
           skillProfile: p.skillProfile,
         })),
         leadParticipantId: leadParticipant.participant.id,
+        coLeadParticipantId: coLeadParticipant.participant.id,
         compatibilityScore: score,
         scoreBreakdown: breakdown,
         countries,
@@ -1519,36 +1569,62 @@ export class TeamFormationService {
   }
 
   /**
-   * Select team lead based on strategy
+   * Select team lead and co-lead based on strategy
+   */
+  private selectTeamLeadAndCoLead(
+    team: ParticipantWithPreferences[],
+    strategy: LeadSelectionStrategy,
+  ): { lead: ParticipantWithPreferences; coLead: ParticipantWithPreferences } {
+    if (team.length < 2) {
+      // If only one member, they are both lead and co-lead
+      return { lead: team[0], coLead: team[0] };
+    }
+
+    // Sort team by the strategy criteria
+    let sorted: ParticipantWithPreferences[];
+
+    switch (strategy) {
+      case LeadSelectionStrategy.RANDOM:
+        // Shuffle the array randomly
+        sorted = [...team].sort(() => Math.random() - 0.5);
+        break;
+
+      case LeadSelectionStrategy.MOST_PREFERENCES:
+        sorted = [...team].sort((a, b) => {
+          const aScore = this.getParticipantEngagementScore(a);
+          const bScore = this.getParticipantEngagementScore(b);
+          return bScore - aScore;
+        });
+        break;
+
+      case LeadSelectionStrategy.MOST_SKILLS:
+        sorted = [...team].sort((a, b) => b.skills.length - a.skills.length);
+        break;
+
+      case LeadSelectionStrategy.FIRST_REGISTERED:
+        sorted = [...team].sort((a, b) => {
+          const aDate = a.participant.createdAt?.getTime() || 0;
+          const bDate = b.participant.createdAt?.getTime() || 0;
+          return aDate - bDate;
+        });
+        break;
+
+      default:
+        sorted = [...team];
+    }
+
+    // First is lead, second is co-lead
+    return { lead: sorted[0], coLead: sorted[1] };
+  }
+
+  /**
+   * Select team lead based on strategy (legacy method for backwards compatibility)
    */
   private selectTeamLead(
     team: ParticipantWithPreferences[],
     strategy: LeadSelectionStrategy,
   ): ParticipantWithPreferences {
-    switch (strategy) {
-      case LeadSelectionStrategy.RANDOM:
-        return team[Math.floor(Math.random() * team.length)];
-
-      case LeadSelectionStrategy.MOST_PREFERENCES:
-        return [...team].sort((a, b) => {
-          const aScore = this.getParticipantEngagementScore(a);
-          const bScore = this.getParticipantEngagementScore(b);
-          return bScore - aScore;
-        })[0];
-
-      case LeadSelectionStrategy.MOST_SKILLS:
-        return [...team].sort((a, b) => b.skills.length - a.skills.length)[0];
-
-      case LeadSelectionStrategy.FIRST_REGISTERED:
-        return [...team].sort((a, b) => {
-          const aDate = a.participant.createdAt?.getTime() || 0;
-          const bDate = b.participant.createdAt?.getTime() || 0;
-          return aDate - bDate;
-        })[0];
-
-      default:
-        return team[0];
-    }
+    return this.selectTeamLeadAndCoLead(team, strategy).lead;
   }
 
   private calculateStatistics(
@@ -1641,6 +1717,7 @@ export class TeamFormationService {
     teamName: string,
     participantIds: string[],
     leadParticipantId: string,
+    coLeadParticipantId: string,
     briefId?: string,
   ): Promise<Team> {
     // Generate invite code
@@ -1661,13 +1738,22 @@ export class TeamFormationService {
     const team = this.teamRepository.create(teamData);
     const savedTeam = await this.teamRepository.save(team);
 
-    // Create team members
+    // Create team members with appropriate roles
     const members: TeamMember[] = [];
     for (const participantId of participantIds) {
+      let role: TeamRole;
+      if (participantId === leadParticipantId) {
+        role = TeamRole.LEAD;
+      } else if (participantId === coLeadParticipantId) {
+        role = TeamRole.CO_LEAD;
+      } else {
+        role = TeamRole.MEMBER;
+      }
+      
       const member = this.teamMemberRepository.create({
         teamId: savedTeam.id,
         participantId,
-        role: participantId === leadParticipantId ? TeamRole.LEAD : TeamRole.MEMBER,
+        role,
       });
       members.push(member);
     }
