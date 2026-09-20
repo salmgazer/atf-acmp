@@ -1,3 +1,6 @@
+// Brief scoring utilities
+export * from "./brief-scoring";
+
 /**
  * Generate initials from name
  */

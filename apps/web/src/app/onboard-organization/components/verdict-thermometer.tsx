@@ -1,14 +1,14 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { getFitBandLabel, getImpactBandLabel, getFitBandColor } from "../scoring";
+import { getFitBandLabel, getImpactBandLabel, getFitBandColor, type BriefFitBand, type BriefImpactBand } from "../scoring";
 import { CheckCircle2, AlertTriangle, XCircle, Zap } from "lucide-react";
 
 interface VerdictThermometerProps {
   fitScore: number;
-  fitBand: string;
+  fitBand: BriefFitBand;
   impactScore: number | null;
-  impactBand: string | null;
+  impactBand: BriefImpactBand | null;
   scoreOverride: string | null;
 }
 

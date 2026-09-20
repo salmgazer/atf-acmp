@@ -1,4 +1,8 @@
 // Types for the onboarding form
+// Re-export scoring types from shared package
+export type { ScoringResult, BriefFitBand, BriefImpactBand } from "@acmp/shared";
+import type { ScoringAnswers } from "@acmp/shared";
+export type { ScoringAnswers };
 
 export const VALID_COUNTRIES = ["Ghana", "Nigeria", "Kenya", "South Africa"] as const;
 export type ValidCountry = (typeof VALID_COUNTRIES)[number];
@@ -71,25 +75,6 @@ export interface SecondaryContact {
   phone?: string;
 }
 
-export interface ScoringAnswers {
-  q1: string;
-  q1_text?: string;
-  q2: string;
-  q2_text?: string;
-  q3: string;
-  q3_text?: string;
-  q4: string;
-  q4_text?: string;
-  q5: string;
-  q5_text?: string;
-  q6: string;
-  q6_text?: string;
-  q7: string;
-  q7_text?: string;
-  q8: string;
-  q8_text?: string;
-}
-
 export interface Opportunity {
   title: string;
   description: string;
@@ -119,16 +104,6 @@ export interface FormState {
   org: OrganizationInfo;
   opportunities: Opportunity[];
   consentGiven: boolean;
-}
-
-export interface ScoringResult {
-  fitScore: number;
-  fitBand: string;
-  scoreOverride: string | null;
-  depthScore: number | null;
-  breadthScore: number | null;
-  impactScore: number | null;
-  impactBand: string | null;
 }
 
 // Initial empty opportunity

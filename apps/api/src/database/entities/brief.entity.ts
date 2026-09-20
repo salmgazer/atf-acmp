@@ -4,6 +4,20 @@ import { Cohort } from "./cohort.entity";
 import { Organization } from "./organization.entity";
 import { Vertical } from "./vertical.entity";
 
+// Import and re-export scoring utilities from @acmp/shared (single source of truth)
+import {
+  calculateBriefScores as _calculateBriefScores,
+  type ScoringAnswers as _ScoringAnswers,
+  type ScoringResult,
+  type BriefFitBand as BriefFitBandType,
+  type BriefImpactBand as BriefImpactBandType,
+} from "@acmp/shared";
+
+// Re-export for backward compatibility
+export const calculateBriefScores = _calculateBriefScores;
+export type ScoringAnswers = _ScoringAnswers;
+export type { ScoringResult, BriefFitBandType, BriefImpactBandType };
+
 export enum BriefStatus {
   DRAFT = "draft",
   SUBMITTED = "submitted",
@@ -13,6 +27,7 @@ export enum BriefStatus {
   REVISION_REQUESTED = "revision_requested",
 }
 
+// Enums for TypeORM (must be defined here for database column types)
 export enum BriefFitBand {
   STRONG_FIT = "strong_fit",
   PROMISING = "promising",
@@ -33,151 +48,6 @@ export interface SecondaryContact {
   role?: string;
   email?: string;
   phone?: string;
-}
-
-export interface ScoringAnswers {
-  q1?: string;
-  q1_text?: string;
-  q2?: string;
-  q2_text?: string;
-  q3?: string;
-  q3_text?: string;
-  q4?: string;
-  q4_text?: string;
-  q5?: string;
-  q5_text?: string;
-  q6?: string;
-  q6_text?: string;
-  q7?: string;
-  q7_text?: string;
-  q8?: string;
-  q8_text?: string;
-}
-
-// Scoring calculation utilities
-const Q_SCORES: Record<string, Record<string, number>> = {
-  q1: {
-    routine: 0,
-    judgement: 25,
-    sense_making: 25,
-    no_system: 0,
-    new_capability: 25,
-  },
-  q2: {
-    good_records: 25,
-    partial: 12,
-    very_little: 0,
-  },
-  q3: {
-    straightforward: 0,
-    mixed: 10,
-    hard: 15,
-  },
-  q4: {
-    yes: 10,
-    no_exact: 0,
-  },
-  q5: {
-    clear: 15,
-    vague: 5,
-  },
-  q6: {
-    very_often: 10,
-    now_and_then: 3,
-  },
-};
-
-const DEPTH_SCORES: Record<string, number> = {
-  convenient: 1,
-  meaningful: 2,
-  transformative: 3,
-};
-
-const BREADTH_SCORES: Record<string, number> = {
-  local: 1,
-  thousands: 2,
-  national: 3,
-};
-
-export function calculateBriefScores(answers: ScoringAnswers): {
-  fitScore: number;
-  fitBand: BriefFitBand;
-  scoreOverride: string | null;
-  depthScore: number | null;
-  breadthScore: number | null;
-  impactScore: number | null;
-  impactBand: BriefImpactBand | null;
-  priorityScore: number;
-} {
-  // Calculate fit score (0-100)
-  let fitScore = 0;
-  const questions = ["q1", "q2", "q3", "q4", "q5", "q6"] as const;
-  for (const q of questions) {
-    const key = answers[q];
-    const qMap = Q_SCORES[q];
-    if (key && qMap && qMap[key] !== undefined) {
-      fitScore += qMap[key];
-    }
-  }
-
-  // Check for overrides
-  let scoreOverride: string | null = null;
-  if (answers.q1 === "no_system") {
-    scoreOverride = "Score override: digitise first";
-  } else if (answers.q2 === "very_little") {
-    scoreOverride = "Score override: collect data first";
-  } else if (answers.q1 === "routine" && answers.q3 === "straightforward") {
-    scoreOverride = "Score override: simpler tool";
-  }
-
-  // Determine fit band
-  let fitBand: BriefFitBand;
-  if (scoreOverride) {
-    if (scoreOverride.includes("digitise")) fitBand = BriefFitBand.OVERRIDE_DIGITISE;
-    else if (scoreOverride.includes("collect data")) fitBand = BriefFitBand.OVERRIDE_COLLECT_DATA;
-    else fitBand = BriefFitBand.OVERRIDE_SIMPLER_TOOL;
-  } else if (fitScore >= 70) {
-    fitBand = BriefFitBand.STRONG_FIT;
-  } else if (fitScore >= 45) {
-    fitBand = BriefFitBand.PROMISING;
-  } else {
-    fitBand = BriefFitBand.DIFFERENT_SOLUTION;
-  }
-
-  // Calculate impact scores
-  const depthScore = answers.q7 && DEPTH_SCORES[answers.q7] !== undefined ? DEPTH_SCORES[answers.q7] : null;
-  const breadthScore = answers.q8 && BREADTH_SCORES[answers.q8] !== undefined ? BREADTH_SCORES[answers.q8] : null;
-  const impactScore = depthScore !== null && breadthScore !== null ? depthScore * breadthScore : null;
-
-  // Determine impact band
-  let impactBand: BriefImpactBand | null = null;
-  if (impactScore !== null) {
-    if (impactScore >= 7) impactBand = BriefImpactBand.HIGH_IMPACT;
-    else if (impactScore >= 4) impactBand = BriefImpactBand.MODERATE_IMPACT;
-    else impactBand = BriefImpactBand.LOWER_IMPACT;
-  }
-
-  // Calculate priority score (combined metric for sorting: fitScore + impactScore * 10)
-  // This gives a score range of roughly 0-190 (max fitScore 100 + max impactScore 9 * 10)
-  // Override briefs get a penalty of -50 to rank them lower
-  let priorityScore = fitScore;
-  if (impactScore !== null) {
-    priorityScore += impactScore * 10;
-  }
-  if (scoreOverride) {
-    priorityScore -= 50; // Penalize override cases
-  }
-
-  return {
-    fitScore,
-    fitBand,
-    scoreOverride,
-    depthScore,
-    breadthScore,
-    impactScore,
-    impactBand,
-    priorityScore,
-  };
 }
 
 @Entity("briefs")
