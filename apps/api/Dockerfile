@@ -5,8 +5,10 @@
 
 # ------------------------------------------------------------------------------
 # Base stage - shared between build and production
+# Using Node.js 20 LTS for better TypeScript/ESM compatibility in development
+# Node.js 22 has stricter ESM enforcement that breaks ts-node with directory imports
 # ------------------------------------------------------------------------------
-FROM node:22-alpine AS base
+FROM node:20-alpine AS base
 RUN apk add --no-cache libc6-compat python3 make g++ vips-dev
 WORKDIR /app
 
@@ -47,7 +49,7 @@ RUN ls -la node_modules/sharp 2>/dev/null || ls -la apps/api/node_modules/sharp 
 # ------------------------------------------------------------------------------
 # Production stage - minimal runtime image
 # ------------------------------------------------------------------------------
-FROM node:22-alpine AS production
+FROM node:20-alpine AS production
 
 WORKDIR /app
 

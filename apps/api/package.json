@@ -3,7 +3,7 @@
   "version": "0.1.1",
   "private": true,
   "scripts": {
-    "dev": "nest start --watch",
+    "dev": "nest start --watch --exec \"node -r tsconfig-paths/register\"",
     "build": "nest build",
     "start": "nest start",
     "start:prod": "node dist/main",
