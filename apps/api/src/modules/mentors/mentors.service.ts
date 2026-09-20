@@ -216,12 +216,23 @@ export class MentorsService {
     // Fetch session stats and earnings for all mentors
     const mentorIds = mentors.map(m => m.id);
     
+    // Early return if no mentors - avoid empty IN clause SQL error
+    if (mentorIds.length === 0) {
+      return {
+        data: [],
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+    }
+    
     // Get confirmed session counts (confirmed by mentor)
     const confirmedSessionCounts = await this.scheduledSessionRepository
       .createQueryBuilder("session")
       .select("session.mentorId", "mentorId")
       .addSelect("COUNT(*)", "count")
-      .where("session.mentorId IN (:...mentorIds)", { mentorIds: mentorIds.length > 0 ? mentorIds : [''] })
+      .where("session.mentorId IN (:...mentorIds)", { mentorIds })
       .andWhere("session.confirmedByMentor = true")
       .andWhere("session.status NOT IN (:...excludedStatuses)", { 
         excludedStatuses: [ScheduledSessionStatus.CANCELLED, ScheduledSessionStatus.DECLINED] 
@@ -234,7 +245,7 @@ export class MentorsService {
       .createQueryBuilder("session")
       .select("session.mentorId", "mentorId")
       .addSelect("COUNT(*)", "count")
-      .where("session.mentorId IN (:...mentorIds)", { mentorIds: mentorIds.length > 0 ? mentorIds : [''] })
+      .where("session.mentorId IN (:...mentorIds)", { mentorIds })
       .andWhere("session.status = :status", { status: ScheduledSessionStatus.COMPLETED })
       .groupBy("session.mentorId")
       .getRawMany();
@@ -244,7 +255,7 @@ export class MentorsService {
       .createQueryBuilder("payment")
       .select("payment.mentorId", "mentorId")
       .addSelect("COALESCE(SUM(payment.amount), 0)", "totalPaid")
-      .where("payment.mentorId IN (:...mentorIds)", { mentorIds: mentorIds.length > 0 ? mentorIds : [''] })
+      .where("payment.mentorId IN (:...mentorIds)", { mentorIds })
       .andWhere("payment.status = :status", { status: MentorPaymentStatus.COMPLETED })
       .groupBy("payment.mentorId")
       .getRawMany();

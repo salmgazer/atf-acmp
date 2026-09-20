@@ -25,6 +25,11 @@ export class DeadlinesDto {
   @IsOptional()
   teamFormationEnd?: string;
 
+  @ApiPropertyOptional({ description: "Brief selection end date (ISO 8601)" })
+  @IsDateString()
+  @IsOptional()
+  briefSelectionEnd?: string;
+
   @ApiPropertyOptional({ description: "Stage 1 end date (ISO 8601)" })
   @IsDateString()
   @IsOptional()
