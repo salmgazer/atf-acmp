@@ -25,7 +25,7 @@ export function CohortCard({ cohort, onDuplicate, onDelete }: CohortCardProps) {
 
   const getNextDeadline = () => {
     const deadlineKeys = [
-      "registrationEnd",
+      "briefSelectionEnd",
       "teamFormationEnd",
     ] as const;
 

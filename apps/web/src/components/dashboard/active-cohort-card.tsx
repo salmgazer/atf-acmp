@@ -22,7 +22,7 @@ interface ActiveCohortCardProps {
 export function ActiveCohortCard({ cohort, statistics, isLoading }: ActiveCohortCardProps) {
   const getNextDeadline = () => {
     const deadlines = [
-      { key: "registrationEnd", label: "Registration" },
+      { key: "briefSelectionEnd", label: "Brief Selection" },
       { key: "teamFormationEnd", label: "Team Formation" },
       { key: "stage1End", label: "Stage 1" },
       { key: "stage2End", label: "Stage 2" },

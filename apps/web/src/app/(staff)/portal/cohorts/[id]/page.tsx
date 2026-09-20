@@ -408,10 +408,10 @@ function CohortDetailContent({ id }: { id: string }) {
             <Separator className="my-4" />
             <dl className="space-y-4">
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">Registration</dt>
+                <dt className="text-muted-foreground">Brief Selection</dt>
                 <dd className="font-medium">
-                  {cohort.deadlines.registrationEnd
-                    ? format(new Date(cohort.deadlines.registrationEnd), "MMM d, yyyy")
+                  {cohort.deadlines.briefSelectionEnd
+                    ? format(new Date(cohort.deadlines.briefSelectionEnd), "MMM d, yyyy")
                     : "—"}
                 </dd>
               </div>
