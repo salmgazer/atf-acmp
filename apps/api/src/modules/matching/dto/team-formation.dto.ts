@@ -27,6 +27,11 @@ export enum LeadSelectionStrategy {
 }
 
 /**
+ * Skill profile classification
+ */
+export type SkillProfile = "technical" | "non-technical" | "hybrid";
+
+/**
  * Configuration for auto team formation algorithm
  */
 export class TeamFormationConfigDto {
@@ -79,6 +84,26 @@ export class TeamFormationConfigDto {
   prioritizeSkillDiversity?: boolean = true;
 
   @ApiPropertyOptional({
+    description: "Target ratio of technical members in a team (0-1, default 0.5 for 50/50)",
+    default: 0.5,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  targetTechRatio?: number = 0.5;
+
+  @ApiPropertyOptional({
+    description: "Weight for tech/non-tech balance in scoring (0-1)",
+    default: 0.25,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  techBalanceWeight?: number = 0.25;
+
+  @ApiPropertyOptional({
     description: "Strategy for selecting team lead",
     enum: LeadSelectionStrategy,
     default: LeadSelectionStrategy.MOST_PREFERENCES,
@@ -110,6 +135,14 @@ export class TeamFormationConfigDto {
   @IsOptional()
   @IsBoolean()
   forceCrossCountry?: boolean = false;
+
+  @ApiPropertyOptional({
+    description: "Use brief-centric round-robin assignment (assign briefs to teams, not teams to briefs)",
+    default: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  useBriefCentricAssignment?: boolean = true;
 }
 
 export class RunTeamFormationDto {
@@ -189,6 +222,7 @@ export class ProposedTeamDto {
     skills: string[];
     interests: string[];
     isProposedLead: boolean;
+    skillProfile: SkillProfile;
   }>;
 
   @ApiProperty({ description: "Proposed team lead participant ID" })
@@ -203,6 +237,8 @@ export class ProposedTeamDto {
     interestScore: number;
     verticalScore: number;
     countryScore: number;
+    techBalanceScore: number;
+    total: number;
   };
 
   @ApiProperty({ description: "Countries represented in the team" })
@@ -213,6 +249,26 @@ export class ProposedTeamDto {
 
   @ApiProperty({ description: "Combined vertical preferences" })
   verticalPreferences: string[];
+
+  @ApiProperty({ description: "Tech/non-tech skill balance stats" })
+  skillBalance: {
+    techCount: number;
+    nonTechCount: number;
+    techRatio: number;
+    profiles: Record<SkillProfile, number>;
+  };
+
+  @ApiPropertyOptional({ description: "Assigned brief ID (for brief-centric formation)" })
+  assignedBriefId?: string;
+
+  @ApiPropertyOptional({ description: "Assigned brief title" })
+  assignedBriefTitle?: string;
+
+  @ApiPropertyOptional({ description: "Assigned brief vertical ID" })
+  assignedVerticalId?: string;
+
+  @ApiPropertyOptional({ description: "Assigned brief vertical name" })
+  assignedVerticalName?: string;
 }
 
 /**
@@ -243,6 +299,7 @@ export class ProposedBackfillDto {
     country: string;
     skills: string[];
     interests: string[];
+    skillProfile: SkillProfile;
   }>;
 
   @ApiProperty({ description: "Compatibility score of proposed additions (0-100)" })
@@ -259,6 +316,19 @@ export class ProposedBackfillDto {
 
   @ApiProperty({ description: "Whether backfill introduces cross-country members" })
   introducesCrossCountry: boolean;
+
+  @ApiProperty({ 
+    description: "Whether members will be added as PENDING (requiring team lead approval)",
+    default: true,
+  })
+  addAsPending: boolean;
+
+  @ApiProperty({ description: "Skill balance after adding proposed members" })
+  skillBalanceAfter: {
+    techCount: number;
+    nonTechCount: number;
+    techRatio: number;
+  };
 }
 
 /**
@@ -279,6 +349,55 @@ export class BackfillStatsDto {
 
   @ApiProperty({ description: "Teams that remain undersized after backfill (not enough compatible participants)" })
   teamsStillUndersizedCount: number;
+
+  @ApiProperty({ description: "Number of backfill members added as PENDING (needing approval)" })
+  pendingMemberCount: number;
+}
+
+/**
+ * Brief assignment statistics for round-robin approach
+ */
+export class BriefAssignmentStatsDto {
+  @ApiProperty({ description: "Total approved briefs available" })
+  totalApprovedBriefs: number;
+
+  @ApiProperty({ description: "Briefs that received team assignments" })
+  briefsAssigned: number;
+
+  @ApiProperty({ description: "Briefs without teams (not enough participants)" })
+  briefsWithoutTeams: number;
+
+  @ApiProperty({ description: "Existing teams without briefs that got assigned" })
+  existingTeamsAssignedBriefs: number;
+
+  @ApiProperty({ description: "Briefs assigned by vertical" })
+  assignmentsByVertical: Record<string, number>;
+}
+
+/**
+ * Skill balance statistics
+ */
+export class SkillBalanceStatsDto {
+  @ApiProperty({ description: "Total technical participants" })
+  totalTechnical: number;
+
+  @ApiProperty({ description: "Total non-technical participants" })
+  totalNonTechnical: number;
+
+  @ApiProperty({ description: "Total hybrid participants (both tech and non-tech skills)" })
+  totalHybrid: number;
+
+  @ApiProperty({ description: "Average tech ratio across proposed teams (0-1)" })
+  averageTechRatio: number;
+
+  @ApiProperty({ description: "Teams with good balance (40-60% tech)" })
+  wellBalancedTeamCount: number;
+
+  @ApiProperty({ description: "Teams that are tech-heavy (>60% tech)" })
+  techHeavyTeamCount: number;
+
+  @ApiProperty({ description: "Teams that are non-tech-heavy (>60% non-tech)" })
+  nonTechHeavyTeamCount: number;
 }
 
 /**
@@ -323,6 +442,47 @@ export class TeamFormationStatsDto {
 
   @ApiProperty({ description: "Backfill statistics", type: BackfillStatsDto })
   backfillStats: BackfillStatsDto;
+
+  @ApiProperty({ description: "Skill balance statistics", type: SkillBalanceStatsDto })
+  skillBalanceStats: SkillBalanceStatsDto;
+
+  @ApiProperty({ description: "Brief assignment statistics (for round-robin mode)", type: BriefAssignmentStatsDto })
+  briefAssignmentStats: BriefAssignmentStatsDto;
+}
+
+/**
+ * Proposed brief assignment to an existing team without a brief
+ */
+export class ProposedBriefAssignmentDto {
+  @ApiProperty({ description: "Team ID" })
+  teamId: string;
+
+  @ApiProperty({ description: "Team name" })
+  teamName: string;
+
+  @ApiProperty({ description: "Brief ID to assign" })
+  briefId: string;
+
+  @ApiProperty({ description: "Brief title" })
+  briefTitle: string;
+
+  @ApiProperty({ description: "Vertical ID" })
+  verticalId: string;
+
+  @ApiProperty({ description: "Vertical name" })
+  verticalName: string;
+
+  @ApiProperty({ description: "Match score based on team's collective interests (0-100)" })
+  matchScore: number;
+
+  @ApiProperty({ description: "Current team member count" })
+  teamMemberCount: number;
+
+  @ApiProperty({ description: "Team's collective vertical preferences" })
+  teamVerticalPreferences: string[];
+
+  @ApiProperty({ description: "Number of team members who had this brief in their rankings" })
+  membersWithBriefRanking: number;
 }
 
 /**
@@ -343,9 +503,15 @@ export class TeamFormationPreviewDto {
 
   @ApiProperty({ 
     type: [ProposedBackfillDto],
-    description: "Proposed backfills for existing undersized teams (applied first)" 
+    description: "Proposed backfills for existing undersized teams (members added as PENDING)" 
   })
   proposedBackfills: ProposedBackfillDto[];
+
+  @ApiProperty({ 
+    type: [ProposedBriefAssignmentDto],
+    description: "Proposed brief assignments to existing teams without briefs" 
+  })
+  proposedBriefAssignments: ProposedBriefAssignmentDto[];
 
   @ApiProperty({ type: [ProposedTeamDto] })
   proposedTeams: ProposedTeamDto[];
@@ -355,6 +521,12 @@ export class TeamFormationPreviewDto {
     type: [String],
   })
   unassignedParticipantIds: string[];
+
+  @ApiProperty({
+    description: "Brief IDs that could not be assigned to a team (not enough participants)",
+    type: [String],
+  })
+  unassignedBriefIds: string[];
 
   @ApiProperty({ type: TeamFormationConfigDto })
   configUsed: TeamFormationConfigDto;
@@ -404,4 +576,13 @@ export class ParticipantFormationStatusDto {
 
   @ApiProperty()
   verticalPreferenceCount: number;
+
+  @ApiProperty({ description: "Skill profile classification (technical, non-technical, hybrid)" })
+  skillProfile: SkillProfile;
+
+  @ApiProperty({ description: "Number of technical skills" })
+  techSkillCount: number;
+
+  @ApiProperty({ description: "Number of non-technical skills" })
+  nonTechSkillCount: number;
 }

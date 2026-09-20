@@ -1,3 +1,6 @@
+// Skills and interests
+export * from "./skills";
+
 // Countries supported in ATF AI Challenge
 export const SUPPORTED_COUNTRIES = ["GH", "NG", "KE", "ZA"] as const;
 

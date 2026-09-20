@@ -37,35 +37,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { SKILL_NAMES, INTEREST_OPTIONS as SHARED_INTEREST_OPTIONS } from "@acmp/shared";
 
-// Skills options
-const SKILL_OPTIONS = [
-  "Python",
-  "JavaScript/TypeScript",
-  "Machine Learning",
-  "Data Science",
-  "Mobile Development",
-  "UI/UX Design",
-  "Project Management",
-  "Business Strategy",
-  "Research",
-  "Content Writing",
-  "Marketing",
-  "Public Speaking",
-];
-
-const INTEREST_OPTIONS = [
-  "Artificial Intelligence",
-  "Climate & Sustainability",
-  "Healthcare & Medicine",
-  "Education",
-  "FinTech",
-  "Agriculture",
-  "E-commerce",
-  "Social Impact",
-  "Entertainment",
-  "Transportation",
-];
+// Use shared skill and interest options
+const SKILL_OPTIONS = [...SKILL_NAMES];
+const INTEREST_OPTIONS = [...SHARED_INTEREST_OPTIONS];
 
 const ROLE_OPTIONS = [
   { value: "leader", label: "Team Leader", description: "Lead and coordinate the team" },

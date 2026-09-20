@@ -3,13 +3,15 @@ import { getRepositoryToken } from "@nestjs/typeorm";
 import { NotFoundException, BadRequestException } from "@nestjs/common";
 import { TeamFormationService } from "./team-formation.service";
 import { LeadSelectionStrategy } from "./dto/team-formation.dto";
-import { Team, TeamMember, TeamStatus, TeamRole } from "@/database/entities/team.entity";
+import { Team, TeamMember, TeamStatus, TeamRole, TeamMemberStatus } from "@/database/entities/team.entity";
 import { Cohort } from "@/database/entities/cohort.entity";
 import {
   Participant,
   ParticipantPreference,
   ParticipantStatus,
 } from "@/database/entities/participant.entity";
+import { Brief } from "@/database/entities/brief.entity";
+import { Vertical } from "@/database/entities/vertical.entity";
 import {
   createMockRepository,
   createMockQueryBuilder,
@@ -24,6 +26,8 @@ describe("TeamFormationService", () => {
   let cohortRepository: ReturnType<typeof createMockRepository>;
   let participantRepository: ReturnType<typeof createMockRepository>;
   let preferenceRepository: ReturnType<typeof createMockRepository>;
+  let briefRepository: ReturnType<typeof createMockRepository>;
+  let verticalRepository: ReturnType<typeof createMockRepository>;
 
   const mockCohort = createTestCohort({
     id: "cohort-123",
@@ -64,6 +68,8 @@ describe("TeamFormationService", () => {
     cohortRepository = createMockRepository();
     participantRepository = createMockRepository();
     preferenceRepository = createMockRepository();
+    briefRepository = createMockRepository();
+    verticalRepository = createMockRepository();
 
     // Setup mock query builder for team member repository
     const mockQB = createMockQueryBuilder();
@@ -78,6 +84,10 @@ describe("TeamFormationService", () => {
     // Default: no existing teams to backfill
     teamRepository.find.mockResolvedValue([]);
 
+    // Default: no briefs or verticals (for brief-centric formation)
+    briefRepository.find.mockResolvedValue([]);
+    verticalRepository.find.mockResolvedValue([]);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TeamFormationService,
@@ -86,6 +96,8 @@ describe("TeamFormationService", () => {
         { provide: getRepositoryToken(Cohort), useValue: cohortRepository },
         { provide: getRepositoryToken(Participant), useValue: participantRepository },
         { provide: getRepositoryToken(ParticipantPreference), useValue: preferenceRepository },
+        { provide: getRepositoryToken(Brief), useValue: briefRepository },
+        { provide: getRepositoryToken(Vertical), useValue: verticalRepository },
       ],
     }).compile();
 
@@ -208,7 +220,9 @@ describe("TeamFormationService", () => {
         createMockPreference("p6", { crossCountryWilling: false }),
       ]);
 
-      const result = await service.runTeamFormation("cohort-123");
+      const result = await service.runTeamFormation("cohort-123", {
+        config: { useBriefCentricAssignment: false },
+      });
 
       // Should form 2 same-country teams
       expect(result.proposedTeams.length).toBe(2);
@@ -241,7 +255,9 @@ describe("TeamFormationService", () => {
         createMockPreference("p3", { crossCountryWilling: true }),
       ]);
 
-      const result = await service.runTeamFormation("cohort-123");
+      const result = await service.runTeamFormation("cohort-123", {
+        config: { useBriefCentricAssignment: false },
+      });
 
       expect(result.proposedTeams.length).toBe(1);
       expect(result.proposedTeams[0].isCrossCountry).toBe(true);
@@ -273,6 +289,7 @@ describe("TeamFormationService", () => {
         config: {
           teamSizeMin: 2,
           teamSizeMax: 2,
+          useBriefCentricAssignment: false,
         },
       });
 
@@ -349,7 +366,9 @@ describe("TeamFormationService", () => {
         createMockPreference("p3"),
       ]);
 
-      await service.runTeamFormation("cohort-123");
+      await service.runTeamFormation("cohort-123", {
+        config: { useBriefCentricAssignment: false },
+      });
 
       // Setup for finalize
       teamRepository.create.mockImplementation((data) => ({ ...data, id: "new-team-id" }));
@@ -503,6 +522,7 @@ describe("TeamFormationService", () => {
       const result = await service.runTeamFormation("cohort-123", {
         config: {
           leadSelectionStrategy: LeadSelectionStrategy.MOST_PREFERENCES,
+          useBriefCentricAssignment: false,
         },
       });
 
@@ -532,6 +552,7 @@ describe("TeamFormationService", () => {
       const result = await service.runTeamFormation("cohort-123", {
         config: {
           leadSelectionStrategy: LeadSelectionStrategy.MOST_SKILLS,
+          useBriefCentricAssignment: false,
         },
       });
 
@@ -564,6 +585,7 @@ describe("TeamFormationService", () => {
       const result = await service.runTeamFormation("cohort-123", {
         config: {
           prioritizeSkillDiversity: true,
+          useBriefCentricAssignment: false,
         },
       });
 
@@ -594,6 +616,7 @@ describe("TeamFormationService", () => {
       const result = await service.runTeamFormation("cohort-123", {
         config: {
           countryWeight: 1.0, // High weight for country match
+          useBriefCentricAssignment: false,
         },
       });
 
@@ -669,7 +692,9 @@ describe("TeamFormationService", () => {
       // No preferences set
       preferenceRepository.find.mockResolvedValue([]);
 
-      const result = await service.runTeamFormation("cohort-123");
+      const result = await service.runTeamFormation("cohort-123", {
+        config: { useBriefCentricAssignment: false },
+      });
 
       // Should still form teams, defaulting crossCountryWilling to true
       expect(result.proposedTeams.length).toBe(1);
@@ -708,7 +733,9 @@ describe("TeamFormationService", () => {
 
       preferenceRepository.find.mockResolvedValue([]);
 
-      const result = await service.runTeamFormation("cohort-123");
+      const result = await service.runTeamFormation("cohort-123", {
+        config: { useBriefCentricAssignment: false },
+      });
 
       expect(result.proposedTeams.length).toBe(1);
     });
@@ -743,10 +770,12 @@ describe("TeamFormationService", () => {
           {
             participantId: "member-1",
             participant: createMockParticipant("member-1", "Kenya"),
+            status: TeamMemberStatus.CONFIRMED,
           },
           {
             participantId: "member-2",
             participant: createMockParticipant("member-2", "Kenya"),
+            status: TeamMemberStatus.CONFIRMED,
           },
         ],
       };
@@ -802,6 +831,7 @@ describe("TeamFormationService", () => {
           {
             participantId: "member-1",
             participant: createMockParticipant("member-1", "Kenya"),
+            status: TeamMemberStatus.CONFIRMED,
           },
         ],
       };
@@ -846,6 +876,7 @@ describe("TeamFormationService", () => {
           {
             participantId: "member-1",
             participant: createMockParticipant("member-1", "Kenya"),
+            status: TeamMemberStatus.CONFIRMED,
           },
         ],
       };
@@ -886,10 +917,12 @@ describe("TeamFormationService", () => {
           {
             participantId: "member-1",
             participant: createMockParticipant("member-1", "Kenya"),
+            status: TeamMemberStatus.CONFIRMED,
           },
           {
             participantId: "member-2",
             participant: createMockParticipant("member-2", "Kenya"),
+            status: TeamMemberStatus.CONFIRMED,
           },
         ],
       };
@@ -920,8 +953,10 @@ describe("TeamFormationService", () => {
         createMockPreference("member-2"),
       ]);
 
-      // Run formation to generate preview
-      await service.runTeamFormation("cohort-123");
+      // Run formation to generate preview (use legacy mode to ensure teams are formed)
+      await service.runTeamFormation("cohort-123", {
+        config: { useBriefCentricAssignment: false },
+      });
 
       // Mock save operations
       teamRepository.create.mockImplementation((data) => ({ ...data, id: `new-team-${Date.now()}` }));
@@ -951,6 +986,7 @@ describe("TeamFormationService", () => {
           {
             participantId: "member-1",
             participant: createMockParticipant("member-1", "Kenya"),
+            status: TeamMemberStatus.CONFIRMED,
           },
         ],
       };
@@ -1010,8 +1046,8 @@ describe("TeamFormationService", () => {
           status: TeamStatus.ACTIVE,
           briefId: null,
           members: [
-            { participantId: "m1", participant: createMockParticipant("m1", "Kenya") },
-            { participantId: "m2", participant: createMockParticipant("m2", "Kenya") },
+            { participantId: "m1", participant: createMockParticipant("m1", "Kenya"), status: TeamMemberStatus.CONFIRMED },
+            { participantId: "m2", participant: createMockParticipant("m2", "Kenya"), status: TeamMemberStatus.CONFIRMED },
           ],
         },
         {
@@ -1021,7 +1057,7 @@ describe("TeamFormationService", () => {
           status: TeamStatus.ACTIVE,
           briefId: null,
           members: [
-            { participantId: "m3", participant: createMockParticipant("m3", "Nigeria") },
+            { participantId: "m3", participant: createMockParticipant("m3", "Nigeria"), status: TeamMemberStatus.CONFIRMED },
           ],
         },
       ];
@@ -1068,8 +1104,8 @@ describe("TeamFormationService", () => {
         status: TeamStatus.ACTIVE,
         briefId: "brief-1",
         members: [
-          { participantId: "m1", participant: createMockParticipant("m1", "Kenya") },
-          { participantId: "m2", participant: createMockParticipant("m2", "Kenya") },
+          { participantId: "m1", participant: createMockParticipant("m1", "Kenya"), status: TeamMemberStatus.CONFIRMED },
+          { participantId: "m2", participant: createMockParticipant("m2", "Kenya"), status: TeamMemberStatus.CONFIRMED },
         ],
       };
 
