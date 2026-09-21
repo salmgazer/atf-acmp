@@ -4,11 +4,24 @@ set -e
 echo "Starting ACMP API..."
 echo "NODE_ENV: $NODE_ENV"
 
-# Determine the correct dist path (NestJS monorepo outputs to dist/apps/api/src/)
-DIST_PATH="dist/apps/api/src"
-if [ ! -d "$DIST_PATH" ]; then
-  # Fallback for different build configurations
+# Debug: Show what's actually in the dist folder
+echo "Contents of /app/dist:"
+ls -la /app/dist/ 2>/dev/null || echo "dist folder not found"
+
+# Determine the correct dist path
+# NestJS monorepo outputs to dist/apps/api/src/ when using project references
+DIST_PATH=""
+if [ -f "dist/apps/api/src/main.js" ]; then
+  DIST_PATH="dist/apps/api/src"
+elif [ -f "dist/src/main.js" ]; then
   DIST_PATH="dist/src"
+elif [ -f "dist/main.js" ]; then
+  DIST_PATH="dist"
+else
+  echo "ERROR: Cannot find main.js in any expected location!"
+  echo "Checking dist structure..."
+  find /app/dist -name "main.js" 2>/dev/null || echo "No main.js found"
+  exit 1
 fi
 
 echo "Using dist path: $DIST_PATH"
