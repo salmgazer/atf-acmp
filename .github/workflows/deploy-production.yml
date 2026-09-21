@@ -58,7 +58,7 @@ jobs:
         run: npm run test --if-present
 
   # ----------------------------------------------------------------------------
-  # Run Database Migrations (conditional)
+  # Run Database Migrations via ECS Task (runs inside VPC to access RDS)
   # ----------------------------------------------------------------------------
   run-migrations:
     name: Run Migrations
@@ -78,39 +78,160 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          aws-region: eu-central-1
+          aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          role-session-name: GitHubActionsMigrationsProduction
+          role-session-name: GitHubActionsRunMigrationsProduction
 
-      - name: Get database password from Secrets Manager
-        id: get-db-password
-        run: |
-          DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id "${{ secrets.DATABASE_PASSWORD_ARN }}" --query SecretString --output text)
-          echo "::add-mask::$DB_PASSWORD"
-          echo "db_password=$DB_PASSWORD" >> $GITHUB_OUTPUT
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Get short commit hash
+        run: echo "IMAGE_TAG=${GITHUB_SHA:0:7}" >> $GITHUB_ENV
+
+      - name: Build migration image
+        uses: docker/build-push-action@v6
         with:
-          node-version: '22'
-          cache: 'npm'
+          context: .
+          file: ./apps/api/Dockerfile
+          target: production
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:${{ env.IMAGE_TAG }}-migration
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build API
-        run: npm run build -w @acmp/api
-
-      - name: Run migrations
-        working-directory: apps/api
-        env:
-          DATABASE_HOST: ${{ vars.DATABASE_HOST }}
-          DATABASE_PORT: 5432
-          DATABASE_USER: ${{ vars.DATABASE_USER }}
-          DATABASE_PASSWORD: ${{ steps.get-db-password.outputs.db_password }}
-          DATABASE_NAME: ${{ vars.DATABASE_NAME }}
-          DATABASE_SSL: true
-        run: npx typeorm migration:run -d dist/apps/api/src/database/data-source.js
+      - name: Run migrations via ECS task
+        run: |
+          echo "Running database migrations..."
+          
+          # Create the log group if it doesn't exist
+          aws logs create-log-group --log-group-name "/aws/ecs/acmp-production/migrations" 2>/dev/null || echo "Log group already exists or will be created"
+          
+          # Get network configuration from a running task (ECS Express Mode doesn't expose it via describe-services)
+          TASK_ARN=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service-name ${{ env.ECS_SERVICE_API }} \
+            --desired-status RUNNING \
+            --query 'taskArns[0]' \
+            --output text 2>/dev/null || echo "")
+          
+          if [ -z "$TASK_ARN" ] || [ "$TASK_ARN" == "None" ]; then
+            echo "No running tasks found. This is the first deployment - migrations will run on next deployment."
+            echo "For first-time setup, deploy the API first, then trigger migrations manually."
+            exit 0
+          fi
+          
+          # Get subnet from task attachment
+          SUBNET=$(aws ecs describe-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].attachments[0].details[?name==`subnetId`].value' \
+            --output text)
+          
+          # Get ENI to find security group
+          ENI_ID=$(aws ecs describe-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' \
+            --output text)
+          
+          SECURITY_GROUP=$(aws ec2 describe-network-interfaces \
+            --network-interface-ids "$ENI_ID" \
+            --query 'NetworkInterfaces[0].Groups[0].GroupId' \
+            --output text)
+          
+          echo "Found subnet: $SUBNET"
+          echo "Found security group: $SECURITY_GROUP"
+          
+          if [ -z "$SUBNET" ] || [ -z "$SECURITY_GROUP" ]; then
+            echo "Could not determine network configuration."
+            exit 1
+          fi
+          
+          # Register a one-off task definition for migrations
+          TASK_DEF=$(cat <<EOF
+          {
+            "family": "acmp-api-production-migration",
+            "networkMode": "awsvpc",
+            "requiresCompatibilities": ["FARGATE"],
+            "cpu": "256",
+            "memory": "512",
+            "executionRoleArn": "${{ vars.ECS_TASK_EXECUTION_ROLE_ARN }}",
+            "containerDefinitions": [
+              {
+                "name": "migration",
+                "image": "${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:${{ env.IMAGE_TAG }}-migration",
+                "essential": true,
+                "command": ["npx", "typeorm", "migration:run", "-d", "dist/src/database/data-source.js"],
+                "environment": [
+                  {"name": "NODE_ENV", "value": "production"},
+                  {"name": "DATABASE_HOST", "value": "${{ vars.DATABASE_HOST }}"},
+                  {"name": "DATABASE_PORT", "value": "5432"},
+                  {"name": "DATABASE_USER", "value": "${{ vars.DATABASE_USER }}"},
+                  {"name": "DATABASE_NAME", "value": "${{ vars.DATABASE_NAME }}"},
+                  {"name": "DATABASE_SSL", "value": "true"}
+                ],
+                "secrets": [
+                  {"name": "DATABASE_PASSWORD", "valueFrom": "${{ secrets.DATABASE_PASSWORD_ARN }}"}
+                ],
+                "logConfiguration": {
+                  "logDriver": "awslogs",
+                  "options": {
+                    "awslogs-group": "/aws/ecs/acmp-production/migrations",
+                    "awslogs-region": "${{ env.AWS_REGION }}",
+                    "awslogs-stream-prefix": "migration"
+                  }
+                }
+              }
+            ]
+          }
+          EOF
+          )
+          
+          # Register task definition
+          TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$TASK_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          
+          echo "Registered task definition: $TASK_DEF_ARN"
+          
+          # Run the migration task with ENABLED public IP to allow Secrets Manager access
+          MIGRATION_TASK_ARN=$(aws ecs run-task \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --task-definition "$TASK_DEF_ARN" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$SUBNET],securityGroups=[$SECURITY_GROUP],assignPublicIp=ENABLED}" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+          
+          echo "Started migration task: $MIGRATION_TASK_ARN"
+          
+          # Wait for task to complete (timeout after 10 minutes)
+          echo "Waiting for migration task to complete..."
+          aws ecs wait tasks-stopped \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks "$MIGRATION_TASK_ARN"
+          
+          # Check exit code
+          TASK_STATUS=$(aws ecs describe-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks "$MIGRATION_TASK_ARN" \
+            --query 'tasks[0].{exitCode:containers[0].exitCode,stoppedReason:stoppedReason}' \
+            --output json)
+          
+          EXIT_CODE=$(echo "$TASK_STATUS" | jq -r '.exitCode // "null"')
+          STOPPED_REASON=$(echo "$TASK_STATUS" | jq -r '.stoppedReason // "unknown"')
+          
+          echo "Task exit code: $EXIT_CODE"
+          echo "Stopped reason: $STOPPED_REASON"
+          
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "Migration failed!"
+            echo "Check CloudWatch logs for details: /aws/ecs/acmp-production/migrations"
+            exit 1
+          fi
+          
+          echo "Migrations completed successfully!"
 
   # ----------------------------------------------------------------------------
   # Build and Deploy API
@@ -118,9 +239,13 @@ jobs:
   deploy-api:
     name: Deploy API
     runs-on: ubuntu-latest
-    needs: [test]
-    # Always run after test when it's a push, or when deploy_api is true for workflow_dispatch
-    if: always() && needs.test.result == 'success' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy_api == true))
+    needs: [test, run-migrations]
+    # Run after test and migrations, allow if migrations skipped (first deploy) or succeeded
+    if: |
+      always() && 
+      needs.test.result == 'success' && 
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy_api == true)) &&
+      (needs.run-migrations.result == 'success' || needs.run-migrations.result == 'skipped')
     environment: production
     permissions:
       id-token: write
