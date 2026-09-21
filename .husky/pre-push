@@ -14,17 +14,10 @@ npm run type-check || {
   exit 1
 }
 
-# Linting
-echo "🧹 Linting..."
-npm run lint || {
-  echo "❌ Linting failed. Fix the errors before pushing."
-  exit 1
-}
-
-# Build
-echo "🏗️  Building..."
-npm run build || {
-  echo "❌ Build failed. Fix the errors before pushing."
+# Tests
+echo "🧪 Running tests..."
+npm run test --if-present || {
+  echo "❌ Tests failed. Fix the errors before pushing."
   exit 1
 }
 

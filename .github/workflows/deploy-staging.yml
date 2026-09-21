@@ -34,11 +34,38 @@ env:
 
 jobs:
   # ----------------------------------------------------------------------------
+  # Run Tests First
+  # ----------------------------------------------------------------------------
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run type checking
+        run: npm run type-check
+
+      - name: Run tests
+        run: npm run test --if-present
+
+  # ----------------------------------------------------------------------------
   # Detect which services changed
   # ----------------------------------------------------------------------------
   changes:
     name: Detect Changes
     runs-on: ubuntu-latest
+    needs: test
+    if: needs.test.result == 'success'
     outputs:
       api: ${{ steps.filter.outputs.api }}
       web: ${{ steps.filter.outputs.web }}
@@ -252,10 +279,11 @@ jobs:
   deploy-api:
     name: Deploy API
     runs-on: ubuntu-latest
-    needs: [changes, run-migrations]
+    needs: [test, changes, run-migrations]
     # Run if API changed, or manually triggered, and wait for migrations if they ran
     if: |
       always() && 
+      needs.test.result == 'success' &&
       (needs.changes.outputs.api == 'true' || github.event.inputs.deploy_api == 'true') &&
       (needs.run-migrations.result == 'success' || needs.run-migrations.result == 'skipped')
     environment: staging
@@ -351,8 +379,8 @@ jobs:
   deploy-web:
     name: Deploy Web
     runs-on: ubuntu-latest
-    needs: changes
-    if: ${{ needs.changes.outputs.web == 'true' || github.event.inputs.deploy_web == 'true' }}
+    needs: [test, changes]
+    if: needs.test.result == 'success' && (needs.changes.outputs.web == 'true' || github.event.inputs.deploy_web == 'true')
     environment: staging
     permissions:
       id-token: write
