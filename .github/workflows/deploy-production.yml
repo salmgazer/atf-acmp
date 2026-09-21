@@ -1,6 +1,7 @@
 # ==============================================================================
 # ACMP Production Deployment - ECS Express Mode
 # Triggers on push to 'main' branch
+# Only deploys services that have changed
 # ==============================================================================
 
 name: Deploy Production
@@ -58,14 +59,51 @@ jobs:
         run: npm run test --if-present
 
   # ----------------------------------------------------------------------------
-  # Run Database Migrations via ECS Task (runs inside VPC to access RDS)
+  # Detect which services changed
+  # ----------------------------------------------------------------------------
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    needs: test
+    if: needs.test.result == 'success'
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      web: ${{ steps.filter.outputs.web }}
+      migrations: ${{ steps.filter.outputs.migrations }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check for changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          base: ${{ github.event.before }}
+          filters: |
+            api:
+              - 'apps/api/**'
+              - 'packages/shared/**'
+              - 'packages/validators/**'
+            web:
+              - 'apps/web/**'
+              - 'packages/shared/**'
+              - 'packages/validators/**'
+            migrations:
+              - 'apps/api/src/database/migrations/**'
+
+  # ----------------------------------------------------------------------------
+  # Run database migrations via ECS Task (runs inside VPC to access RDS)
+  # Only runs if migrations changed or manually triggered
   # ----------------------------------------------------------------------------
   run-migrations:
     name: Run Migrations
     runs-on: ubuntu-latest
-    needs: test
-    # Run migrations on push to main OR when explicitly requested via workflow_dispatch
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.run_migrations == true)
+    needs: [changes]
+    if: |
+      (github.event_name == 'push' && needs.changes.outputs.migrations == 'true') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run_migrations == 'true')
     environment: production
     permissions:
       id-token: write
@@ -239,12 +277,12 @@ jobs:
   deploy-api:
     name: Deploy API
     runs-on: ubuntu-latest
-    needs: [test, run-migrations]
-    # Run after test and migrations, allow if migrations skipped (first deploy) or succeeded
+    needs: [test, changes, run-migrations]
+    # Run if API changed, or manually triggered, and wait for migrations if they ran
     if: |
       always() && 
-      needs.test.result == 'success' && 
-      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy_api == true)) &&
+      needs.test.result == 'success' &&
+      (needs.changes.outputs.api == 'true' || github.event.inputs.deploy_api == 'true') &&
       (needs.run-migrations.result == 'success' || needs.run-migrations.result == 'skipped')
     environment: production
     permissions:
@@ -330,14 +368,13 @@ jobs:
             ]
 
   # ----------------------------------------------------------------------------
-  # Build and Deploy Web
+  # Build and Deploy Web (runs in parallel with API after tests pass)
   # ----------------------------------------------------------------------------
   deploy-web:
     name: Deploy Web
     runs-on: ubuntu-latest
-    needs: [test, deploy-api]
-    # Always run after test+api when it's a push, or when deploy_web is true for workflow_dispatch
-    if: always() && needs.test.result == 'success' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.deploy_web == true))
+    needs: [test, changes]
+    if: needs.test.result == 'success' && (needs.changes.outputs.web == 'true' || github.event.inputs.deploy_web == 'true')
     environment: production
     permissions:
       id-token: write
@@ -391,23 +428,3 @@ jobs:
           max-task-count: 6
           auto-scaling-metric: AVERAGE_CPU
           auto-scaling-target-value: 70
-
-  # ----------------------------------------------------------------------------
-  # Notify on completion
-  # ----------------------------------------------------------------------------
-  notify:
-    name: Deployment Summary
-    runs-on: ubuntu-latest
-    needs: [deploy-api, deploy-web]
-    if: always()
-    steps:
-      - name: Summary
-        run: |
-          echo "## Production Deployment" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| API | ${{ needs.deploy-api.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Web | ${{ needs.deploy-web.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
