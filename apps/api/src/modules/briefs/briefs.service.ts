@@ -12,6 +12,7 @@ import { Vertical } from "@/database/entities/vertical.entity";
 import { EmailService } from "@/email/email.service";
 import { NotificationTriggersService } from "@/modules/notifications/notification-triggers.service";
 import { UsersService } from "@/modules/users/users.service";
+import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/common/cache/cache.service";
 import {
   CreateBriefDto,
   UpdateBriefDto,
@@ -36,6 +37,7 @@ export class BriefsService {
     private readonly emailService: EmailService,
     private readonly notificationTriggers: NotificationTriggersService,
     private readonly usersService: UsersService,
+    private readonly cacheService: CacheService,
   ) {}
 
   async create(dto: CreateBriefDto): Promise<Brief> {
@@ -140,6 +142,15 @@ export class BriefsService {
   }
 
   async findApproved(cohortId: string, verticalId?: string, search?: string): Promise<Brief[]> {
+    // Only use cache if no filters (most common case)
+    if (!verticalId && !search) {
+      const cacheKey = this.cacheService.buildKey(CACHE_KEYS.BRIEFS_BY_COHORT, cohortId, "approved");
+      const cached = await this.cacheService.get<Brief[]>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    }
+
     const queryBuilder = this.briefRepository
       .createQueryBuilder("brief")
       .leftJoinAndSelect("brief.vertical", "vertical")
@@ -158,9 +169,17 @@ export class BriefsService {
       );
     }
 
-    return queryBuilder
+    const results = await queryBuilder
       .orderBy("brief.approvedAt", "DESC")
       .getMany();
+
+    // Cache results if no filters
+    if (!verticalId && !search) {
+      const cacheKey = this.cacheService.buildKey(CACHE_KEYS.BRIEFS_BY_COHORT, cohortId, "approved");
+      await this.cacheService.set(cacheKey, results, CACHE_TTL.MEDIUM);
+    }
+
+    return results;
   }
 
   async findOne(id: string): Promise<Brief> {

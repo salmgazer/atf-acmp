@@ -54,3 +54,13 @@ output "iam_roles" {
     github_actions = aws_iam_role.github_actions.arn
   }
 }
+
+output "redis_endpoint" {
+  description = "ElastiCache Redis endpoint"
+  value       = aws_elasticache_cluster.main.cache_nodes[0].address
+}
+
+output "redis_port" {
+  description = "ElastiCache Redis port"
+  value       = aws_elasticache_cluster.main.cache_nodes[0].port
+}

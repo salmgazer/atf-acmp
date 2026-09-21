@@ -328,7 +328,9 @@ jobs:
               {"name": "SMTP_PORT", "value": "${{ vars.SMTP_PORT }}"},
               {"name": "SMTP_SECURE", "value": "${{ vars.SMTP_SECURE }}"},
               {"name": "SMTP_FROM_EMAIL", "value": "${{ vars.SMTP_FROM_EMAIL }}"},
-              {"name": "SMTP_FROM_NAME", "value": "${{ vars.SMTP_FROM_NAME }}"}
+              {"name": "SMTP_FROM_NAME", "value": "${{ vars.SMTP_FROM_NAME }}"},
+              {"name": "REDIS_HOST", "value": "${{ vars.REDIS_HOST }}"},
+              {"name": "REDIS_PORT", "value": "6379"}
             ]
           secrets: |
             [

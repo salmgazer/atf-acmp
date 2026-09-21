@@ -16,6 +16,7 @@ import { Organization } from "../../database/entities/organization.entity";
 import { ForumCategory } from "../../database/entities/forum.entity";
 import { ChatChannel, ChannelMember, ChannelType, SenderType } from "../../database/entities/chat.entity";
 import { User } from "../../database/entities/user.entity";
+import { CacheService, CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache.service";
 import {
   CreateCohortDto,
   UpdateCohortDto,
@@ -101,6 +102,7 @@ export class CohortsService {
     private readonly channelMemberRepository: Repository<ChannelMember>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly cacheService: CacheService,
   ) {}
 
   async create(createCohortDto: CreateCohortDto): Promise<CohortWithStageCount> {
@@ -437,19 +439,45 @@ export class CohortsService {
   }
 
   async findOne(id: string): Promise<CohortWithStageCount> {
+    const cacheKey = this.cacheService.buildKey(CACHE_KEYS.COHORT, id);
+    
+    // Try cache first
+    const cached = await this.cacheService.get<CohortWithStageCount>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const cohort = await this.cohortRepository.findOne({ where: { id } });
     if (!cohort) {
       throw new NotFoundException(`Cohort with ID ${id} not found`);
     }
-    return this.attachStageCount(cohort);
+    
+    const result = await this.attachStageCount(cohort);
+    
+    // Cache for 5 minutes
+    await this.cacheService.set(cacheKey, result, CACHE_TTL.MEDIUM);
+    
+    return result;
   }
 
   async findActive(): Promise<CohortWithStageCount | null> {
+    // Try cache first
+    const cached = await this.cacheService.get<CohortWithStageCount>(CACHE_KEYS.COHORT_ACTIVE);
+    if (cached) {
+      return cached;
+    }
+
     const cohort = await this.cohortRepository.findOne({
       where: { status: CohortStatus.ACTIVE },
     });
     if (!cohort) return null;
-    return this.attachStageCount(cohort);
+    
+    const result = await this.attachStageCount(cohort);
+    
+    // Cache active cohort for 5 minutes
+    await this.cacheService.set(CACHE_KEYS.COHORT_ACTIVE, result, CACHE_TTL.MEDIUM);
+    
+    return result;
   }
 
   async update(id: string, updateCohortDto: UpdateCohortDto): Promise<CohortWithStageCount> {
@@ -471,6 +499,10 @@ export class CohortsService {
 
     const savedCohort = await this.cohortRepository.save(cohort);
     this.logger.log(`Updated cohort: ${savedCohort.id}`);
+    
+    // Invalidate cache
+    await this.cacheService.invalidateCohort(id);
+    
     return this.attachStageCount(savedCohort);
   }
 
@@ -514,6 +546,9 @@ export class CohortsService {
     
     // Update forum chat channels based on new status
     await this.updateForumChannelsStatus(id, newStatus);
+    
+    // Invalidate cache
+    await this.cacheService.invalidateCohort(id);
     
     this.logger.log(`Updated cohort ${id} status to ${newStatus}`);
     return this.attachStageCount(savedCohort);

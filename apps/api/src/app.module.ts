@@ -35,6 +35,7 @@ import { ActivityModule } from "./modules/activity/activity.module";
 import { PublicModule } from "./modules/public/public.module";
 import { CalendarModule } from "./modules/calendar/calendar.module";
 import { UploadModule } from "./common/services/upload.module";
+import { CacheModule } from "./common/cache/cache.module";
 import { GlobalExceptionFilter } from "./common/filters/http-exception.filter";
 import { ActivityInterceptor } from "./common/interceptors/activity.interceptor";
 import configuration from "./config/configuration";
@@ -76,6 +77,9 @@ import { dataSourceOptions } from "./database/data-source";
       useFactory: () => dataSourceOptions,
       inject: [ConfigService],
     }),
+
+    // Redis Cache (global)
+    CacheModule,
 
     // Core modules
     EmailModule,

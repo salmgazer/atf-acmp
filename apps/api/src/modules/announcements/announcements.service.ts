@@ -8,6 +8,7 @@ import {
 } from "@/database/entities/announcement.entity";
 import { TeamMember } from "@/database/entities/team.entity";
 import { Participant } from "@/database/entities/participant.entity";
+import { CacheService, CACHE_KEYS, CACHE_TTL } from "@/common/cache/cache.service";
 import {
   CreateAnnouncementDto,
   UpdateAnnouncementDto,
@@ -23,6 +24,7 @@ export class AnnouncementsService {
     private teamMemberRepository: Repository<TeamMember>,
     @InjectRepository(Participant)
     private participantRepository: Repository<Participant>,
+    private cacheService: CacheService,
   ) {}
 
   async create(dto: CreateAnnouncementDto, userId: string): Promise<Announcement> {
@@ -40,7 +42,14 @@ export class AnnouncementsService {
       createdById: userId,
     });
 
-    return this.announcementRepository.save(announcement);
+    const saved = await this.announcementRepository.save(announcement);
+    
+    // Invalidate announcements cache for the cohort
+    if (dto.cohortId) {
+      await this.cacheService.invalidateAnnouncement(saved.id, dto.cohortId);
+    }
+
+    return saved;
   }
 
   async findAll(query: AnnouncementQueryDto): Promise<{
@@ -101,25 +110,44 @@ export class AnnouncementsService {
       announcement.publishedAt = new Date();
     }
 
-    return this.announcementRepository.save(announcement);
+    const saved = await this.announcementRepository.save(announcement);
+    
+    // Invalidate cache
+    await this.cacheService.invalidateAnnouncement(id, announcement.cohortId);
+
+    return saved;
   }
 
   async publish(id: string): Promise<Announcement> {
     const announcement = await this.findOne(id);
     announcement.status = AnnouncementStatus.PUBLISHED;
     announcement.publishedAt = new Date();
-    return this.announcementRepository.save(announcement);
+    const saved = await this.announcementRepository.save(announcement);
+    
+    // Invalidate cache
+    await this.cacheService.invalidateAnnouncement(id, announcement.cohortId);
+    
+    return saved;
   }
 
   async archive(id: string): Promise<Announcement> {
     const announcement = await this.findOne(id);
     announcement.status = AnnouncementStatus.ARCHIVED;
-    return this.announcementRepository.save(announcement);
+    const saved = await this.announcementRepository.save(announcement);
+    
+    // Invalidate cache
+    await this.cacheService.invalidateAnnouncement(id, announcement.cohortId);
+    
+    return saved;
   }
 
   async delete(id: string): Promise<void> {
     const announcement = await this.findOne(id);
+    const cohortId = announcement.cohortId;
     await this.announcementRepository.remove(announcement);
+    
+    // Invalidate cache
+    await this.cacheService.invalidateAnnouncement(id, cohortId);
   }
 
   async incrementReadCount(id: string): Promise<void> {

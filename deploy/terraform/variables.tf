@@ -171,3 +171,14 @@ variable "smtp_from_name" {
   type        = string
   default     = ""
 }
+
+
+# ==============================================================================
+# Redis / ElastiCache Configuration
+# ==============================================================================
+
+variable "redis_node_type" {
+  description = "ElastiCache Redis node type"
+  type        = string
+  default     = "cache.t4g.micro"  # Smallest ARM-based instance (~$9/month)
+}
