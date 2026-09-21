@@ -110,7 +110,7 @@ jobs:
           DATABASE_PASSWORD: ${{ steps.get-db-password.outputs.db_password }}
           DATABASE_NAME: ${{ vars.DATABASE_NAME }}
           DATABASE_SSL: true
-        run: npx typeorm migration:run -d dist/src/database/data-source.js
+        run: npx typeorm migration:run -d dist/apps/api/src/database/data-source.js
 
   # ----------------------------------------------------------------------------
   # Build and Deploy API
