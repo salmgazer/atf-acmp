@@ -6,6 +6,9 @@ module.exports = {
   transform: {
     "^.+\\.(t|j)s$": "ts-jest",
   },
+  transformIgnorePatterns: [
+    "node_modules/(?!(@nestjs/cache-manager)/)",
+  ],
   collectCoverageFrom: [
     "src/**/*.(t|j)s",
     "!src/**/*.module.ts",

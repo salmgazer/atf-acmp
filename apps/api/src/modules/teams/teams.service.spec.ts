@@ -6,10 +6,15 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { TeamsService } from "./teams.service";
-import { Team, TeamStatus, TeamRole, TeamMember, TeamInvitation } from "@/database/entities/team.entity";
+import { Team, TeamStatus, TeamRole, TeamMember, TeamInvitation, TeamMemberRemovalRequest } from "@/database/entities/team.entity";
 import { Participant, ParticipantStatus } from "@/database/entities/participant.entity";
 import { Cohort } from "@/database/entities/cohort.entity";
 import { Brief } from "@/database/entities/brief.entity";
+import { ChatChannel, ChannelMember } from "@/database/entities/chat.entity";
+import { ScheduledSession } from "@/database/entities/mentor.entity";
+import { User } from "@/database/entities/user.entity";
+import { OneSignalService } from "@/modules/notifications/onesignal.service";
+import { NotificationTriggersService } from "@/modules/notifications/notification-triggers.service";
 import {
   createMockRepository,
   createMockQueryBuilder,
@@ -23,9 +28,16 @@ describe("TeamsService", () => {
   let teamRepository: ReturnType<typeof createMockRepository>;
   let memberRepository: ReturnType<typeof createMockRepository>;
   let invitationRepository: ReturnType<typeof createMockRepository>;
+  let removalRequestRepository: ReturnType<typeof createMockRepository>;
   let participantRepository: ReturnType<typeof createMockRepository>;
   let cohortRepository: ReturnType<typeof createMockRepository>;
   let briefRepository: ReturnType<typeof createMockRepository>;
+  let chatChannelRepository: ReturnType<typeof createMockRepository>;
+  let channelMemberRepository: ReturnType<typeof createMockRepository>;
+  let scheduledSessionRepository: ReturnType<typeof createMockRepository>;
+  let userRepository: ReturnType<typeof createMockRepository>;
+  let mockOneSignalService: any;
+  let mockNotificationTriggersService: any;
 
   const mockCohort = createTestCohort({
     id: "cohort-123",
@@ -53,9 +65,26 @@ describe("TeamsService", () => {
     teamRepository = createMockRepository();
     memberRepository = createMockRepository();
     invitationRepository = createMockRepository();
+    removalRequestRepository = createMockRepository();
     participantRepository = createMockRepository();
     cohortRepository = createMockRepository();
     briefRepository = createMockRepository();
+    chatChannelRepository = createMockRepository();
+    channelMemberRepository = createMockRepository();
+    scheduledSessionRepository = createMockRepository();
+    userRepository = createMockRepository();
+
+    mockOneSignalService = {
+      sendNotificationToUser: jest.fn().mockResolvedValue(undefined),
+      sendNotificationToUsers: jest.fn().mockResolvedValue(undefined),
+    };
+
+    mockNotificationTriggersService = {
+      onTeamCreated: jest.fn().mockResolvedValue(undefined),
+      onTeamMemberAdded: jest.fn().mockResolvedValue(undefined),
+      onTeamMemberRemoved: jest.fn().mockResolvedValue(undefined),
+      onTeamInvitationSent: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -63,9 +92,16 @@ describe("TeamsService", () => {
         { provide: getRepositoryToken(Team), useValue: teamRepository },
         { provide: getRepositoryToken(TeamMember), useValue: memberRepository },
         { provide: getRepositoryToken(TeamInvitation), useValue: invitationRepository },
+        { provide: getRepositoryToken(TeamMemberRemovalRequest), useValue: removalRequestRepository },
         { provide: getRepositoryToken(Participant), useValue: participantRepository },
         { provide: getRepositoryToken(Cohort), useValue: cohortRepository },
         { provide: getRepositoryToken(Brief), useValue: briefRepository },
+        { provide: getRepositoryToken(ChatChannel), useValue: chatChannelRepository },
+        { provide: getRepositoryToken(ChannelMember), useValue: channelMemberRepository },
+        { provide: getRepositoryToken(ScheduledSession), useValue: scheduledSessionRepository },
+        { provide: getRepositoryToken(User), useValue: userRepository },
+        { provide: OneSignalService, useValue: mockOneSignalService },
+        { provide: NotificationTriggersService, useValue: mockNotificationTriggersService },
       ],
     }).compile();
 

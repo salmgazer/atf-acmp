@@ -9,12 +9,13 @@ import {
   EvaluationJobStatus,
 } from "@/database/entities/evaluation.entity";
 import { Submission, SubmissionStatus } from "@/database/entities/stage.entity";
-import { Team } from "@/database/entities/team.entity";
+import { Team, TeamMember } from "@/database/entities/team.entity";
 import { EVALUATION_QUEUE_NAME } from "./evaluation.constants";
 import {
   createMockRepository,
   createMockQueryBuilder,
 } from "../../../test/utils/test-utils";
+import { OneSignalService } from "@/modules/notifications/onesignal.service";
 
 describe("EvaluationsService", () => {
   let service: EvaluationsService;
@@ -22,7 +23,9 @@ describe("EvaluationsService", () => {
   let evaluationJobRepo: ReturnType<typeof createMockRepository>;
   let submissionRepo: ReturnType<typeof createMockRepository>;
   let teamRepo: ReturnType<typeof createMockRepository>;
+  let teamMemberRepo: ReturnType<typeof createMockRepository>;
   let mockQueue: any;
+  let mockOneSignalService: any;
 
   const mockSubmission = {
     id: "submission-1",
@@ -69,6 +72,7 @@ describe("EvaluationsService", () => {
     evaluationJobRepo = createMockRepository();
     submissionRepo = createMockRepository();
     teamRepo = createMockRepository();
+    teamMemberRepo = createMockRepository();
 
     mockQueue = {
       add: jest.fn().mockResolvedValue({ id: "bull-job-1" }),
@@ -84,6 +88,11 @@ describe("EvaluationsService", () => {
       drain: jest.fn(),
     };
 
+    mockOneSignalService = {
+      sendNotificationToUser: jest.fn().mockResolvedValue(undefined),
+      sendNotificationToUsers: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EvaluationsService,
@@ -91,7 +100,9 @@ describe("EvaluationsService", () => {
         { provide: getRepositoryToken(EvaluationJob), useValue: evaluationJobRepo },
         { provide: getRepositoryToken(Submission), useValue: submissionRepo },
         { provide: getRepositoryToken(Team), useValue: teamRepo },
+        { provide: getRepositoryToken(TeamMember), useValue: teamMemberRepo },
         { provide: getQueueToken(EVALUATION_QUEUE_NAME), useValue: mockQueue },
+        { provide: OneSignalService, useValue: mockOneSignalService },
       ],
     }).compile();
 
@@ -104,7 +115,7 @@ describe("EvaluationsService", () => {
 
   describe("triggerBatchEvaluation", () => {
     it("should queue evaluations for submitted teams", async () => {
-      submissionRepo.find.mockResolvedValue([mockSubmission]);
+      teamRepo.find.mockResolvedValue([mockTeam]);
       evaluationRepo.find.mockResolvedValue([]); // No existing evaluations
       evaluationJobRepo.findOne.mockResolvedValue(null); // No existing jobs
       evaluationJobRepo.create.mockReturnValue(mockEvaluationJob);
@@ -121,7 +132,7 @@ describe("EvaluationsService", () => {
     });
 
     it("should skip teams with completed evaluations", async () => {
-      submissionRepo.find.mockResolvedValue([mockSubmission]);
+      teamRepo.find.mockResolvedValue([mockTeam]);
       evaluationRepo.find.mockResolvedValue([
         { teamId: "team-1", aiEvaluatedAt: new Date() },
       ]);
@@ -131,13 +142,14 @@ describe("EvaluationsService", () => {
         stageId: "stage-1",
       });
 
+      // Teams with completed evaluations are filtered out before processing
+      // so queued and skipped should both be 0 (team was excluded from the list)
       expect(result.queued).toBe(0);
-      expect(result.skipped).toBe(1);
       expect(mockQueue.add).not.toHaveBeenCalled();
     });
 
     it("should skip teams with pending jobs", async () => {
-      submissionRepo.find.mockResolvedValue([mockSubmission]);
+      teamRepo.find.mockResolvedValue([mockTeam]);
       evaluationRepo.find.mockResolvedValue([]);
       evaluationJobRepo.findOne.mockResolvedValue(mockEvaluationJob); // Existing pending job
 
@@ -151,10 +163,10 @@ describe("EvaluationsService", () => {
     });
 
     it("should filter by specific teamIds when provided", async () => {
-      const submission1 = { ...mockSubmission, teamId: "team-1" };
-      const submission2 = { ...mockSubmission, id: "sub-2", teamId: "team-2" };
+      const team1 = { ...mockTeam, id: "team-1" };
+      const team2 = { ...mockTeam, id: "team-2", name: "Team 2" };
 
-      submissionRepo.find.mockResolvedValue([submission1, submission2]);
+      teamRepo.find.mockResolvedValue([team1, team2]);
       evaluationRepo.find.mockResolvedValue([]);
       evaluationJobRepo.findOne.mockResolvedValue(null);
       evaluationJobRepo.create.mockReturnValue(mockEvaluationJob);

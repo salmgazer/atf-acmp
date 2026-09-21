@@ -8,6 +8,8 @@ import { AuthService } from "./auth.service";
 import { FirebaseService } from "./firebase.service";
 import { User, Role } from "../database/entities/user.entity";
 import { RefreshToken } from "../database/entities/refresh-token.entity";
+import { Participant } from "../database/entities/participant.entity";
+import { Cohort } from "../database/entities/cohort.entity";
 import { PortalType } from "./dto/auth.dto";
 import {
   createMockRepository,
@@ -22,6 +24,8 @@ describe("AuthService", () => {
   let service: AuthService;
   let userRepository: ReturnType<typeof createMockRepository>;
   let refreshTokenRepository: ReturnType<typeof createMockRepository>;
+  let participantRepository: ReturnType<typeof createMockRepository>;
+  let cohortRepository: ReturnType<typeof createMockRepository>;
   let jwtService: ReturnType<typeof createMockJwtService>;
   let firebaseService: { verifyIdToken: jest.Mock };
 
@@ -37,6 +41,8 @@ describe("AuthService", () => {
   beforeEach(async () => {
     userRepository = createMockRepository();
     refreshTokenRepository = createMockRepository();
+    participantRepository = createMockRepository();
+    cohortRepository = createMockRepository();
     jwtService = createMockJwtService();
     firebaseService = { verifyIdToken: jest.fn() };
 
@@ -45,6 +51,8 @@ describe("AuthService", () => {
         AuthService,
         { provide: getRepositoryToken(User), useValue: userRepository },
         { provide: getRepositoryToken(RefreshToken), useValue: refreshTokenRepository },
+        { provide: getRepositoryToken(Participant), useValue: participantRepository },
+        { provide: getRepositoryToken(Cohort), useValue: cohortRepository },
         { provide: JwtService, useValue: jwtService },
         { provide: FirebaseService, useValue: firebaseService },
         { provide: ConfigService, useValue: createMockConfigService() },
@@ -60,23 +68,32 @@ describe("AuthService", () => {
 
   describe("loginWithPassword", () => {
     it("should successfully login with valid credentials", async () => {
-      userRepository.findOne.mockResolvedValue(mockUser);
+      // For STAFF portal, login uses the userRepository
+      const staffUser = createTestUser({
+        id: "user-123",
+        email: "staff@example.com",
+        role: Role.PROGRAM_MANAGER,
+        passwordHash: "hashed-password",
+        isActive: true,
+        mustChangePassword: false,
+      });
+      userRepository.findOne.mockResolvedValue(staffUser);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       refreshTokenRepository.create.mockReturnValue({ token: "refresh-token" });
       refreshTokenRepository.save.mockResolvedValue({ token: "refresh-token" });
 
       const result = await service.loginWithPassword(
-        "test@example.com",
+        "staff@example.com",
         "password123",
-        PortalType.PARTICIPANT
+        PortalType.STAFF
       );
 
       expect(result).toHaveProperty("accessToken");
       expect(result).toHaveProperty("refreshToken");
       expect(result).toHaveProperty("user");
-      expect(result.user.email).toBe("test@example.com");
+      expect(result.user.email).toBe("staff@example.com");
       expect(userRepository.findOne).toHaveBeenCalledWith({
-        where: { email: "test@example.com" },
+        where: { email: "staff@example.com" },
       });
     });
 
@@ -84,29 +101,44 @@ describe("AuthService", () => {
       userRepository.findOne.mockResolvedValue(null);
 
       await expect(
-        service.loginWithPassword("invalid@example.com", "password", PortalType.PARTICIPANT)
+        service.loginWithPassword("invalid@example.com", "password", PortalType.STAFF)
       ).rejects.toThrow(UnauthorizedException);
     });
 
     it("should throw UnauthorizedException for invalid password", async () => {
-      userRepository.findOne.mockResolvedValue(mockUser);
+      const staffUser = createTestUser({
+        id: "user-123",
+        email: "staff@example.com",
+        role: Role.PROGRAM_MANAGER,
+        passwordHash: "hashed-password",
+        isActive: true,
+      });
+      userRepository.findOne.mockResolvedValue(staffUser);
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
       await expect(
-        service.loginWithPassword("test@example.com", "wrong-password", PortalType.PARTICIPANT)
+        service.loginWithPassword("staff@example.com", "wrong-password", PortalType.STAFF)
       ).rejects.toThrow(UnauthorizedException);
     });
 
     it("should throw UnauthorizedException for deactivated account", async () => {
-      userRepository.findOne.mockResolvedValue({ ...mockUser, isActive: false });
+      const inactiveUser = createTestUser({
+        id: "user-123",
+        email: "staff@example.com",
+        role: Role.PROGRAM_MANAGER,
+        passwordHash: "hashed-password",
+        isActive: false,
+      });
+      userRepository.findOne.mockResolvedValue(inactiveUser);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
       await expect(
-        service.loginWithPassword("test@example.com", "password", PortalType.PARTICIPANT)
+        service.loginWithPassword("staff@example.com", "password", PortalType.STAFF)
       ).rejects.toThrow(UnauthorizedException);
     });
 
     it("should throw UnauthorizedException for wrong portal access", async () => {
+      // PARTICIPANT trying to access STAFF portal
       userRepository.findOne.mockResolvedValue(mockUser); // PARTICIPANT role
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
