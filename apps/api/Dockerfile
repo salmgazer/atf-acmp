@@ -35,8 +35,16 @@ COPY apps/api ./apps/api
 COPY packages ./packages
 COPY tsconfig.base.json ./
 
+# Build shared packages first
+WORKDIR /app/packages/shared
+RUN npx tsc
+
+WORKDIR /app/packages/validators
+RUN npx tsc
+
 # Build the API
 WORKDIR /app/apps/api
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npx nest build
 
 # Go back to root and prune dev dependencies
