@@ -539,19 +539,6 @@ export function StageFormDialog({
 
                     <div className="flex items-center justify-between p-4 border rounded-lg">
                       <div>
-                        <Label>GitHub Repository</Label>
-                        <p className="text-sm text-muted-foreground">
-                          Require a GitHub repository URL
-                        </p>
-                      </div>
-                      <Switch
-                        checked={watch("githubRequired")}
-                        onCheckedChange={(v) => setValue("githubRequired", v)}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 border rounded-lg">
-                      <div>
                         <Label>Custom URL</Label>
                         <p className="text-sm text-muted-foreground">
                           Require an additional URL (demo, presentation, etc.)
@@ -593,18 +580,6 @@ export function StageFormDialog({
                       Maximum file size for document uploads (default: 25MB)
                     </p>
                   </div>
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div>
-                      <Label>Also Require GitHub Repository</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Optionally require a GitHub repository link
-                      </p>
-                    </div>
-                    <Switch
-                      checked={watch("githubRequired")}
-                      onCheckedChange={(v) => setValue("githubRequired", v)}
-                    />
-                  </div>
                 </div>
               ) : stageType === "video" ? (
                 <div className="space-y-4">
@@ -625,18 +600,6 @@ export function StageFormDialog({
                       Maximum video file size (default: 500MB)
                     </p>
                   </div>
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div>
-                      <Label>Also Require GitHub Repository</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Optionally require a GitHub repository link
-                      </p>
-                    </div>
-                    <Switch
-                      checked={watch("githubRequired")}
-                      onCheckedChange={(v) => setValue("githubRequired", v)}
-                    />
-                  </div>
                 </div>
               ) : stageType === "url" ? (
                 <div className="space-y-4">
@@ -654,18 +617,6 @@ export function StageFormDialog({
                     <p className="text-xs text-muted-foreground">
                       Label shown to participants (e.g., "Demo URL", "Figma Link")
                     </p>
-                  </div>
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div>
-                      <Label>Also Require GitHub Repository</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Optionally require a GitHub repository link
-                      </p>
-                    </div>
-                    <Switch
-                      checked={watch("githubRequired")}
-                      onCheckedChange={(v) => setValue("githubRequired", v)}
-                    />
                   </div>
                 </div>
               ) : stageType === "text" ? (
@@ -708,18 +659,6 @@ export function StageFormDialog({
                         Default: 5000 characters
                       </p>
                     </div>
-                  </div>
-                  <div className="flex items-center justify-between p-4 border rounded-lg">
-                    <div>
-                      <Label>Also Require GitHub Repository</Label>
-                      <p className="text-sm text-muted-foreground">
-                        Optionally require a GitHub repository link
-                      </p>
-                    </div>
-                    <Switch
-                      checked={watch("githubRequired")}
-                      onCheckedChange={(v) => setValue("githubRequired", v)}
-                    />
                   </div>
                 </div>
               ) : null}

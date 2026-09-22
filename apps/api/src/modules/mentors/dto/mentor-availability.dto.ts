@@ -29,12 +29,12 @@ export class CreateAvailabilitySlotDto {
 
   @ApiProperty({ description: "Start time in HH:MM format (24-hour)", example: "10:00" })
   @IsString()
-  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "Start time must be in HH:MM format (24-hour)" })
+  @Matches(/^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/, { message: "Start time must be in HH:MM format (24-hour)" })
   startTime: string;
 
   @ApiProperty({ description: "End time in HH:MM format (24-hour)", example: "12:00" })
   @IsString()
-  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "End time must be in HH:MM format (24-hour)" })
+  @Matches(/^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/, { message: "End time must be in HH:MM format (24-hour)" })
   endTime: string;
 
   @ApiPropertyOptional({ description: "Duration of each session in minutes", default: 45 })
@@ -69,13 +69,13 @@ export class UpdateAvailabilitySlotDto {
   @ApiPropertyOptional({ description: "Start time in HH:MM format (24-hour)" })
   @IsOptional()
   @IsString()
-  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "Start time must be in HH:MM format (24-hour)" })
+  @Matches(/^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/, { message: "Start time must be in HH:MM format (24-hour)" })
   startTime?: string;
 
   @ApiPropertyOptional({ description: "End time in HH:MM format (24-hour)" })
   @IsOptional()
   @IsString()
-  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "End time must be in HH:MM format (24-hour)" })
+  @Matches(/^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/, { message: "End time must be in HH:MM format (24-hour)" })
   endTime?: string;
 
   @ApiPropertyOptional()
@@ -127,12 +127,12 @@ export class SetWeeklyAvailabilityDto {
 export class CustomTimeSlotDto {
   @ApiProperty({ description: "Start time in HH:MM format (24-hour)" })
   @IsString()
-  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "Start time must be in HH:MM format (24-hour)" })
+  @Matches(/^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/, { message: "Start time must be in HH:MM format (24-hour)" })
   startTime: string;
 
   @ApiProperty({ description: "End time in HH:MM format (24-hour)" })
   @IsString()
-  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "End time must be in HH:MM format (24-hour)" })
+  @Matches(/^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/, { message: "End time must be in HH:MM format (24-hour)" })
   endTime: string;
 
   @ApiPropertyOptional()
@@ -314,7 +314,7 @@ export class BookSessionDto {
 
   @ApiProperty({ description: "Start time of the session (HH:MM)", example: "10:00" })
   @IsString()
-  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: "Start time must be in HH:MM format (24-hour)" })
+  @Matches(/^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/, { message: "Start time must be in HH:MM format (24-hour)" })
   startTime: string;
 
   @ApiProperty({ description: "The specific question the team wants to discuss" })

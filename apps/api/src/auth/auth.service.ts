@@ -10,6 +10,7 @@ import { User, Role } from "../database/entities/user.entity";
 import { RefreshToken } from "../database/entities/refresh-token.entity";
 import { Participant } from "../database/entities/participant.entity";
 import { Cohort, CohortStatus } from "../database/entities/cohort.entity";
+import { Mentor, MentorStatus } from "../database/entities/mentor.entity";
 import { FirebaseService } from "./firebase.service";
 import { PortalType, AuthResponseDto } from "./dto/auth.dto";
 
@@ -31,6 +32,8 @@ export class AuthService {
     private readonly participantRepository: Repository<Participant>,
     @InjectRepository(Cohort)
     private readonly cohortRepository: Repository<Cohort>,
+    @InjectRepository(Mentor)
+    private readonly mentorRepository: Repository<Mentor>,
     private readonly jwtService: JwtService,
     private readonly firebaseService: FirebaseService,
     private readonly configService: ConfigService,
@@ -82,6 +85,11 @@ export class AuthService {
     user.lastLoginAt = new Date();
     await this.userRepository.save(user);
 
+    // Activate mentor if logging into mentor portal
+    if (portal === PortalType.MENTOR && user.role === Role.MENTOR) {
+      await this.activateMentorOnLogin(user.email);
+    }
+
     return this.generateTokens(user, userAgent, ipAddress);
   }
 
@@ -121,6 +129,11 @@ export class AuthService {
 
     user.lastLoginAt = new Date();
     await this.userRepository.save(user);
+
+    // Activate mentor if logging into mentor portal
+    if (portal === PortalType.MENTOR && user.role === Role.MENTOR) {
+      await this.activateMentorOnLogin(user.email);
+    }
 
     return this.generateTokens(user, userAgent, ipAddress);
   }
@@ -537,6 +550,28 @@ export class AuthService {
 
   generateMagicCode(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  /**
+   * Activate mentor on first login
+   * When mentors are imported, they have status 'imported'. 
+   * This method updates their status to 'active' when they first log in.
+   */
+  private async activateMentorOnLogin(email: string): Promise<void> {
+    try {
+      const mentor = await this.mentorRepository.findOne({
+        where: { email: email.toLowerCase() },
+      });
+
+      if (mentor && mentor.status !== MentorStatus.ACTIVE) {
+        mentor.status = MentorStatus.ACTIVE;
+        await this.mentorRepository.save(mentor);
+        this.logger.log(`Mentor ${mentor.id} (${email}) activated on login`);
+      }
+    } catch (error) {
+      // Don't fail the login if mentor activation fails
+      this.logger.warn(`Failed to activate mentor ${email} on login: ${error.message}`);
+    }
   }
 
   canAccessPortal(role: Role, portal: PortalType): boolean {
