@@ -54,6 +54,31 @@ resource "aws_iam_role_policy" "ecs_secrets_access" {
   })
 }
 
+# Allow ECS tasks to access S3 for file uploads
+resource "aws_iam_role_policy" "ecs_s3_access" {
+  name = "s3-uploads-access"
+  role = aws_iam_role.ecs_task_execution.id
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.uploads.arn,
+          "${aws_s3_bucket.uploads.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
 # ECS Infrastructure Role for Express Mode
 resource "aws_iam_role" "ecs_infrastructure" {
   name = "ecsInfrastructureRoleForExpressServices-${var.environment}"
@@ -139,6 +164,25 @@ resource "aws_iam_role_policy" "github_pass_role" {
         # Also allow passing the non-suffixed roles that AWS/workflow uses
         "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/ecsTaskExecutionRole",
         "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/ecsInfrastructureRoleForExpressServices"
+      ]
+    }]
+  })
+}
+
+# Allow GitHub Actions to read secrets for migrations
+resource "aws_iam_role_policy" "github_secrets_access" {
+  name = "secrets-access-for-migrations"
+  role = aws_iam_role.github_actions.id
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "secretsmanager:GetSecretValue"
+      ]
+      Resource = [
+        aws_secretsmanager_secret.db_password.arn
       ]
     }]
   })

@@ -9,6 +9,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -18,10 +19,22 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   useMentors,
   useMentorStatistics,
   useMentorEarningsSummary,
   useAllScheduledSessions,
+  useDeleteMentor,
+  useRestoreMentor,
   type Mentor,
   type MentorStatus,
   type ScheduledSession,
@@ -55,18 +68,21 @@ import {
   Video,
   Users,
   HelpCircle,
+  Trash2,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api/client";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, startOfWeek, endOfWeek, parseISO, isToday } from "date-fns";
 
 const statusConfig: Record<
-  MentorStatus,
+  MentorStatus | "deleted",
   { label: string; bgClass: string; textClass: string; icon: typeof CheckCircle }
 > = {
   imported: { label: "Imported", bgClass: "bg-muted", textClass: "text-muted-foreground", icon: Clock },
   active: { label: "Active", bgClass: "bg-emerald-500/15", textClass: "text-emerald-600", icon: CheckCircle },
   inactive: { label: "Inactive", bgClass: "bg-red-500/15", textClass: "text-red-600", icon: XCircle },
+  deleted: { label: "Deleted", bgClass: "bg-zinc-500/15", textClass: "text-zinc-500", icon: Trash2 },
 };
 
 const sessionStatusConfig: Record<
@@ -82,15 +98,26 @@ const sessionStatusConfig: Record<
   rescheduled: { label: "Rescheduled", bgClass: "bg-purple-500/15", textClass: "text-purple-600" },
 };
 
-const statusTabs: { value: MentorStatus | "all"; label: string }[] = [
+const statusTabs: { value: MentorStatus | "all" | "deleted"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "active", label: "Active" },
   { value: "imported", label: "Imported" },
   { value: "inactive", label: "Inactive" },
+  { value: "deleted", label: "Deleted" },
 ];
 
-function MentorRow({ mentor }: { mentor: Mentor }) {
-  const config = statusConfig[mentor.status];
+function MentorRow({ 
+  mentor, 
+  isDeleted,
+  onDelete,
+  onRestore,
+}: { 
+  mentor: Mentor;
+  isDeleted?: boolean;
+  onDelete: (mentor: Mentor) => void;
+  onRestore: (mentor: Mentor) => void;
+}) {
+  const config = isDeleted ? statusConfig.deleted : statusConfig[mentor.status];
   const StatusIcon = config.icon;
   const confirmedSessions = mentor.confirmedSessions || 0;
   const completedSessions = mentor.completedSessions || 0;
@@ -107,7 +134,7 @@ function MentorRow({ mentor }: { mentor: Mentor }) {
   };
 
   return (
-    <tr className="border-b border-border/50 hover:bg-muted transition-colors">
+    <tr className={`border-b border-border/50 hover:bg-muted transition-colors ${isDeleted ? "opacity-60" : ""}`}>
       <td className="p-4">
         <div className="flex items-center gap-3">
           {mentor.profileImageUrl ? (
@@ -127,12 +154,18 @@ function MentorRow({ mentor }: { mentor: Mentor }) {
             </div>
           )}
           <div>
-            <Link
-              href={`/portal/mentors/${mentor.id}`}
-              className="font-medium text-foreground hover:underline"
-            >
-              {mentor.firstName} {mentor.lastName}
-            </Link>
+            {isDeleted ? (
+              <span className="font-medium text-muted-foreground">
+                {mentor.firstName} {mentor.lastName}
+              </span>
+            ) : (
+              <Link
+                href={`/portal/mentors/${mentor.id}`}
+                className="font-medium text-foreground hover:underline"
+              >
+                {mentor.firstName} {mentor.lastName}
+              </Link>
+            )}
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <Mail className="h-3 w-3" />
               {mentor.email}
@@ -208,18 +241,35 @@ function MentorRow({ mentor }: { mentor: Mentor }) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem asChild>
-              <Link href={`/portal/mentors/${mentor.id}`}>
-                <Eye className="mr-2 h-4 w-4" />
-                View
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href={`/portal/mentors/${mentor.id}/edit`}>
-                <Pencil className="mr-2 h-4 w-4" />
-                Edit
-              </Link>
-            </DropdownMenuItem>
+            {isDeleted ? (
+              <DropdownMenuItem onClick={() => onRestore(mentor)}>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Restore
+              </DropdownMenuItem>
+            ) : (
+              <>
+                <DropdownMenuItem asChild>
+                  <Link href={`/portal/mentors/${mentor.id}`}>
+                    <Eye className="mr-2 h-4 w-4" />
+                    View
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`/portal/mentors/${mentor.id}/edit`}>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Edit
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  onClick={() => onDelete(mentor)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </td>
@@ -513,7 +563,7 @@ function CalendarView({
 
 function MentorsContent() {
   const [view, setView] = useState<"list" | "calendar">("list");
-  const [statusFilter, setStatusFilter] = useState<MentorStatus | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<MentorStatus | "all" | "deleted">("all");
   const [search, setSearch] = useState("");
   const [selectedCohortId, setSelectedCohortId] = useState<string | null>(null);
   const [hasInitialized, setHasInitialized] = useState(false);
@@ -521,6 +571,8 @@ function MentorsContent() {
   const [page, setPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [mentorToDelete, setMentorToDelete] = useState<Mentor | null>(null);
+  const [mentorToRestore, setMentorToRestore] = useState<Mentor | null>(null);
 
   const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
   
@@ -536,11 +588,15 @@ function MentorsContent() {
 
   const effectiveCohortId = selectedCohortId ?? globalCohortId ?? undefined;
 
+  // Determine if we're showing deleted mentors
+  const isShowingDeleted = statusFilter === "deleted";
+
   const { data: mentorsData, isLoading } = useMentors({
-    status: statusFilter === "all" ? undefined : statusFilter,
+    status: statusFilter === "all" || statusFilter === "deleted" ? undefined : statusFilter,
     search: search || undefined,
     cohortId: effectiveCohortId,
     hasCapacity: capacityFilter === "all" ? undefined : capacityFilter === "available",
+    deleted: isShowingDeleted ? true : undefined,
     page,
     limit: 20,
   });
@@ -550,6 +606,9 @@ function MentorsContent() {
   const { data: allSessions, isLoading: isLoadingSessions } = useAllScheduledSessions({
     cohortId: effectiveCohortId,
   });
+
+  const deleteMutation = useDeleteMentor();
+  const restoreMutation = useRestoreMentor();
 
   const mentors = mentorsData?.data || [];
   const totalPages = mentorsData?.totalPages || 1;
@@ -567,6 +626,28 @@ function MentorsContent() {
     setSelectedCohortId(null);
     setCapacityFilter("all");
     setPage(1);
+  };
+
+  const handleDelete = async () => {
+    if (!mentorToDelete) return;
+    try {
+      await deleteMutation.mutateAsync(mentorToDelete.id);
+      toast.success(`${mentorToDelete.firstName} ${mentorToDelete.lastName} has been deleted`);
+      setMentorToDelete(null);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete mentor");
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!mentorToRestore) return;
+    try {
+      await restoreMutation.mutateAsync(mentorToRestore.id);
+      toast.success(`${mentorToRestore.firstName} ${mentorToRestore.lastName} has been restored`);
+      setMentorToRestore(null);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to restore mentor");
+    }
   };
 
   const handleExport = async () => {
@@ -914,7 +995,13 @@ function MentorsContent() {
                     </thead>
                     <tbody>
                       {mentors.map((mentor) => (
-                        <MentorRow key={mentor.id} mentor={mentor} />
+                        <MentorRow 
+                          key={mentor.id} 
+                          mentor={mentor} 
+                          isDeleted={isShowingDeleted}
+                          onDelete={setMentorToDelete}
+                          onRestore={setMentorToRestore}
+                        />
                       ))}
                     </tbody>
                   </table>
@@ -954,6 +1041,63 @@ function MentorsContent() {
           <CalendarView sessions={allSessions || []} isLoading={isLoadingSessions} />
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!mentorToDelete} onOpenChange={() => setMentorToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Mentor</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete{" "}
+              <span className="font-medium text-foreground">
+                {mentorToDelete?.firstName} {mentorToDelete?.lastName}
+              </span>
+              ? This mentor can be restored later from the Deleted filter.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={deleteMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Restore Confirmation Dialog */}
+      <AlertDialog open={!!mentorToRestore} onOpenChange={() => setMentorToRestore(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restore Mentor</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to restore{" "}
+              <span className="font-medium text-foreground">
+                {mentorToRestore?.firstName} {mentorToRestore?.lastName}
+              </span>
+              ? They will be set to "Imported" status and can log in again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleRestore}
+              disabled={restoreMutation.isPending}
+            >
+              {restoreMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Restore
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </StaffLayout>
   );
 }

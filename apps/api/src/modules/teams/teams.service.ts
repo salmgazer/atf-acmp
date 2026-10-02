@@ -37,6 +37,7 @@ import {
 } from "./dto/team.dto";
 import { OneSignalService } from "@/modules/notifications/onesignal.service";
 import { NotificationTriggersService } from "@/modules/notifications/notification-triggers.service";
+import { EmailService } from "@/email/email.service";
 import { User, Role } from "@/database/entities/user.entity";
 
 @Injectable()
@@ -68,6 +69,7 @@ export class TeamsService {
     private readonly userRepository: Repository<User>,
     private readonly oneSignalService: OneSignalService,
     private readonly notificationTriggersService: NotificationTriggersService,
+    private readonly emailService: EmailService,
   ) {}
 
   // ============ Helper Methods ============
@@ -293,14 +295,17 @@ export class TeamsService {
     // Note: DO NOT update participant status yet - they're still not confirmed
     // DO NOT add to chat channel yet - they need to be confirmed first
 
-    // Send push notification and in-app notification to team lead about the join request
-    const teamLead = team.members.find((m) => m.role === TeamRole.LEAD && m.status === TeamMemberStatus.CONFIRMED);
-    if (teamLead) {
-      const participantName = `${participant.firstName} ${participant.lastName}`;
-      
+    // Get team leads and co-leads to notify
+    const teamLeaders = team.members.filter(
+      (m) => [TeamRole.LEAD, TeamRole.CO_LEAD].includes(m.role) && m.status === TeamMemberStatus.CONFIRMED
+    );
+    const participantName = `${participant.firstName} ${participant.lastName}`;
+
+    // Send notifications to all team leads and co-leads
+    for (const leader of teamLeaders) {
       // Push notification
       this.oneSignalService.sendToExternalUserIds(
-        [`participant:${teamLead.participantId}`],
+        [`participant:${leader.participantId}`],
         {
           title: "New Join Request",
           body: `${participantName} wants to join "${team.name}". Review their request.`,
@@ -317,12 +322,25 @@ export class TeamsService {
 
       // In-app notification
       this.notificationTriggersService.onTeamJoinRequest({
-        teamLeaderId: teamLead.participantId,
+        teamLeaderId: leader.participantId,
         teamId: team.id,
         teamName: team.name,
         requesterName: participantName,
         requesterId: participant.id,
       }).catch((err) => this.logger.warn(`Failed to send join request in-app notification: ${err.message}`));
+
+      // Email notification - need to get leader's participant info
+      const leaderParticipant = await this.participantRepository.findOne({
+        where: { id: leader.participantId },
+      });
+      if (leaderParticipant) {
+        this.emailService.sendTeamJoinRequestEmail({
+          to: leaderParticipant.email,
+          leaderFirstName: leaderParticipant.firstName,
+          requesterName: participantName,
+          teamName: team.name,
+        }).catch((err) => this.logger.warn(`Failed to send join request email: ${err.message}`));
+      }
     }
 
     return this.findOne(team.id);
@@ -1073,6 +1091,19 @@ export class TeamsService {
       throw new NotFoundException("Participant not found in this cohort");
     }
 
+    // Verify participant has completed onboarding and is ready
+    // This ensures they have logged in and set up their account before receiving invitations
+    if (!participant.onboardingComplete) {
+      throw new BadRequestException(
+        "This participant has not completed their onboarding yet. They need to log in and complete their profile first before they can receive team invitations."
+      );
+    }
+    if (participant.status !== ParticipantStatus.READY) {
+      throw new BadRequestException(
+        "This participant is not ready to join a team. They need to complete their account setup first."
+      );
+    }
+
     // Check if participant is already in a team
     const existingMembership = await this.memberRepository.findOne({
       where: { participantId: dto.participantId },
@@ -1127,6 +1158,26 @@ export class TeamsService {
         url: "/app/team",
       }
     ).catch((err) => this.logger.warn(`Failed to send invitation push: ${err.message}`));
+
+    // Send email to invited participant
+    this.emailService.sendTeamInvitationEmail({
+      to: participant.email,
+      invitedFirstName: participant.firstName,
+      inviterName,
+      teamName: team.name,
+      message: dto.message,
+    }).catch((err) => this.logger.warn(`Failed to send invitation email to participant: ${err.message}`));
+
+    // Send confirmation email to the inviter
+    if (inviter) {
+      const invitedName = `${participant.firstName} ${participant.lastName}`;
+      this.emailService.sendTeamInvitationConfirmation({
+        to: inviter.email,
+        inviterFirstName: inviter.firstName,
+        invitedName,
+        teamName: team.name,
+      }).catch((err) => this.logger.warn(`Failed to send invitation confirmation email to inviter: ${err.message}`));
+    }
 
     return savedInvitation;
   }

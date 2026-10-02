@@ -193,6 +193,12 @@ export class MentorQueryDto {
   @Type(() => Boolean)
   hasCapacity?: boolean;
 
+  @ApiPropertyOptional({ description: "Include only deleted mentors" })
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  deleted?: boolean;
+
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)

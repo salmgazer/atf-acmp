@@ -40,6 +40,12 @@ export default () => ({
     fromName: process.env.MAILCHIMP_FROM_NAME || "ATF AI Challenge",
   },
 
+  resend: {
+    apiKey: process.env.RESEND_API_KEY,
+    fromEmail: process.env.RESEND_FROM_EMAIL || "noreply@atfchallenge.org",
+    fromName: process.env.RESEND_FROM_NAME || "ATF AI Challenge",
+  },
+
   aws: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,

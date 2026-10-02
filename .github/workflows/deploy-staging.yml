@@ -362,6 +362,9 @@ jobs:
               {"name": "SMTP_SECURE", "value": "${{ vars.SMTP_SECURE }}"},
               {"name": "SMTP_FROM_EMAIL", "value": "${{ vars.SMTP_FROM_EMAIL }}"},
               {"name": "SMTP_FROM_NAME", "value": "${{ vars.SMTP_FROM_NAME }}"},
+              {"name": "RESEND_FROM_EMAIL", "value": "${{ vars.RESEND_FROM_EMAIL }}"},
+              {"name": "RESEND_FROM_NAME", "value": "${{ vars.RESEND_FROM_NAME }}"},
+              {"name": "RESEND_API_KEY", "value": "${{ secrets.RESEND_API_KEY }}"},
               {"name": "REDIS_HOST", "value": "${{ vars.REDIS_HOST }}"},
               {"name": "REDIS_PORT", "value": "6379"}
             ]

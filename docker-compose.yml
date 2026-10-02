@@ -30,39 +30,39 @@ services:
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
 
-  # MinIO - S3-compatible storage for development
-  minio:
-    image: quay.io/minio/minio:latest
-    container_name: acmp-minio
+  # LocalStack - AWS S3 emulator for development
+  localstack:
+    image: localstack/localstack:3
+    container_name: acmp-localstack
     restart: unless-stopped
     ports:
-      - "9000:9000"  # API
-      - "9001:9001"  # Web console
+      - "4566:4566"  # LocalStack Gateway
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-    command: server /data --console-address ":9001"
+      SERVICES: s3
+      DEBUG: 0
     volumes:
-      - minio_data:/data
+      - localstack_data:/var/lib/localstack
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # MinIO setup - creates default bucket on startup
-  minio-setup:
-    image: quay.io/minio/mc:latest
-    container_name: acmp-minio-setup
+  # LocalStack setup - creates default bucket on startup
+  localstack-setup:
+    image: localstack/localstack:3
+    container_name: acmp-localstack-setup
     depends_on:
-      minio:
+      localstack:
         condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
     entrypoint: >
       /bin/sh -c "
-      mc alias set myminio http://minio:9000 minioadmin minioadmin;
-      mc mb myminio/acmp-uploads --ignore-existing;
-      mc anonymous set download myminio/acmp-uploads;
-      exit 0;
+      awslocal s3 mb s3://acmp-uploads || true;
+      awslocal s3api put-bucket-acl --bucket acmp-uploads --acl public-read || true;
+      echo 'Bucket created';
       "
 
   # Redis for caching and BullMQ
@@ -118,13 +118,14 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@atfchallenge.org}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-ATF AI Challenge}
-      # S3/MinIO storage
-      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      # S3/LocalStack storage
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://localstack:4566}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-test}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-test}
       S3_BUCKET: ${S3_BUCKET:-acmp-uploads}
       S3_REGION: ${S3_REGION:-us-east-1}
-      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-http://localhost:9000/acmp-uploads}
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-http://localhost:4566/acmp-uploads}
+      S3_FORCE_PATH_STYLE: "true"
       # AI Evaluation
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
@@ -194,7 +195,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  minio_data:
+  localstack_data:
   # Named volumes to preserve node_modules from containers
   api_node_modules:
   api_app_node_modules:

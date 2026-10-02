@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
+import { ConfigModule } from "@nestjs/config";
 import { MatchingController } from "./matching.controller";
 import { MatchingService } from "./matching.service";
 import { TeamFormationService } from "./team-formation.service";
@@ -11,6 +12,8 @@ import {
   Participant,
   ParticipantPreference,
 } from "@/database/entities/participant.entity";
+import { NotificationsModule } from "@/modules/notifications/notifications.module";
+import { EmailModule } from "@/email/email.module";
 
 @Module({
   imports: [
@@ -24,6 +27,9 @@ import {
       Participant,
       ParticipantPreference,
     ]),
+    ConfigModule,
+    NotificationsModule,
+    EmailModule,
   ],
   controllers: [MatchingController],
   providers: [MatchingService, TeamFormationService],

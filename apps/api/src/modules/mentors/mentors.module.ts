@@ -39,6 +39,7 @@ import { User } from "@/database/entities/user.entity";
 import { Stage, Submission } from "@/database/entities/stage.entity";
 import { ChatModule } from "@/modules/chat/chat.module";
 import { NotificationsModule } from "@/modules/notifications/notifications.module";
+import { EmailModule } from "@/email/email.module";
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { NotificationsModule } from "@/modules/notifications/notifications.modul
     ]),
     forwardRef(() => ChatModule),
     NotificationsModule,
+    EmailModule,
   ],
   controllers: [
     MentorsController,

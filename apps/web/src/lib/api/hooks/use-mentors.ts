@@ -200,6 +200,7 @@ export interface MentorQueryParams {
   search?: string;
   verticalId?: string;
   hasCapacity?: boolean;
+  deleted?: boolean;
   page?: number;
   limit?: number;
 }
@@ -236,6 +237,8 @@ export function useMentors(params: MentorQueryParams = {}) {
       if (params.verticalId) searchParams.set("verticalId", params.verticalId);
       if (params.hasCapacity !== undefined)
         searchParams.set("hasCapacity", String(params.hasCapacity));
+      if (params.deleted !== undefined)
+        searchParams.set("deleted", String(params.deleted));
       if (params.page) searchParams.set("page", String(params.page));
       if (params.limit) searchParams.set("limit", String(params.limit));
 
@@ -385,6 +388,20 @@ export function useDeleteMentor() {
     mutationFn: async (id: string) => {
       await api.delete(`/mentors/${id}`);
       return id;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: mentorKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: mentorKeys.statistics() });
+    },
+  });
+}
+
+export function useRestoreMentor() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      return api.post<Mentor>(`/mentors/${id}/restore`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: mentorKeys.lists() });

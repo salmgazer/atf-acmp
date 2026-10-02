@@ -16,6 +16,9 @@ import {
 } from "@/database/entities/participant.entity";
 import { Brief, BriefStatus } from "@/database/entities/brief.entity";
 import { Vertical } from "@/database/entities/vertical.entity";
+import { OneSignalService } from "@/modules/notifications/onesignal.service";
+import { EmailService } from "@/email/email.service";
+import { ConfigService } from "@nestjs/config";
 import {
   getSkillBreakdown,
   classifyParticipantSkills,
@@ -80,6 +83,7 @@ interface ExistingTeamInfo {
 @Injectable()
 export class TeamFormationService {
   private readonly logger = new Logger(TeamFormationService.name);
+  private readonly frontendUrl: string;
 
   // Cache for preview results
   private formationPreviewCache: Map<string, TeamFormationPreviewDto> = new Map();
@@ -99,7 +103,12 @@ export class TeamFormationService {
     private readonly briefRepository: Repository<Brief>,
     @InjectRepository(Vertical)
     private readonly verticalRepository: Repository<Vertical>,
-  ) {}
+    private readonly oneSignalService: OneSignalService,
+    private readonly emailService: EmailService,
+    private readonly configService: ConfigService,
+  ) {
+    this.frontendUrl = this.configService.get<string>("FRONTEND_URL", "https://challenge.atf.africa");
+  }
 
   /**
    * Run the team formation algorithm and generate a preview
@@ -955,9 +964,12 @@ export class TeamFormationService {
     }
 
     // Create teams
+    const createdTeamIds: string[] = [];
+    const allNewTeamParticipantIds: string[] = [];
+    
     for (const teamData of teamsToCreate) {
       try {
-        await this.createTeamWithMembers(
+        const createdTeam = await this.createTeamWithMembers(
           cohortId,
           teamData.teamName,
           teamData.participantIds,
@@ -966,6 +978,8 @@ export class TeamFormationService {
           teamData.briefId,
         );
         createdTeamCount++;
+        createdTeamIds.push(createdTeam.id);
+        allNewTeamParticipantIds.push(...teamData.participantIds);
         if (teamData.briefId) {
           briefsAssigned++;
         }
@@ -977,7 +991,149 @@ export class TeamFormationService {
     // Clear cache after finalization
     this.formationPreviewCache.delete(cohortId);
 
+    // ====== STEP 4: Send notifications to all affected participants ======
+    await this.sendTeamFormationNotifications(
+      cohort,
+      allNewTeamParticipantIds,
+      preview.proposedBackfills.flatMap(b => b.participantIdsToAdd),
+      createdTeamCount,
+      backfilledTeamCount,
+    );
+
     return { createdTeamCount, backfilledTeamCount, briefsAssigned, errors };
+  }
+
+  /**
+   * Send notifications to participants after team formation
+   */
+  private async sendTeamFormationNotifications(
+    cohort: Cohort,
+    newTeamParticipantIds: string[],
+    backfilledParticipantIds: string[],
+    createdTeamCount: number,
+    backfilledTeamCount: number,
+  ): Promise<void> {
+    const allParticipantIds = [...new Set([...newTeamParticipantIds, ...backfilledParticipantIds])];
+    
+    if (allParticipantIds.length === 0) {
+      this.logger.log("No participants to notify for team formation");
+      return;
+    }
+
+    // Get participant details for emails
+    const participants = await this.participantRepository.find({
+      where: { id: In(allParticipantIds) },
+    });
+
+    // Get their team assignments
+    const teamMembers = await this.teamMemberRepository.find({
+      where: { participantId: In(allParticipantIds) },
+      relations: ["team"],
+    });
+    const participantTeamMap = new Map(teamMembers.map(m => [m.participantId, m.team]));
+
+    // Send push notifications
+    const externalUserIds = allParticipantIds.map(id => `participant:${id}`);
+    
+    try {
+      await this.oneSignalService.sendToExternalUserIds(externalUserIds, {
+        title: "🎉 You've Been Assigned to a Team!",
+        body: `Team formation is complete for ${cohort.name}. Check your team and start collaborating!`,
+        data: {
+          type: "team_formation_complete",
+          cohortId: cohort.id,
+        },
+        url: "/app/team",
+      });
+      this.logger.log(`Sent push notifications to ${externalUserIds.length} participants`);
+    } catch (error) {
+      this.logger.warn(`Failed to send team formation push notifications: ${error.message}`);
+    }
+
+    // Send emails to each participant (async, don't block)
+    for (const participant of participants) {
+      const team = participantTeamMap.get(participant.id);
+      this.sendTeamFormationEmailAsync(participant, team, cohort.name);
+    }
+
+    this.logger.log(
+      `Team formation notifications sent: ${createdTeamCount} new teams, ${backfilledTeamCount} backfilled teams, ${allParticipantIds.length} participants notified`,
+    );
+  }
+
+  /**
+   * Send team formation email asynchronously (non-blocking)
+   */
+  private sendTeamFormationEmailAsync(
+    participant: Participant,
+    team: Team | undefined,
+    cohortName: string,
+  ): void {
+    const teamName = team?.name || "your new team";
+    const subject = `🎉 You've Been Assigned to ${teamName}!`;
+    const html = this.getTeamFormationEmailTemplate(participant, teamName, cohortName);
+
+    this.emailService.sendCustomEmail(participant.email, subject, html).catch((error) => {
+      this.logger.warn(`Failed to send team formation email to ${participant.email}: ${error.message}`);
+    });
+  }
+
+  /**
+   * Generate HTML template for team formation notification email
+   */
+  private getTeamFormationEmailTemplate(
+    participant: Participant,
+    teamName: string,
+    cohortName: string,
+  ): string {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Team Assignment</title>
+      </head>
+      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h1 style="color: #2563eb; margin: 0;">🎉 Team Formation Complete!</h1>
+        </div>
+        
+        <p>Hi ${participant.firstName},</p>
+        
+        <p>Great news! Team formation for <strong>${cohortName}</strong> is complete, and you've been assigned to:</p>
+        
+        <div style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 20px; border-radius: 12px; text-align: center; margin: 24px 0;">
+          <h2 style="margin: 0; font-size: 24px;">${teamName}</h2>
+        </div>
+        
+        <h3 style="color: #1e40af;">What's Next?</h3>
+        <ul style="padding-left: 20px;">
+          <li><strong>Meet your teammates</strong> – Head to the portal to see who you'll be working with</li>
+          <li><strong>Start collaborating</strong> – Use the team chat to introduce yourself and get to know each other</li>
+          <li><strong>Review your brief</strong> – Check out the challenge your team will be working on</li>
+        </ul>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${this.frontendUrl}/app/team" style="display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">View Your Team</a>
+        </div>
+        
+        <p>We're excited to see what you and your team will create!</p>
+        
+        <p style="color: #666; font-size: 14px; margin-top: 30px;">
+          Best regards,<br>
+          The ATF Challenge Team
+        </p>
+        
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+        
+        <p style="color: #9ca3af; font-size: 12px; text-align: center;">
+          This email was sent as part of the ${cohortName} team formation process.<br>
+          If you have any questions, please contact our support team.
+        </p>
+      </body>
+      </html>
+    `;
   }
 
   /**
@@ -1072,9 +1228,10 @@ export class TeamFormationService {
     let query = this.participantRepository
       .createQueryBuilder("p")
       .where("p.cohort_id = :cohortId", { cohortId })
-      .andWhere("p.status IN (:...statuses)", {
-        statuses: [ParticipantStatus.ACTIVE, ParticipantStatus.READY, ParticipantStatus.ONBOARDING],
-      });
+      .andWhere("p.status = :status", {
+        status: ParticipantStatus.READY,
+      })
+      .andWhere("p.onboarding_complete = true");
 
     if (participantIds?.length) {
       query = query.andWhere("p.id IN (:...participantIds)", { participantIds });

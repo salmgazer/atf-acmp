@@ -19,12 +19,6 @@ import {
 } from "@/lib/api/hooks/use-cohorts";
 import { useVerticals } from "@/lib/api/hooks/use-verticals";
 import {
-  useTeamFormationPreview,
-  useRunTeamFormation,
-  useFinalizeTeamFormation,
-  useClearTeamFormationPreview,
-} from "@/lib/api/hooks/use-matching";
-import {
   ArrowLeft,
   Pencil,
   Trash2,
@@ -42,8 +36,6 @@ import {
   Settings,
   ClipboardList,
   AlertTriangle,
-  Wand2,
-  UserPlus,
 } from "lucide-react";
 import { useStagesWithStats } from "@/lib/api/hooks/use-stages";
 import {
@@ -74,13 +66,6 @@ function CohortDetailContent({ id }: { id: string }) {
   const deleteMutation = useDeleteCohort();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showStatusDialog, setShowStatusDialog] = useState(false);
-  const [showFormationDialog, setShowFormationDialog] = useState(false);
-  
-  // Team Formation
-  const { data: formationPreview, isLoading: formationLoading } = useTeamFormationPreview(id);
-  const runFormationMutation = useRunTeamFormation();
-  const finalizeFormationMutation = useFinalizeTeamFormation();
-  const clearFormationMutation = useClearTeamFormationPreview();
 
   if (isLoading) {
     return (
@@ -117,19 +102,6 @@ function CohortDetailContent({ id }: { id: string }) {
   const handleDelete = async () => {
     await deleteMutation.mutateAsync(id);
     router.push("/portal/cohorts");
-  };
-
-  const handleRunFormation = async () => {
-    await runFormationMutation.mutateAsync({ cohortId: id });
-  };
-
-  const handleFinalizeFormation = async () => {
-    await finalizeFormationMutation.mutateAsync({ cohortId: id });
-    setShowFormationDialog(false);
-  };
-
-  const handleClearFormation = async () => {
-    await clearFormationMutation.mutateAsync(id);
   };
 
   return (
@@ -249,119 +221,6 @@ function CohortDetailContent({ id }: { id: string }) {
             </div>
           </div>
         </div>
-
-        {/* Team Formation Section */}
-        {cohort.status === "active" && (
-          <div className="rounded-lg border bg-card p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="flex items-center gap-2 text-lg font-semibold">
-                  <UserPlus className="h-5 w-5" />
-                  Team Formation
-                  {(statistics?.participantsWithoutTeam ?? 0) > 0 && (
-                    <Badge variant="secondary" className="ml-2">
-                      {statistics?.participantsWithoutTeam} without team
-                    </Badge>
-                  )}
-                </h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Automatically form teams from participants who haven't joined a team yet
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {formationPreview && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleClearFormation}
-                      disabled={clearFormationMutation.isPending}
-                    >
-                      Clear Preview
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => setShowFormationDialog(true)}
-                      disabled={finalizeFormationMutation.isPending}
-                    >
-                      <CheckCircle className="mr-2 h-4 w-4" />
-                      Finalize ({formationPreview.proposedTeams.length} teams)
-                    </Button>
-                  </>
-                )}
-                {!formationPreview && (
-                  <Button
-                    onClick={handleRunFormation}
-                    disabled={runFormationMutation.isPending}
-                  >
-                    {runFormationMutation.isPending ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Wand2 className="mr-2 h-4 w-4" />
-                    )}
-                    Run Team Formation
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* Formation Preview */}
-            {formationPreview && (
-              <div className="mt-4 space-y-4">
-                <Separator />
-                <div className="grid gap-4 sm:grid-cols-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold">{formationPreview.statistics?.totalEligibleParticipants ?? 0}</p>
-                    <p className="text-xs text-muted-foreground">Participants Available</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold">{formationPreview.statistics?.proposedTeamCount ?? 0}</p>
-                    <p className="text-xs text-muted-foreground">Teams to Create</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold">{formationPreview.statistics?.averageTeamSize?.toFixed(1) ?? '0.0'}</p>
-                    <p className="text-xs text-muted-foreground">Avg Team Size</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold">{formationPreview.statistics?.averageCompatibilityScore?.toFixed(0) ?? 0}%</p>
-                    <p className="text-xs text-muted-foreground">Avg Compatibility</p>
-                  </div>
-                </div>
-
-                {formationPreview.statistics?.backfillStats?.teamsToBackfillCount > 0 && (
-                  <div className="rounded-md bg-blue-50 dark:bg-blue-950/20 p-3 text-sm">
-                    <p className="text-blue-800 dark:text-blue-200">
-                      <strong>Backfill:</strong> {formationPreview.statistics.backfillStats.participantsToBackfillCount} participants 
-                      will be added to {formationPreview.statistics.backfillStats.teamsToBackfillCount} existing teams to reach optimal size.
-                    </p>
-                  </div>
-                )}
-
-                {formationPreview.warnings.length > 0 && (
-                  <div className="rounded-md bg-amber-50 dark:bg-amber-950/20 p-3">
-                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">Warnings:</p>
-                    <ul className="text-sm text-amber-700 dark:text-amber-300 list-disc list-inside">
-                      {formationPreview.warnings.map((warning, i) => (
-                        <li key={i}>{warning}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                <p className="text-xs text-muted-foreground">
-                  Preview generated {new Date(formationPreview.generatedAt).toLocaleString()}
-                </p>
-              </div>
-            )}
-
-            {!formationPreview && !formationLoading && (
-              <p className="text-sm text-muted-foreground mt-3">
-                Click "Run Team Formation" to generate a preview of proposed teams based on participant preferences, 
-                skills, and interests. You can review before finalizing.
-              </p>
-            )}
-          </div>
-        )}
 
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Configuration */}
@@ -586,42 +445,6 @@ function CohortDetailContent({ id }: { id: string }) {
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Team Formation Finalize Dialog */}
-      <Dialog open={showFormationDialog} onOpenChange={setShowFormationDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Finalize Team Formation</DialogTitle>
-            <DialogDescription>
-              This will create {formationPreview?.statistics?.proposedTeamCount ?? 0} new teams 
-              with {formationPreview?.statistics?.totalEligibleParticipants ?? 0} participants.
-              {formationPreview?.statistics?.backfillStats?.teamsToBackfillCount && formationPreview.statistics.backfillStats.teamsToBackfillCount > 0 && (
-                <span className="block mt-2">
-                  Additionally, {formationPreview.statistics.backfillStats.participantsToBackfillCount} participants 
-                  will be added to existing teams.
-                </span>
-              )}
-              <span className="block mt-2 font-medium">This action cannot be undone.</span>
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowFormationDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleFinalizeFormation}
-              disabled={finalizeFormationMutation.isPending}
-            >
-              {finalizeFormationMutation.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <CheckCircle className="mr-2 h-4 w-4" />
-              )}
-              Create Teams
             </Button>
           </DialogFooter>
         </DialogContent>

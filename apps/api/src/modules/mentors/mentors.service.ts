@@ -24,6 +24,8 @@ import { Cohort } from "@/database/entities/cohort.entity";
 import { User, Role } from "@/database/entities/user.entity";
 import { ChatService } from "@/modules/chat/chat.service";
 import { OneSignalService } from "@/modules/notifications/onesignal.service";
+import { EmailService } from "@/email/email.service";
+import { ConfigService } from "@nestjs/config";
 import {
   CreateMentorDto,
   UpdateMentorDto,
@@ -43,6 +45,7 @@ import {
 @Injectable()
 export class MentorsService {
   private readonly logger = new Logger(MentorsService.name);
+  private readonly frontendUrl: string;
 
   constructor(
     @InjectRepository(Mentor)
@@ -66,7 +69,11 @@ export class MentorsService {
     @Inject(forwardRef(() => ChatService))
     private readonly chatService: ChatService,
     private readonly oneSignalService: OneSignalService,
-  ) {}
+    private readonly emailService: EmailService,
+    private readonly configService: ConfigService,
+  ) {
+    this.frontendUrl = this.configService.get<string>("FRONTEND_URL", "https://challenge.atf.africa");
+  }
 
   // ============ Mentor CRUD ============
 
@@ -114,10 +121,40 @@ export class MentorsService {
       throw new NotFoundException("Cohort not found");
     }
 
+    // Check for existing mentor (including soft-deleted)
     const existing = await this.mentorRepository.findOne({
       where: { email: dto.email.toLowerCase() },
+      withDeleted: true,
     });
+
     if (existing) {
+      // If the mentor is soft-deleted, restore them with updated data
+      if (existing.deletedAt) {
+        this.logger.log(`Restoring soft-deleted mentor: ${existing.email}`);
+        
+        // Update mentor with new data and restore
+        Object.assign(existing, {
+          ...dto,
+          email: dto.email.toLowerCase(),
+          expertise: dto.expertise || existing.expertise || [],
+          verticalScope: dto.verticalScope || existing.verticalScope || [],
+          maxTeams: dto.maxTeams || existing.maxTeams || 3,
+          deletedAt: null, // Restore the mentor
+          status: MentorStatus.IMPORTED, // Reset status for re-onboarding
+        });
+
+        const restoredMentor = await this.mentorRepository.save(existing);
+
+        // Ensure user record exists for magic link login
+        await this.ensureUserRecordExists(restoredMentor);
+
+        // Send welcome email to the restored mentor (async, don't block)
+        this.sendMentorWelcomeEmailAsync(restoredMentor, cohort.name);
+
+        return restoredMentor;
+      }
+
+      // Mentor exists and is not deleted - conflict
       throw new ConflictException("Mentor with this email already exists");
     }
 
@@ -154,7 +191,48 @@ export class MentorsService {
       maxTeams: dto.maxTeams || 3,
     });
 
-    return this.mentorRepository.save(mentor);
+    const savedMentor = await this.mentorRepository.save(mentor);
+
+    // Send welcome email to the mentor (async, don't block)
+    this.sendMentorWelcomeEmailAsync(savedMentor, cohort.name);
+
+    return savedMentor;
+  }
+
+  /**
+   * Ensure a User record exists for a mentor (for magic link login)
+   */
+  private async ensureUserRecordExists(mentor: Mentor): Promise<void> {
+    const existingUser = await this.userRepository.findOne({
+      where: { email: mentor.email },
+    });
+
+    if (!existingUser) {
+      const user = this.userRepository.create({
+        email: mentor.email,
+        firstName: mentor.firstName,
+        lastName: mentor.lastName,
+        role: Role.MENTOR,
+        isActive: true,
+      });
+      await this.userRepository.save(user);
+      this.logger.log(`Created user record for restored mentor: ${user.email}`);
+    }
+  }
+
+  /**
+   * Send mentor welcome email asynchronously (non-blocking)
+   */
+  private sendMentorWelcomeEmailAsync(mentor: Mentor, cohortName?: string): void {
+    this.emailService.sendMentorWelcomeEmail({
+      to: mentor.email,
+      firstName: mentor.firstName,
+      lastName: mentor.lastName,
+      cohortName,
+      portalUrl: this.frontendUrl,
+    }).catch((error) => {
+      this.logger.warn(`Failed to send welcome email to mentor ${mentor.email}: ${error.message}`);
+    });
   }
 
   async findAll(query: MentorQueryDto): Promise<PaginatedMentorsDto> {
@@ -167,6 +245,11 @@ export class MentorsService {
       .leftJoinAndSelect("mentor.assignments", "assignment", "assignment.is_active = true")
       .leftJoinAndSelect("assignment.team", "team")
       .leftJoinAndSelect("mentor.cohort", "cohort");
+
+    // Handle deleted filter
+    if (query.deleted === true) {
+      qb.withDeleted().andWhere("mentor.deletedAt IS NOT NULL");
+    }
 
     if (query.cohortId) {
       qb.andWhere("mentor.cohortId = :cohortId", { cohortId: query.cohortId });
@@ -350,6 +433,36 @@ export class MentorsService {
     await this.mentorRepository.softRemove(mentor);
   }
 
+  /**
+   * Restore a soft-deleted mentor
+   */
+  async restore(id: string): Promise<Mentor> {
+    const mentor = await this.mentorRepository.findOne({
+      where: { id },
+      withDeleted: true,
+    });
+
+    if (!mentor) {
+      throw new NotFoundException("Mentor not found");
+    }
+
+    if (!mentor.deletedAt) {
+      throw new BadRequestException("Mentor is not deleted");
+    }
+
+    mentor.deletedAt = undefined;
+    mentor.status = MentorStatus.IMPORTED; // Reset status for re-onboarding
+
+    const restoredMentor = await this.mentorRepository.save(mentor);
+
+    // Ensure user record exists for magic link login
+    await this.ensureUserRecordExists(restoredMentor);
+
+    this.logger.log(`Restored mentor: ${mentor.email}`);
+
+    return restoredMentor;
+  }
+
   // ============ Bulk Import ============
 
   async bulkImport(
@@ -386,12 +499,51 @@ export class MentorsService {
           throw new Error("Invalid email format");
         }
 
-        // Check for existing mentor
+        // Check for existing mentor (including soft-deleted)
         const existing = await this.mentorRepository.findOne({
           where: { email: row.email.toLowerCase() },
+          withDeleted: true,
         });
 
+        let savedMentor: Mentor;
+
         if (existing) {
+          // If the mentor is soft-deleted, restore them with updated data
+          if (existing.deletedAt) {
+            this.logger.log(`Restoring soft-deleted mentor via bulk import: ${existing.email}`);
+            
+            // Update mentor with new data and restore
+            Object.assign(existing, {
+              firstName: row.firstName.trim(),
+              lastName: row.lastName.trim(),
+              phone: row.phone?.trim(),
+              company: row.company?.trim(),
+              title: row.title?.trim(),
+              bio: row.bio?.trim(),
+              expertise: row.expertise || existing.expertise || [],
+              maxTeams: row.maxTeams || existing.maxTeams || 3,
+              linkedinUrl: row.linkedinUrl?.trim(),
+              sessionRateOverride: row.sessionRateOverride,
+              cohortId,
+              deletedAt: null, // Restore the mentor
+              status: MentorStatus.IMPORTED, // Reset status for re-onboarding
+            });
+
+            savedMentor = await this.mentorRepository.save(existing);
+
+            // Ensure user record exists for magic link login
+            await this.ensureUserRecordExists(savedMentor);
+
+            result.success++;
+            result.imported.push(savedMentor.id);
+
+            // Send welcome email (async, don't block import)
+            this.sendMentorWelcomeEmailAsync(savedMentor, cohort.name);
+
+            continue; // Skip to next row
+          }
+
+          // Mentor exists and is not deleted - conflict
           throw new Error("Mentor with this email already exists");
         }
 
@@ -430,9 +582,12 @@ export class MentorsService {
           status: MentorStatus.IMPORTED,
         });
 
-        await this.mentorRepository.save(mentor);
+        savedMentor = await this.mentorRepository.save(mentor);
         result.success++;
-        result.imported.push(mentor.id);
+        result.imported.push(savedMentor.id);
+
+        // Send welcome email (async, don't block import)
+        this.sendMentorWelcomeEmailAsync(savedMentor, cohort.name);
       } catch (error: any) {
         result.failed++;
         result.errors.push({

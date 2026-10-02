@@ -15,6 +15,7 @@ import { User } from "../../database/entities/user.entity";
 import { TeamsController, InvitationsController } from "./teams.controller";
 import { TeamsService } from "./teams.service";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { EmailModule } from "../../email/email.module";
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { NotificationsModule } from "../notifications/notifications.module";
       User,
     ]),
     NotificationsModule,
+    EmailModule,
   ],
   controllers: [TeamsController, InvitationsController],
   providers: [TeamsService],

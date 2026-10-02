@@ -222,6 +222,19 @@ export class MentorsController {
     return this.mentorsService.delete(id);
   }
 
+  @Post(":id/restore")
+  @Audit({
+    action: AuditAction.UPDATE,
+    entityType: "Mentor",
+    getEntityId: (result) => result?.id,
+    getDescription: (result) => `Restored mentor: ${result?.email}`,
+  })
+  @ApiOperation({ summary: "Restore a deleted mentor" })
+  @ApiResponse({ status: 200, type: Mentor })
+  async restore(@Param("id", ParseUUIDPipe) id: string): Promise<Mentor> {
+    return this.mentorsService.restore(id);
+  }
+
   // ============ Assignments ============
 
   @Post(":id/assign")

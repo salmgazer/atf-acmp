@@ -253,38 +253,38 @@ function MentorDetailContent({ id }: { id: string }) {
                         {earnings.completedSessions}
                       </div>
                     </div>
-                    <div className="rounded-lg border border-border p-3 bg-emerald-500/10">
-                      <div className="text-xs text-emerald-600 mb-1">Total Earned</div>
-                      <div className="text-lg font-semibold text-emerald-600">
+                    <div className="rounded-lg border border-border p-3 bg-muted/30">
+                      <div className="text-xs text-muted-foreground mb-1">Total Earned</div>
+                      <div className="text-lg font-semibold text-foreground">
                         {formatCurrency(earnings.totalEarned)}
                       </div>
                     </div>
-                    <div className="rounded-lg border border-border p-3 bg-amber-500/10">
-                      <div className="text-xs text-amber-600 mb-1">Unpaid Balance</div>
-                      <div className="text-lg font-semibold text-amber-600">
+                    <div className="rounded-lg border border-border p-3 bg-muted/30">
+                      <div className="text-xs text-muted-foreground mb-1">Unpaid Balance</div>
+                      <div className="text-lg font-semibold text-foreground">
                         {formatCurrency(earnings.unpaidAmount)}
                       </div>
                     </div>
                   </div>
 
                   {/* Current Month */}
-                  <div className="rounded-lg border border-border p-4 bg-blue-500/5">
+                  <div className="rounded-lg border border-border p-4 bg-muted/50">
                     <div className="flex items-center gap-2 mb-3">
-                      <TrendingUp className="h-4 w-4 text-blue-600" />
-                      <span className="text-sm font-medium text-blue-600">This Month</span>
+                      <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium text-foreground">This Month</span>
                     </div>
                     <div className="grid grid-cols-3 gap-4">
                       <div>
                         <div className="text-xs text-muted-foreground">Earned</div>
-                        <div className="text-base font-semibold">{formatCurrency(earnings.currentMonthEarned)}</div>
+                        <div className="text-base font-semibold text-foreground">{formatCurrency(earnings.currentMonthEarned)}</div>
                       </div>
                       <div>
                         <div className="text-xs text-muted-foreground">Paid</div>
-                        <div className="text-base font-semibold text-emerald-600">{formatCurrency(earnings.currentMonthPaid)}</div>
+                        <div className="text-base font-semibold text-foreground">{formatCurrency(earnings.currentMonthPaid)}</div>
                       </div>
                       <div>
                         <div className="text-xs text-muted-foreground">Unpaid</div>
-                        <div className="text-base font-semibold text-amber-600">{formatCurrency(earnings.currentMonthUnpaid)}</div>
+                        <div className="text-base font-semibold text-foreground">{formatCurrency(earnings.currentMonthUnpaid)}</div>
                       </div>
                     </div>
                   </div>

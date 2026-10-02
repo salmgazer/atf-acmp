@@ -143,8 +143,8 @@ export class DisqualifyTeamDto {
   @IsString()
   reason: string;
 
-  @ApiProperty()
-  @IsUUID()
+  @ApiProperty({ description: "ID or identifier of who disqualified the team" })
+  @IsString()
   disqualifiedBy: string;
 }
 
