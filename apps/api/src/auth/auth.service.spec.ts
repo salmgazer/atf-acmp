@@ -10,6 +10,7 @@ import { User, Role } from "../database/entities/user.entity";
 import { RefreshToken } from "../database/entities/refresh-token.entity";
 import { Participant } from "../database/entities/participant.entity";
 import { Cohort } from "../database/entities/cohort.entity";
+import { Mentor } from "../database/entities/mentor.entity";
 import { PortalType } from "./dto/auth.dto";
 import {
   createMockRepository,
@@ -26,6 +27,7 @@ describe("AuthService", () => {
   let refreshTokenRepository: ReturnType<typeof createMockRepository>;
   let participantRepository: ReturnType<typeof createMockRepository>;
   let cohortRepository: ReturnType<typeof createMockRepository>;
+  let mentorRepository: ReturnType<typeof createMockRepository>;
   let jwtService: ReturnType<typeof createMockJwtService>;
   let firebaseService: { verifyIdToken: jest.Mock };
 
@@ -43,6 +45,7 @@ describe("AuthService", () => {
     refreshTokenRepository = createMockRepository();
     participantRepository = createMockRepository();
     cohortRepository = createMockRepository();
+    mentorRepository = createMockRepository();
     jwtService = createMockJwtService();
     firebaseService = { verifyIdToken: jest.fn() };
 
@@ -53,6 +56,7 @@ describe("AuthService", () => {
         { provide: getRepositoryToken(RefreshToken), useValue: refreshTokenRepository },
         { provide: getRepositoryToken(Participant), useValue: participantRepository },
         { provide: getRepositoryToken(Cohort), useValue: cohortRepository },
+        { provide: getRepositoryToken(Mentor), useValue: mentorRepository },
         { provide: JwtService, useValue: jwtService },
         { provide: FirebaseService, useValue: firebaseService },
         { provide: ConfigService, useValue: createMockConfigService() },

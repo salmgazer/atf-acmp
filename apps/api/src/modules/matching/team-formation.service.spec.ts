@@ -1,5 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
+import { ConfigService } from "@nestjs/config";
 import { NotFoundException, BadRequestException } from "@nestjs/common";
 import { TeamFormationService } from "./team-formation.service";
 import { LeadSelectionStrategy } from "./dto/team-formation.dto";
@@ -12,6 +13,8 @@ import {
 } from "@/database/entities/participant.entity";
 import { Brief } from "@/database/entities/brief.entity";
 import { Vertical } from "@/database/entities/vertical.entity";
+import { OneSignalService } from "@/modules/notifications/onesignal.service";
+import { EmailService } from "@/email/email.service";
 import {
   createMockRepository,
   createMockQueryBuilder,
@@ -84,6 +87,12 @@ describe("TeamFormationService", () => {
     // Default: no existing teams to backfill
     teamRepository.find.mockResolvedValue([]);
 
+    // Default: no team members (for notifications)
+    teamMemberRepository.find.mockResolvedValue([]);
+
+    // Default: no participants found (for notifications)
+    participantRepository.find.mockResolvedValue([]);
+
     // Default: no briefs or verticals (for brief-centric formation)
     briefRepository.find.mockResolvedValue([]);
     verticalRepository.find.mockResolvedValue([]);
@@ -98,6 +107,24 @@ describe("TeamFormationService", () => {
         { provide: getRepositoryToken(ParticipantPreference), useValue: preferenceRepository },
         { provide: getRepositoryToken(Brief), useValue: briefRepository },
         { provide: getRepositoryToken(Vertical), useValue: verticalRepository },
+        {
+          provide: OneSignalService,
+          useValue: {
+            sendToExternalUserIds: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: EmailService,
+          useValue: {
+            sendCustomEmail: jest.fn().mockResolvedValue(true),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn().mockReturnValue("https://challenge.atf.africa"),
+          },
+        },
       ],
     }).compile();
 
