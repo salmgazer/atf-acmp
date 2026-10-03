@@ -165,7 +165,7 @@ export class EmailService {
       try {
         const resendFromName = this.configService.get<string>("RESEND_FROM_NAME", this.fromName);
         
-        await this.resendClient.emails.send({
+        const { data, error } = await this.resendClient.emails.send({
           from: `${resendFromName} <${this.resendFromEmail}>`,
           to: [to],
           subject,
@@ -173,10 +173,16 @@ export class EmailService {
           text,
         });
 
-        this.logger.log(`Email sent via Resend to ${to}`);
-        return;
+        // Resend SDK returns errors in response, not as thrown exceptions
+        if (error) {
+          this.logger.warn(`Resend API error: ${error.message} (${error.name}), trying next provider`);
+          // Fall through to try next provider
+        } else {
+          this.logger.log(`Email sent via Resend to ${to} (id: ${data?.id})`);
+          return;
+        }
       } catch (error) {
-        this.logger.warn(`Resend failed, trying next provider: ${error}`);
+        this.logger.warn(`Resend failed with exception, trying next provider: ${error}`);
       }
     }
 
