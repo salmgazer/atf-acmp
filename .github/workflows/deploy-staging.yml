@@ -442,3 +442,59 @@ jobs:
           max-task-count: 2
           auto-scaling-metric: AVERAGE_CPU
           auto-scaling-target-value: 70
+
+  # ----------------------------------------------------------------------------
+  # Update ALB Rules for Custom Domains
+  # ----------------------------------------------------------------------------
+  update-alb-rules:
+    name: Update ALB Rules
+    runs-on: ubuntu-latest
+    needs: [deploy-api, deploy-web]
+    # Run if either deployment ran (even if one was skipped)
+    if: |
+      always() && 
+      (needs.deploy-api.result == 'success' || needs.deploy-web.result == 'success')
+    environment: staging
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: GitHubActionsUpdateALB
+
+      - name: Wait for services to stabilize
+        run: |
+          echo "Waiting 30 seconds for ECS services to stabilize..."
+          sleep 30
+
+      - name: Update ALB listener rules
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          LISTENER_ARN: ${{ vars.ALB_LISTENER_ARN }}
+        run: |
+          chmod +x ./scripts/update-alb-rules.sh
+          ./scripts/update-alb-rules.sh staging
+
+      - name: Verify endpoints
+        run: |
+          echo "Verifying endpoints..."
+          API_STATUS=$(curl -sSL --max-time 10 https://api-staging.atfchallenge.org/api/health | jq -r '.status' 2>/dev/null || echo "FAILED")
+          WEB_STATUS=$(curl -sSL --max-time 10 -o /dev/null -w '%{http_code}' https://app-staging.atfchallenge.org 2>/dev/null || echo "FAILED")
+          
+          echo "API Status: $API_STATUS"
+          echo "Web Status: $WEB_STATUS"
+          
+          if [ "$API_STATUS" != "ok" ] || [ "$WEB_STATUS" != "200" ]; then
+            echo "WARNING: Some endpoints may not be responding correctly"
+            exit 1
+          fi
+          
+          echo "All endpoints verified successfully!"
