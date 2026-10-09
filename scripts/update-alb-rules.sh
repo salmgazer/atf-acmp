@@ -10,8 +10,6 @@
 # Example: ./update-alb-rules.sh staging
 # ==============================================================================
 
-set -e
-
 ENVIRONMENT=${1:-staging}
 AWS_REGION=${AWS_REGION:-eu-central-1}
 LISTENER_ARN=${LISTENER_ARN:-"arn:aws:elasticloadbalancing:eu-central-1:338324195747:listener/app/ecs-express-gateway-alb-897d68bc/64625719adf9d240/ec30f9a1c834e7bc"}
@@ -46,35 +44,40 @@ get_task_ip() {
   local cluster=$1
   local service=$2
   
-  TASK_ARN=$(aws ecs list-tasks --cluster "$cluster" --service-name "$service" --region "$AWS_REGION" --query "taskArns[0]" --output text 2>/dev/null)
+  TASK_ARN=$(aws ecs list-tasks --cluster "$cluster" --service-name "$service" --region "$AWS_REGION" --query "taskArns[0]" --output text 2>/dev/null || echo "")
   
-  if [ "$TASK_ARN" != "None" ] && [ -n "$TASK_ARN" ]; then
+  if [ -n "$TASK_ARN" ] && [ "$TASK_ARN" != "None" ]; then
     aws ecs describe-tasks --cluster "$cluster" --tasks "$TASK_ARN" --region "$AWS_REGION" \
-      --query "tasks[0].attachments[0].details[?name=='privateIPv4Address'].value" --output text 2>/dev/null
+      --query "tasks[0].attachments[0].details[?name=='privateIPv4Address'].value" --output text 2>/dev/null || echo ""
+  else
+    echo ""
   fi
 }
 
 # Function to find target group ARN by IP (checks all states, not just healthy)
 find_target_group_by_ip() {
   local target_ip=$1
-  local found_tg=""
   
   # Get all target groups
-  TG_ARNS=$(aws elbv2 describe-target-groups --region "$AWS_REGION" --query "TargetGroups[*].TargetGroupArn" --output text)
+  TG_ARNS=$(aws elbv2 describe-target-groups --region "$AWS_REGION" --query "TargetGroups[*].TargetGroupArn" --output text 2>/dev/null || echo "")
+  
+  if [ -z "$TG_ARNS" ]; then
+    echo ""
+    return
+  fi
   
   for tg_arn in $TG_ARNS; do
     # Check all targets regardless of health state
     targets=$(aws elbv2 describe-target-health --target-group-arn "$tg_arn" --region "$AWS_REGION" \
       --query "TargetHealthDescriptions[*].Target.Id" --output text 2>/dev/null || echo "")
     
-    if echo "$targets" | grep -qw "$target_ip"; then
+    if [ -n "$targets" ] && echo "$targets" | grep -qw "$target_ip"; then
       echo "$tg_arn"
-      return 0
+      return
     fi
   done
   
   echo ""
-  return 1
 }
 
 # Get task IPs
@@ -83,8 +86,8 @@ echo "Finding service IPs..."
 API_IP=$(get_task_ip "$CLUSTER" "$API_SERVICE")
 WEB_IP=$(get_task_ip "$CLUSTER" "$WEB_SERVICE")
 
-echo "  $API_SERVICE: $API_IP"
-echo "  $WEB_SERVICE: $WEB_IP"
+echo "  $API_SERVICE: ${API_IP:-NOT FOUND}"
+echo "  $WEB_SERVICE: ${WEB_IP:-NOT FOUND}"
 
 if [ -z "$API_IP" ] || [ -z "$WEB_IP" ]; then
   echo "ERROR: Could not find task IPs. Services may not be running."
@@ -96,64 +99,89 @@ echo ""
 echo "Waiting 15 seconds for target registration..."
 sleep 15
 
-# Find target groups
-echo ""
-echo "Finding target groups..."
-API_TG_ARN=$(find_target_group_by_ip "$API_IP")
-WEB_TG_ARN=$(find_target_group_by_ip "$WEB_IP")
-
-echo "  API Target Group: ${API_TG_ARN:-NOT FOUND}"
-echo "  Web Target Group: ${WEB_TG_ARN:-NOT FOUND}"
-
-if [ -z "$API_TG_ARN" ] || [ -z "$WEB_TG_ARN" ]; then
-  echo ""
-  echo "WARNING: Could not find target groups for the service IPs."
-  echo "This may happen if target registration is still in progress."
-  echo "Waiting another 30 seconds and retrying..."
-  sleep 30
+# Find target groups with retry
+find_target_groups_with_retry() {
+  local api_ip=$1
+  local web_ip=$2
+  local max_retries=3
+  local retry_delay=30
   
-  API_TG_ARN=$(find_target_group_by_ip "$API_IP")
-  WEB_TG_ARN=$(find_target_group_by_ip "$WEB_IP")
-  
-  echo "  API Target Group (retry): ${API_TG_ARN:-NOT FOUND}"
-  echo "  Web Target Group (retry): ${WEB_TG_ARN:-NOT FOUND}"
-  
-  if [ -z "$API_TG_ARN" ] || [ -z "$WEB_TG_ARN" ]; then
+  for i in $(seq 1 $max_retries); do
     echo ""
-    echo "ERROR: Still could not find target groups after retry."
-    echo "Listing all target groups with their targets for debugging:"
-    aws elbv2 describe-target-groups --region "$AWS_REGION" --query "TargetGroups[*].[TargetGroupArn]" --output text | while read tg; do
-      echo "  TG: $tg"
-      aws elbv2 describe-target-health --target-group-arn "$tg" --region "$AWS_REGION" \
-        --query "TargetHealthDescriptions[*].[Target.Id,TargetHealth.State]" --output text 2>/dev/null | sed 's/^/    /'
-    done
-    exit 1
-  fi
+    echo "Attempt $i of $max_retries: Finding target groups..."
+    
+    API_TG_ARN=$(find_target_group_by_ip "$api_ip")
+    WEB_TG_ARN=$(find_target_group_by_ip "$web_ip")
+    
+    echo "  API Target Group: ${API_TG_ARN:-NOT FOUND}"
+    echo "  Web Target Group: ${WEB_TG_ARN:-NOT FOUND}"
+    
+    if [ -n "$API_TG_ARN" ] && [ -n "$WEB_TG_ARN" ]; then
+      return 0
+    fi
+    
+    if [ $i -lt $max_retries ]; then
+      echo ""
+      echo "Target groups not found yet. Waiting $retry_delay seconds before retry..."
+      sleep $retry_delay
+    fi
+  done
+  
+  return 1
+}
+
+if ! find_target_groups_with_retry "$API_IP" "$WEB_IP"; then
+  echo ""
+  echo "ERROR: Could not find target groups after multiple retries."
+  echo ""
+  echo "Debug info - listing all target groups with their targets:"
+  TG_LIST=$(aws elbv2 describe-target-groups --region "$AWS_REGION" --query "TargetGroups[*].TargetGroupArn" --output text 2>/dev/null || echo "")
+  for tg in $TG_LIST; do
+    echo "  TG: $tg"
+    aws elbv2 describe-target-health --target-group-arn "$tg" --region "$AWS_REGION" \
+      --query "TargetHealthDescriptions[*].[Target.Id,TargetHealth.State]" --output text 2>/dev/null | sed 's/^/    /' || echo "    (failed to get targets)"
+  done
+  exit 1
 fi
 
 # Get current listener rules
 echo ""
 echo "Updating listener rules..."
-RULES=$(aws elbv2 describe-rules --listener-arn "$LISTENER_ARN" --region "$AWS_REGION" --output json)
+RULES=$(aws elbv2 describe-rules --listener-arn "$LISTENER_ARN" --region "$AWS_REGION" --output json 2>/dev/null)
+
+if [ -z "$RULES" ]; then
+  echo "ERROR: Could not fetch listener rules."
+  exit 1
+fi
 
 # Update API rule
-API_RULE_ARN=$(echo "$RULES" | jq -r ".Rules[] | select(.Conditions[0].Values[0]==\"$API_DOMAIN\") | .RuleArn")
+API_RULE_ARN=$(echo "$RULES" | jq -r ".Rules[] | select(.Conditions[0].Values[0]==\"$API_DOMAIN\") | .RuleArn" 2>/dev/null || echo "")
 if [ -n "$API_RULE_ARN" ] && [ "$API_RULE_ARN" != "null" ]; then
   echo "  Updating $API_DOMAIN -> $API_TG_ARN"
   aws elbv2 modify-rule --rule-arn "$API_RULE_ARN" \
     --actions "[{\"Type\":\"forward\",\"TargetGroupArn\":\"$API_TG_ARN\"}]" \
-    --region "$AWS_REGION" --output text > /dev/null
+    --region "$AWS_REGION" --output text > /dev/null 2>&1
+  if [ $? -eq 0 ]; then
+    echo "    ✓ Updated successfully"
+  else
+    echo "    ✗ Failed to update"
+  fi
 else
   echo "  WARNING: No rule found for $API_DOMAIN"
 fi
 
 # Update App rule
-APP_RULE_ARN=$(echo "$RULES" | jq -r ".Rules[] | select(.Conditions[0].Values[0]==\"$APP_DOMAIN\") | .RuleArn")
+APP_RULE_ARN=$(echo "$RULES" | jq -r ".Rules[] | select(.Conditions[0].Values[0]==\"$APP_DOMAIN\") | .RuleArn" 2>/dev/null || echo "")
 if [ -n "$APP_RULE_ARN" ] && [ "$APP_RULE_ARN" != "null" ]; then
   echo "  Updating $APP_DOMAIN -> $WEB_TG_ARN"
   aws elbv2 modify-rule --rule-arn "$APP_RULE_ARN" \
     --actions "[{\"Type\":\"forward\",\"TargetGroupArn\":\"$WEB_TG_ARN\"}]" \
-    --region "$AWS_REGION" --output text > /dev/null
+    --region "$AWS_REGION" --output text > /dev/null 2>&1
+  if [ $? -eq 0 ]; then
+    echo "    ✓ Updated successfully"
+  else
+    echo "    ✗ Failed to update"
+  fi
 else
   echo "  WARNING: No rule found for $APP_DOMAIN"
 fi
