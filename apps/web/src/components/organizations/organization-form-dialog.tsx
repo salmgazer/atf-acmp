@@ -94,7 +94,9 @@ export function OrganizationFormDialog({
   organization,
 }: OrganizationFormDialogProps) {
   const isEditing = !!organization;
-  const createMutation = useRegisterOrganization();
+  const createMutation = useRegisterOrganization({ 
+    successMessage: "Organization added successfully" 
+  });
   const updateMutation = useUpdateOrganization();
   const { data: cohortsData } = useCohorts({ limit: 100 });
   const cohorts = cohortsData?.data || [];

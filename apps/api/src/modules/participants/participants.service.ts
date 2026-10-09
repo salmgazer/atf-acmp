@@ -104,12 +104,12 @@ export class ParticipantsService {
     }
 
     if (query.search) {
-      // Search by name, email, or participant ID
+      // Search by name, email, or participant ID (all case-insensitive)
       const searchResults = await this.participantRepository
         .createQueryBuilder("p")
         .where(where)
         .andWhere(
-          "(LOWER(p.firstName) LIKE :search OR LOWER(p.lastName) LIKE :search OR LOWER(p.email) LIKE :search OR p.participantId LIKE :search)",
+          "(LOWER(p.firstName) LIKE :search OR LOWER(p.lastName) LIKE :search OR LOWER(p.email) LIKE :search OR LOWER(p.participantId) LIKE :search)",
           { search: `%${query.search.toLowerCase()}%` }
         )
         .orderBy("p.createdAt", "DESC")

@@ -98,6 +98,16 @@ export class TeamsService {
       throw new NotFoundException("Cohort not found");
     }
 
+    // Check if team formation deadline has passed
+    if (cohort.deadlines?.teamFormationEnd) {
+      const deadline = new Date(cohort.deadlines.teamFormationEnd);
+      if (new Date() > deadline) {
+        throw new BadRequestException(
+          `Team formation deadline has passed (${deadline.toLocaleDateString()}). Teams can no longer be created.`
+        );
+      }
+    }
+
     // Verify creator exists and is in the cohort
     const creator = await this.participantRepository.findOne({
       where: { id: dto.creatorId, cohortId: dto.cohortId },

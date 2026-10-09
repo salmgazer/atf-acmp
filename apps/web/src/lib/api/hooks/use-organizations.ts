@@ -188,14 +188,14 @@ export function useOrganizationStatistics() {
   });
 }
 
-export function useRegisterOrganization() {
+export function useRegisterOrganization(options?: { successMessage?: string }) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (data: CreateOrganizationDto) => api.post<Organization>("/organizations", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: organizationKeys.all });
-      toast.success("Registration submitted successfully! We'll review your application shortly.");
+      toast.success(options?.successMessage || "Registration submitted successfully! We'll review your application shortly.");
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to register organization");

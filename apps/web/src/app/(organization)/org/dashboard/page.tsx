@@ -74,7 +74,7 @@ function BriefCard({ brief }: { brief: Brief }) {
             </Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground line-clamp-2">
-            {brief.description}
+            {brief.description?.replace(/<[^>]*>/g, '').slice(0, 150) || 'No description'}
           </p>
           <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
             {brief.vertical && (

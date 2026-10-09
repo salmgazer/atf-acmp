@@ -146,10 +146,11 @@ function DashboardContent() {
   // Brief status data
   const briefStatusData = briefStats ? {
     draft: briefStats.draft || 0,
+    submitted: briefStats.submitted || 0,
     inReview: briefStats.inReview || 0,
     approved: briefStats.approved || 0,
     rejected: briefStats.rejected || 0,
-  } : { draft: 0, inReview: 0, approved: 0, rejected: 0 };
+  } : { draft: 0, submitted: 0, inReview: 0, approved: 0, rejected: 0 };
 
   // Mentor capacity data
   const mentorCapacity = mentorStats ? {
@@ -289,6 +290,7 @@ function DashboardContent() {
               <h3 className="font-medium text-foreground mb-3">Brief Status</h3>
               <div>
                 <MiniStat label="Draft" value={briefStatusData.draft} />
+                <MiniStat label="Submitted" value={briefStatusData.submitted} />
                 <MiniStat label="In Review" value={briefStatusData.inReview} />
                 <MiniStat label="Approved" value={briefStatusData.approved} />
                 <MiniStat label="Needs Revision" value={briefStatusData.rejected} />

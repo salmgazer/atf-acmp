@@ -330,6 +330,20 @@ export class SubmissionsService {
   ): void {
     const errors: string[] = [];
 
+    // Minimum validation: must have at least one file OR some content
+    const hasFiles = data.fileUrls && data.fileUrls.length > 0;
+    const hasContent = data.content && Object.keys(data.content).some(key => {
+      const value = data.content[key];
+      return value !== null && value !== undefined && value !== '';
+    });
+    const hasGithub = !!data.githubRepoUrl;
+    const hasVideo = !!data.videoUrl;
+
+    if (!hasFiles && !hasContent && !hasGithub && !hasVideo) {
+      errors.push("Submission must include at least one file, content, GitHub URL, or video URL");
+    }
+
+    // Stage-specific requirements
     if (requirements.documentRequired && data.fileUrls.length === 0) {
       errors.push("Document upload is required");
     }
