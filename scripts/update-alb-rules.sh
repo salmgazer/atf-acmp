@@ -54,18 +54,27 @@ get_task_ip() {
   fi
 }
 
-# Function to find target group ARN by IP
+# Function to find target group ARN by IP (checks all states, not just healthy)
 find_target_group_by_ip() {
   local target_ip=$1
+  local found_tg=""
   
-  aws elbv2 describe-target-groups --region "$AWS_REGION" --query "TargetGroups[*].TargetGroupArn" --output text | tr '\t' '\n' | while read tg_arn; do
+  # Get all target groups
+  TG_ARNS=$(aws elbv2 describe-target-groups --region "$AWS_REGION" --query "TargetGroups[*].TargetGroupArn" --output text)
+  
+  for tg_arn in $TG_ARNS; do
+    # Check all targets regardless of health state
     targets=$(aws elbv2 describe-target-health --target-group-arn "$tg_arn" --region "$AWS_REGION" \
-      --query "TargetHealthDescriptions[?TargetHealth.State=='healthy'].Target.Id" --output text 2>/dev/null)
-    if echo "$targets" | grep -q "$target_ip"; then
+      --query "TargetHealthDescriptions[*].Target.Id" --output text 2>/dev/null || echo "")
+    
+    if echo "$targets" | grep -qw "$target_ip"; then
       echo "$tg_arn"
-      return
+      return 0
     fi
   done
+  
+  echo ""
+  return 1
 }
 
 # Get task IPs
@@ -82,18 +91,44 @@ if [ -z "$API_IP" ] || [ -z "$WEB_IP" ]; then
   exit 1
 fi
 
+# Wait a bit for target registration
+echo ""
+echo "Waiting 15 seconds for target registration..."
+sleep 15
+
 # Find target groups
 echo ""
 echo "Finding target groups..."
 API_TG_ARN=$(find_target_group_by_ip "$API_IP")
 WEB_TG_ARN=$(find_target_group_by_ip "$WEB_IP")
 
-echo "  API Target Group: $API_TG_ARN"
-echo "  Web Target Group: $WEB_TG_ARN"
+echo "  API Target Group: ${API_TG_ARN:-NOT FOUND}"
+echo "  Web Target Group: ${WEB_TG_ARN:-NOT FOUND}"
 
 if [ -z "$API_TG_ARN" ] || [ -z "$WEB_TG_ARN" ]; then
-  echo "ERROR: Could not find target groups for the service IPs."
-  exit 1
+  echo ""
+  echo "WARNING: Could not find target groups for the service IPs."
+  echo "This may happen if target registration is still in progress."
+  echo "Waiting another 30 seconds and retrying..."
+  sleep 30
+  
+  API_TG_ARN=$(find_target_group_by_ip "$API_IP")
+  WEB_TG_ARN=$(find_target_group_by_ip "$WEB_IP")
+  
+  echo "  API Target Group (retry): ${API_TG_ARN:-NOT FOUND}"
+  echo "  Web Target Group (retry): ${WEB_TG_ARN:-NOT FOUND}"
+  
+  if [ -z "$API_TG_ARN" ] || [ -z "$WEB_TG_ARN" ]; then
+    echo ""
+    echo "ERROR: Still could not find target groups after retry."
+    echo "Listing all target groups with their targets for debugging:"
+    aws elbv2 describe-target-groups --region "$AWS_REGION" --query "TargetGroups[*].[TargetGroupArn]" --output text | while read tg; do
+      echo "  TG: $tg"
+      aws elbv2 describe-target-health --target-group-arn "$tg" --region "$AWS_REGION" \
+        --query "TargetHealthDescriptions[*].[Target.Id,TargetHealth.State]" --output text 2>/dev/null | sed 's/^/    /'
+    done
+    exit 1
+  fi
 fi
 
 # Get current listener rules
