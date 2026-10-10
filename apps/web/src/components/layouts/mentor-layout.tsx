@@ -78,7 +78,7 @@ export function MentorLayout({ children, noPadding }: MentorLayoutProps) {
   }));
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex h-screen bg-background overflow-hidden">
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
@@ -242,10 +242,17 @@ export function MentorLayout({ children, noPadding }: MentorLayoutProps) {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        
+        {/* Version number */}
+        <div className="border-t border-border/50 py-2 px-4">
+          <p className="text-xs text-muted-foreground text-center">
+            Version {process.env.APP_VERSION}
+          </p>
+        </div>
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex flex-1 flex-col min-h-screen">
+      <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top Header - Desktop: minimal, Mobile: full */}
         <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-4 border-b bg-background px-4 md:h-16 md:px-6">
           {/* Mobile menu button */}
@@ -340,7 +347,7 @@ export function MentorLayout({ children, noPadding }: MentorLayoutProps) {
         {/* Main content - with padding for mobile bottom nav */}
         <main
           className={cn(
-            "flex-1 pb-20 md:pb-0",
+            "flex-1 pb-20 md:pb-0 overflow-y-auto",
             noPadding ? "overflow-hidden" : "px-4 pt-4 md:px-6 md:pt-6"
           )}
         >

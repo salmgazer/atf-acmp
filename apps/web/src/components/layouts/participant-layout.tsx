@@ -98,7 +98,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
   }));
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex h-screen bg-background overflow-hidden">
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
@@ -295,10 +295,17 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        
+        {/* Version number */}
+        <div className="border-t border-border/50 py-2 px-4">
+          <p className="text-xs text-muted-foreground text-center">
+            Version {process.env.APP_VERSION}
+          </p>
+        </div>
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex flex-1 flex-col min-h-screen">
+      <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top Header - Desktop: minimal, Mobile: full */}
         <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-4 border-b bg-background px-4 md:h-16 md:px-6">
           {/* Mobile menu button */}
@@ -443,10 +450,10 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
           </div>
 
           {/* Mobile header actions */}
-          <div className="flex md:hidden items-center gap-1">
+          <div className="flex md:hidden items-center gap-2 shrink-0 mr-0.5">
             <Link
               href="/app/notifications"
-              className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-muted transition-colors"
+              className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-muted transition-colors shrink-0"
             >
               <Bell className="h-5 w-5 text-muted-foreground" />
               {unreadCount > 0 && (
@@ -458,7 +465,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
             <Link
               href="/app/profile"
               className={cn(
-                "flex h-8 w-8 items-center justify-center rounded-full border-2 transition-colors",
+                "flex h-9 w-9 items-center justify-center rounded-full border-2 transition-colors shrink-0",
                 pathname.startsWith("/app/profile")
                   ? "border-primary bg-primary/10"
                   : "border-muted-foreground/30 hover:border-muted-foreground/50 hover:bg-muted"
@@ -477,7 +484,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
         {/* Main content - with padding for mobile bottom nav */}
         <main
           className={cn(
-            "flex-1 pb-20 md:pb-0",
+            "flex-1 pb-20 md:pb-0 overflow-y-auto",
             noPadding ? "overflow-hidden" : "px-4 pt-4 md:px-6 md:pt-6"
           )}
         >

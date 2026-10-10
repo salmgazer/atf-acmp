@@ -90,6 +90,7 @@ export const useAuthStore = create<AuthStore>()(
         if (typeof window !== "undefined") {
           localStorage.setItem("auth_token", token);
           document.cookie = `auth_token=${token}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
+          document.cookie = `auth_portal=${portal}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
         }
       },
 
@@ -104,6 +105,7 @@ export const useAuthStore = create<AuthStore>()(
         if (typeof window !== "undefined") {
           localStorage.removeItem("auth_token");
           document.cookie = "auth_token=; path=/; max-age=0";
+          document.cookie = "auth_portal=; path=/; max-age=0";
         }
       },
 
@@ -127,6 +129,10 @@ export const useAuthStore = create<AuthStore>()(
         // Set loading to false after hydration completes
         if (state) {
           state.setLoading(false);
+          // Ensure portal cookie is set after hydration (for existing sessions)
+          if (typeof window !== "undefined" && state.portal && state.token) {
+            document.cookie = `auth_portal=${state.portal}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
+          }
         }
       },
     }

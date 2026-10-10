@@ -69,8 +69,18 @@ export function middleware(request: NextRequest) {
 
   // Check if this is a public path (login pages, etc.)
   if (isPublicPath(pathname, portal)) {
-    // For login pages, always allow access - let user switch portals if needed
-    // Don't auto-redirect to dashboard as the user may be trying to switch accounts
+    // If user has an auth token and is on a login page, redirect to their correct dashboard
+    const authToken = request.cookies.get("auth_token")?.value;
+    const authPortal = request.cookies.get("auth_portal")?.value as PortalKey | undefined;
+    
+    if (authToken && pathname === config.loginPath) {
+      // Redirect authenticated users to their correct portal's dashboard
+      // If they have a stored portal, use that; otherwise use current portal
+      const targetPortal = authPortal || portal;
+      const targetConfig = PORTAL_CONFIG[targetPortal];
+      const dashboardUrl = new URL(targetConfig.dashboardPath, request.url);
+      return NextResponse.redirect(dashboardUrl);
+    }
     return NextResponse.next();
   }
 

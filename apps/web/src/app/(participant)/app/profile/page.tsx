@@ -614,6 +614,11 @@ function ProfileContent() {
         Log Out
       </Button>
 
+      {/* Version - Mobile only */}
+      <p className="text-center text-xs text-muted-foreground md:hidden">
+        Version {process.env.APP_VERSION}
+      </p>
+
       {/* Edit Profile Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent>

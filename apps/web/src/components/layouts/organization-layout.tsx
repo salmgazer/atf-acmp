@@ -152,10 +152,20 @@ export function OrganizationLayout({ children }: OrganizationLayoutProps) {
             );
           })}
         </nav>
+        
+        {/* Version number */}
+        <div className={cn(
+          "border-t border-border/50 py-3",
+          sidebarCollapsed ? "px-2 text-center" : "px-5"
+        )}>
+          <p className="text-xs text-muted-foreground">
+            {sidebarCollapsed ? `v${process.env.APP_VERSION}` : `Version ${process.env.APP_VERSION}`}
+          </p>
+        </div>
       </aside>
 
       {/* Main content */}
-      <div className="flex flex-1 flex-col min-h-screen overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
         <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-4 bg-background px-4 lg:px-8">
           <button

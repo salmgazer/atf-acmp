@@ -382,6 +382,11 @@ function ProfileContent() {
             </div>
           </div>
         </div>
+
+        {/* Version - Mobile only */}
+        <p className="text-center text-xs text-muted-foreground lg:hidden py-4">
+          Version {process.env.APP_VERSION}
+        </p>
       </div>
     </StaffLayout>
   );

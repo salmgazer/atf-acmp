@@ -7,6 +7,11 @@ const nextConfig: NextConfig = {
   // Enable standalone output for Docker deployment
   output: "standalone",
   
+  // Expose app version from package.json
+  env: {
+    APP_VERSION: process.env.npm_package_version || "0.1.3",
+  },
+  
   // Ignore ESLint and TypeScript errors during production build
   // These should be caught in CI/pre-commit hooks instead
   eslint: {
