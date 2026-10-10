@@ -54,30 +54,38 @@ get_task_ip() {
   fi
 }
 
-# Function to find target group ARN by IP (checks all states, not just healthy)
+# Function to find target group ARN by IP using jq for reliable parsing
 find_target_group_by_ip() {
   local target_ip=$1
   
-  # Get all target groups
-  TG_ARNS=$(aws elbv2 describe-target-groups --region "$AWS_REGION" --query "TargetGroups[*].TargetGroupArn" --output text 2>/dev/null || echo "")
+  # Get all target groups as JSON array
+  local tg_json
+  tg_json=$(aws elbv2 describe-target-groups --region "$AWS_REGION" --output json 2>/dev/null)
   
-  if [ -z "$TG_ARNS" ]; then
+  if [ -z "$tg_json" ]; then
     echo ""
-    return
+    return 1
   fi
   
-  for tg_arn in $TG_ARNS; do
-    # Check all targets regardless of health state
-    targets=$(aws elbv2 describe-target-health --target-group-arn "$tg_arn" --region "$AWS_REGION" \
-      --query "TargetHealthDescriptions[*].Target.Id" --output text 2>/dev/null || echo "")
+  # Extract ARNs using jq
+  local tg_arns
+  tg_arns=$(echo "$tg_json" | jq -r '.TargetGroups[].TargetGroupArn')
+  
+  # Check each target group
+  for tg_arn in $tg_arns; do
+    # Query for this specific IP in this target group
+    local found
+    found=$(aws elbv2 describe-target-health --target-group-arn "$tg_arn" --region "$AWS_REGION" \
+      --query "TargetHealthDescriptions[?Target.Id=='$target_ip'].Target.Id" --output text 2>/dev/null)
     
-    if [ -n "$targets" ] && echo "$targets" | grep -qw "$target_ip"; then
+    if [ -n "$found" ] && [ "$found" != "None" ] && [ "$found" != "" ]; then
       echo "$tg_arn"
-      return
+      return 0
     fi
   done
   
   echo ""
+  return 1
 }
 
 # Get task IPs
@@ -100,47 +108,46 @@ echo "Waiting 15 seconds for target registration..."
 sleep 15
 
 # Find target groups with retry
-find_target_groups_with_retry() {
-  local api_ip=$1
-  local web_ip=$2
-  local max_retries=3
-  local retry_delay=30
-  
-  for i in $(seq 1 $max_retries); do
-    echo ""
-    echo "Attempt $i of $max_retries: Finding target groups..."
-    
-    API_TG_ARN=$(find_target_group_by_ip "$api_ip")
-    WEB_TG_ARN=$(find_target_group_by_ip "$web_ip")
-    
-    echo "  API Target Group: ${API_TG_ARN:-NOT FOUND}"
-    echo "  Web Target Group: ${WEB_TG_ARN:-NOT FOUND}"
-    
-    if [ -n "$API_TG_ARN" ] && [ -n "$WEB_TG_ARN" ]; then
-      return 0
-    fi
-    
-    if [ $i -lt $max_retries ]; then
-      echo ""
-      echo "Target groups not found yet. Waiting $retry_delay seconds before retry..."
-      sleep $retry_delay
-    fi
-  done
-  
-  return 1
-}
+API_TG_ARN=""
+WEB_TG_ARN=""
+MAX_RETRIES=3
+RETRY_DELAY=30
 
-if ! find_target_groups_with_retry "$API_IP" "$WEB_IP"; then
+for i in $(seq 1 $MAX_RETRIES); do
+  echo ""
+  echo "Attempt $i of $MAX_RETRIES: Finding target groups..."
+  
+  API_TG_ARN=$(find_target_group_by_ip "$API_IP")
+  WEB_TG_ARN=$(find_target_group_by_ip "$WEB_IP")
+  
+  echo "  API Target Group: ${API_TG_ARN:-NOT FOUND}"
+  echo "  Web Target Group: ${WEB_TG_ARN:-NOT FOUND}"
+  
+  if [ -n "$API_TG_ARN" ] && [ -n "$WEB_TG_ARN" ]; then
+    break
+  fi
+  
+  if [ $i -lt $MAX_RETRIES ]; then
+    echo ""
+    echo "Target groups not found yet. Waiting $RETRY_DELAY seconds before retry..."
+    sleep $RETRY_DELAY
+  fi
+done
+
+if [ -z "$API_TG_ARN" ] || [ -z "$WEB_TG_ARN" ]; then
   echo ""
   echo "ERROR: Could not find target groups after multiple retries."
   echo ""
+  echo "Looking for IPs: API=$API_IP, Web=$WEB_IP"
+  echo ""
   echo "Debug info - listing all target groups with their targets:"
-  TG_LIST=$(aws elbv2 describe-target-groups --region "$AWS_REGION" --query "TargetGroups[*].TargetGroupArn" --output text 2>/dev/null || echo "")
-  for tg in $TG_LIST; do
+  
+  aws elbv2 describe-target-groups --region "$AWS_REGION" --output json 2>/dev/null | jq -r '.TargetGroups[].TargetGroupArn' | while read -r tg; do
     echo "  TG: $tg"
-    aws elbv2 describe-target-health --target-group-arn "$tg" --region "$AWS_REGION" \
-      --query "TargetHealthDescriptions[*].[Target.Id,TargetHealth.State]" --output text 2>/dev/null | sed 's/^/    /' || echo "    (failed to get targets)"
+    aws elbv2 describe-target-health --target-group-arn "$tg" --region "$AWS_REGION" --output json 2>/dev/null | \
+      jq -r '.TargetHealthDescriptions[] | "    \(.Target.Id) - \(.TargetHealth.State)"' 2>/dev/null || echo "    (no targets)"
   done
+  
   exit 1
 fi
 
