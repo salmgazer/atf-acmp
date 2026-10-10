@@ -1,6 +1,58 @@
+"use client";
+
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useAuthStore } from "@/lib/stores/auth-store";
+import { Loader2 } from "lucide-react";
+
+// Portal dashboard paths
+const PORTAL_DASHBOARDS = {
+  staff: "/portal/dashboard",
+  organization: "/org/dashboard",
+  participant: "/app/dashboard",
+  mentor: "/mentor/dashboard",
+} as const;
 
 export default function HomePage() {
+  const router = useRouter();
+  const { isAuthenticated, isLoading, portal } = useAuthStore();
+
+  useEffect(() => {
+    // Wait for auth state to hydrate
+    if (isLoading) return;
+
+    // If authenticated with a known portal, redirect to that portal's dashboard
+    if (isAuthenticated && portal) {
+      const dashboardPath = PORTAL_DASHBOARDS[portal];
+      if (dashboardPath) {
+        router.replace(dashboardPath);
+      }
+    }
+  }, [isAuthenticated, isLoading, portal, router]);
+
+  // Show loading while checking auth
+  if (isLoading) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </main>
+    );
+  }
+
+  // If authenticated, show loading while redirecting
+  if (isAuthenticated && portal) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Redirecting to dashboard...</p>
+        </div>
+      </main>
+    );
+  }
+
+  // Not authenticated - show portal selection
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-background">
       <div className="container flex flex-col items-center justify-center gap-8 px-4 py-16">
