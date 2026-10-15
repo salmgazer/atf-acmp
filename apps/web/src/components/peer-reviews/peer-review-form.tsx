@@ -165,7 +165,7 @@ export function PeerReviewForm({ assignmentId }: PeerReviewFormProps) {
 
       queryClient.invalidateQueries({ queryKey: ["peer-reviews"] });
       setShowSubmitDialog(false);
-      router.push("/app/peer-reviews");
+      router.push("/participant/peer-reviews");
     } catch (err: any) {
       setError(err.message || "Failed to submit review");
       setShowSubmitDialog(false);
@@ -186,7 +186,7 @@ export function PeerReviewForm({ assignmentId }: PeerReviewFormProps) {
         <CardContent className="flex flex-col items-center justify-center py-12">
           <AlertCircle className="h-12 w-12 text-destructive mb-4" />
           <h3 className="text-lg font-medium mb-1">Assignment not found</h3>
-          <Button onClick={() => router.push("/app/peer-reviews")} className="mt-4">
+          <Button onClick={() => router.push("/participant/peer-reviews")} className="mt-4">
             Back to Peer Reviews
           </Button>
         </CardContent>
@@ -203,7 +203,7 @@ export function PeerReviewForm({ assignmentId }: PeerReviewFormProps) {
           <p className="text-muted-foreground text-center mb-4">
             You have already submitted your review for this team.
           </p>
-          <Button onClick={() => router.push("/app/peer-reviews")}>
+          <Button onClick={() => router.push("/participant/peer-reviews")}>
             Back to Peer Reviews
           </Button>
         </CardContent>
@@ -220,7 +220,7 @@ export function PeerReviewForm({ assignmentId }: PeerReviewFormProps) {
         {/* Header */}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => router.push("/app/peer-reviews")}>
+            <Button variant="ghost" size="icon" onClick={() => router.push("/participant/peer-reviews")}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
@@ -457,7 +457,7 @@ export function PeerReviewForm({ assignmentId }: PeerReviewFormProps) {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => router.push("/app/peer-reviews")}
+                onClick={() => router.push("/participant/peer-reviews")}
               >
                 Save & Exit
               </Button>

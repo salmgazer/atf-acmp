@@ -140,7 +140,7 @@ export function JournalForm({ weekNumber, existingEntry }: JournalFormProps) {
         await createJournalMutation.mutateAsync(payload);
       }
       queryClient.invalidateQueries({ queryKey: ["journals"] });
-      router.push("/app/journals");
+      router.push("/participant/journals");
     } catch (err: any) {
       setError(err.response?.data?.message || err.message || "Failed to save journal entry");
     }

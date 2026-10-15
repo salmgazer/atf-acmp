@@ -4,22 +4,22 @@ import type { NextRequest } from "next/server";
 // Portal route configurations
 const PORTAL_CONFIG = {
   staff: {
-    basePath: "/portal",
-    loginPath: "/portal/login",
-    dashboardPath: "/portal/dashboard",
-    publicPaths: ["/portal/login", "/portal/forgot-password", "/portal/setup"],
+    basePath: "/staff",
+    loginPath: "/staff/login",
+    dashboardPath: "/staff/dashboard",
+    publicPaths: ["/staff/login", "/staff/forgot-password", "/staff/reset-password", "/staff/setup"],
   },
-  organization: {
-    basePath: "/org",
-    loginPath: "/org/login",
-    dashboardPath: "/org/dashboard",
-    publicPaths: ["/org/login"],
+  partner: {
+    basePath: "/partners",
+    loginPath: "/partners/login",
+    dashboardPath: "/partners/dashboard",
+    publicPaths: ["/partners/login"],
   },
   participant: {
-    basePath: "/app",
-    loginPath: "/app/login",
-    dashboardPath: "/app/dashboard",
-    publicPaths: ["/app/login"],
+    basePath: "/participant",
+    loginPath: "/participant/login",
+    dashboardPath: "/participant/dashboard",
+    publicPaths: ["/participant/login", "/participant/forgot-password", "/participant/reset-password"],
   },
   mentor: {
     basePath: "/mentor",
@@ -32,9 +32,9 @@ const PORTAL_CONFIG = {
 type PortalKey = keyof typeof PORTAL_CONFIG;
 
 function getPortalFromPath(pathname: string): PortalKey | null {
-  if (pathname.startsWith("/portal")) return "staff";
-  if (pathname.startsWith("/org")) return "organization";
-  if (pathname.startsWith("/app")) return "participant";
+  if (pathname.startsWith("/staff")) return "staff";
+  if (pathname.startsWith("/partners")) return "partner";
+  if (pathname.startsWith("/participant")) return "participant";
   if (pathname.startsWith("/mentor")) return "mentor";
   return null;
 }

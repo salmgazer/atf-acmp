@@ -48,7 +48,7 @@ interface ThreadDetailProps {
 
 export function ThreadDetail({
   threadId,
-  basePath = "/app/forum",
+  basePath = "/participant/forum",
   currentUserId,
   currentUserType,
   isStaff = false,

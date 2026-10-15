@@ -1,0 +1,694 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { StaffLayout } from "@/components/layouts";
+import { ProtectedRoute } from "@/components/auth/protected-route";
+import {
+  useTeams,
+  useTeamStatistics,
+  useAdminRemovalRequests,
+  type Team,
+  type TeamStatus,
+} from "@/lib/api/hooks/use-teams";
+import { useCohorts } from "@/lib/api/hooks/use-cohorts";
+import { useParticipantStatistics } from "@/lib/api/hooks/use-participants";
+import {
+  useTeamFormationPreview,
+  useRunTeamFormation,
+  useFinalizeTeamFormation,
+  useClearTeamFormationPreview,
+} from "@/lib/api/hooks/use-matching";
+import { useStaffCohortStore } from "@/lib/stores/staff-cohort-store";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import {
+  Search,
+  Users,
+  Clock,
+  CheckCircle,
+  Send,
+  Award,
+  XCircle,
+  Eye,
+  Loader2,
+  SlidersHorizontal,
+  X,
+  UserMinus,
+  Download,
+  Wand2,
+  UserPlus,
+} from "lucide-react";
+import { toast } from "sonner";
+import { api } from "@/lib/api/client";
+import { format } from "date-fns";
+
+const statusConfig: Record<
+  TeamStatus,
+  { label: string; bgClass: string; textClass: string; icon: typeof CheckCircle }
+> = {
+  forming: { label: "Forming", bgClass: "bg-amber-500/15", textClass: "text-amber-600", icon: Clock },
+  active: { label: "Active", bgClass: "bg-emerald-500/15", textClass: "text-emerald-600", icon: CheckCircle },
+  submitted: { label: "Submitted", bgClass: "bg-blue-500/15", textClass: "text-blue-600", icon: Send },
+  evaluated: { label: "Evaluated", bgClass: "bg-purple-500/15", textClass: "text-purple-600", icon: Award },
+  disqualified: { label: "Disqualified", bgClass: "bg-red-500/15", textClass: "text-red-600", icon: XCircle },
+};
+
+const statusTabs: { value: TeamStatus | "all"; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "forming", label: "Forming" },
+  { value: "active", label: "Active" },
+  { value: "submitted", label: "Submitted" },
+  { value: "evaluated", label: "Evaluated" },
+  { value: "disqualified", label: "Disqualified" },
+];
+
+function TeamRow({ team }: { team: Team }) {
+  const config = statusConfig[team.status];
+  const StatusIcon = config.icon;
+
+  return (
+    <tr className="border-b border-border/50 hover:bg-muted transition-colors">
+      <td className="p-4">
+        <div>
+          <Link
+            href={`/staff/teams/${team.id}`}
+            className="font-medium text-foreground hover:underline"
+          >
+            {team.name}
+          </Link>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Code: {team.inviteCode}
+          </p>
+        </div>
+      </td>
+      <td className="p-4">
+        <div className="flex items-center gap-1.5 text-muted-foreground">
+          <Users className="h-4 w-4 text-muted-foreground" />
+          <span>{team.members?.length || 0}</span>
+        </div>
+      </td>
+      <td className="p-4">
+        {team.brief ? (
+          <div className="max-w-[200px]">
+            <p className="text-sm font-medium text-foreground truncate">{team.brief.title}</p>
+            {team.brief.organization && (
+              <p className="text-xs text-muted-foreground truncate">
+                {team.brief.organization.name}
+              </p>
+            )}
+          </div>
+        ) : (
+          <span className="text-muted-foreground text-sm">Not assigned</span>
+        )}
+      </td>
+      <td className="p-4">
+        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${config.bgClass} ${config.textClass}`}>
+          <StatusIcon className="h-3 w-3" />
+          {config.label}
+        </span>
+      </td>
+      <td className="p-4 text-sm text-muted-foreground">
+        {format(new Date(team.createdAt), "MMM d, yyyy")}
+      </td>
+      <td className="p-4">
+        <Link
+          href={`/staff/teams/${team.id}`}
+          className="p-2 rounded-lg hover:bg-muted inline-flex text-muted-foreground hover:text-muted-foreground"
+        >
+          <Eye className="h-4 w-4" />
+        </Link>
+      </td>
+    </tr>
+  );
+}
+
+function TeamsContent() {
+  const [statusFilter, setStatusFilter] = useState<TeamStatus | "all">("all");
+  const [search, setSearch] = useState("");
+  const [selectedCohortId, setSelectedCohortId] = useState<string | null>(null);
+  const [hasInitialized, setHasInitialized] = useState(false);
+  const [briefFilter, setBriefFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
+  const [showFilters, setShowFilters] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showFormationDialog, setShowFormationDialog] = useState(false);
+
+  // Get global cohort from store (set by sidebar)
+  const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
+  
+  const { data: cohortsData } = useCohorts({ limit: 100 });
+  const cohorts = cohortsData?.data || [];
+
+  // Initialize local cohort from global when component mounts (if not yet set locally)
+  useEffect(() => {
+    if (globalCohortId && !hasInitialized) {
+      setSelectedCohortId(null); // null means "use global"
+      setHasInitialized(true);
+    }
+  }, [globalCohortId, hasInitialized]);
+
+  // Use local cohort if explicitly set, otherwise fall back to global
+  const effectiveCohortId = selectedCohortId ?? globalCohortId ?? undefined;
+
+  const { data: teamsData, isLoading } = useTeams({
+    status: statusFilter === "all" ? undefined : statusFilter,
+    search: search || undefined,
+    cohortId: effectiveCohortId,
+    hasbrief: briefFilter === "all" ? undefined : briefFilter === "with",
+    page,
+    limit: 20,
+  });
+  const { data: stats } = useTeamStatistics(effectiveCohortId);
+  const { data: removalRequests } = useAdminRemovalRequests(effectiveCohortId);
+  const { data: participantStats } = useParticipantStatistics(effectiveCohortId);
+
+  // Team Formation hooks
+  const { data: formationPreview, isLoading: formationLoading } = useTeamFormationPreview(effectiveCohortId ?? "");
+  const runFormationMutation = useRunTeamFormation();
+  const finalizeFormationMutation = useFinalizeTeamFormation();
+  const clearFormationMutation = useClearTeamFormationPreview();
+
+  const teams = teamsData?.data || [];
+  const totalPages = teamsData?.totalPages || 1;
+  const pendingRemovalCount = removalRequests?.length || 0;
+  // Participants who are ready for team formation (completed onboarding, not yet assigned)
+  const participantsReadyForTeams = participantStats?.ready || 0;
+
+  // Team Formation handlers
+  const handleRunFormation = async () => {
+    if (!effectiveCohortId) return;
+    await runFormationMutation.mutateAsync({ cohortId: effectiveCohortId });
+  };
+
+  const handleFinalizeFormation = async () => {
+    if (!effectiveCohortId) return;
+    await finalizeFormationMutation.mutateAsync({ cohortId: effectiveCohortId });
+    setShowFormationDialog(false);
+  };
+
+  const handleClearFormation = async () => {
+    if (!effectiveCohortId) return;
+    await clearFormationMutation.mutateAsync(effectiveCohortId);
+  };
+
+  const activeFilterCount = [
+    statusFilter !== "all",
+    selectedCohortId !== null && selectedCohortId !== globalCohortId,
+    briefFilter !== "all",
+  ].filter(Boolean).length;
+
+  const hasActiveFilters = activeFilterCount > 0;
+
+  const clearFilters = () => {
+    setStatusFilter("all");
+    setSelectedCohortId(null);
+    setBriefFilter("all");
+    setPage(1);
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (search) params.set("search", search);
+      if (effectiveCohortId) params.set("cohortId", effectiveCohortId);
+      if (briefFilter !== "all") params.set("hasbrief", briefFilter === "with" ? "true" : "false");
+      params.set("limit", "10000");
+
+      const response = await api.get<{ data: Team[] }>(`/teams?${params.toString()}`);
+      const allTeams = response.data;
+
+      if (allTeams.length === 0) {
+        toast.error("No teams to export");
+        return;
+      }
+
+      const headers = [
+        "Team Name",
+        "Invite Code",
+        "Member Count",
+        "Brief",
+        "Partner",
+        "Mentor",
+        "Status",
+        "GitHub Repo",
+        "Created At",
+      ];
+
+      const rows = allTeams.map((t) => [
+        t.name,
+        t.inviteCode,
+        String(t.members?.length || t.memberCount || 0),
+        t.brief?.title || "",
+        t.brief?.organization?.name || "",
+        t.mentor ? `${t.mentor.firstName} ${t.mentor.lastName}` : "",
+        t.status,
+        t.githubRepoUrl || "",
+        format(new Date(t.createdAt), "yyyy-MM-dd HH:mm:ss"),
+      ]);
+
+      const escapeCSV = (value: string) => {
+        if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      };
+
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((row) => row.map(escapeCSV).join(",")),
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      const cohortName = cohorts.find((c) => c.id === effectiveCohortId)?.name || "all";
+      const timestamp = format(new Date(), "yyyy-MM-dd");
+      link.download = `teams_${cohortName.replace(/\s+/g, "_")}_${timestamp}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast.success(`Exported ${allTeams.length} teams`);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to export teams");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  return (
+    <StaffLayout>
+      <div className="space-y-6">
+        {/* Header */}
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Teams</h1>
+          <p className="text-sm text-muted-foreground">
+            Manage teams, assignments, and progress
+          </p>
+        </div>
+
+        {/* Stats */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="text-sm text-muted-foreground">Total</div>
+            <div className="mt-1 text-2xl font-semibold text-foreground">{stats?.total || 0}</div>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="text-sm text-muted-foreground">Active</div>
+            <div className="mt-1 text-2xl font-semibold text-emerald-600">
+              {stats?.active || 0}
+            </div>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="text-sm text-muted-foreground">Forming</div>
+            <div className="mt-1 text-2xl font-semibold text-amber-600">
+              {stats?.forming || 0}
+            </div>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="text-sm text-muted-foreground">With Brief</div>
+            <div className="mt-1 text-2xl font-semibold text-blue-600">
+              {stats?.withBrief || 0}
+            </div>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="text-sm text-muted-foreground">Avg Members</div>
+            <div className="mt-1 text-2xl font-semibold text-foreground">{stats?.averageMembers || 0}</div>
+          </div>
+        </div>
+
+        {/* Team Formation Section */}
+        {effectiveCohortId && (participantsReadyForTeams > 0 || formationPreview) && (
+          <div className="rounded-xl border border-border bg-card p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="flex items-center gap-2 text-lg font-semibold">
+                  <UserPlus className="h-5 w-5" />
+                  Team Formation
+                  {participantsReadyForTeams > 0 && (
+                    <span className="ml-2 inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/50 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:text-blue-200">
+                      {participantsReadyForTeams} without team
+                    </span>
+                  )}
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Automatically form teams from participants who haven't joined a team yet
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {formationPreview && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleClearFormation}
+                      disabled={clearFormationMutation.isPending}
+                    >
+                      Clear Preview
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => setShowFormationDialog(true)}
+                      disabled={finalizeFormationMutation.isPending}
+                    >
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Finalize ({formationPreview.proposedTeams.length} teams)
+                    </Button>
+                  </>
+                )}
+                {!formationPreview && (
+                  <Button
+                    onClick={handleRunFormation}
+                    disabled={runFormationMutation.isPending || formationLoading}
+                  >
+                    {runFormationMutation.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Wand2 className="mr-2 h-4 w-4" />
+                    )}
+                    Run Team Formation
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Formation Preview */}
+            {formationPreview && (
+              <div className="mt-4 space-y-4">
+                <Separator />
+                <div className="grid gap-4 sm:grid-cols-4">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{formationPreview.statistics?.totalEligibleParticipants ?? 0}</p>
+                    <p className="text-xs text-muted-foreground">Participants Available</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{formationPreview.statistics?.proposedTeamCount ?? 0}</p>
+                    <p className="text-xs text-muted-foreground">Teams to Create</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{formationPreview.statistics?.averageTeamSize?.toFixed(1) ?? '0.0'}</p>
+                    <p className="text-xs text-muted-foreground">Avg Team Size</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{formationPreview.statistics?.averageCompatibilityScore?.toFixed(0) ?? 0}%</p>
+                    <p className="text-xs text-muted-foreground">Avg Compatibility</p>
+                  </div>
+                </div>
+
+                {formationPreview.statistics?.backfillStats?.teamsToBackfillCount > 0 && (
+                  <div className="rounded-md bg-blue-50 dark:bg-blue-950/20 p-3 text-sm">
+                    <p className="text-blue-800 dark:text-blue-200">
+                      <strong>Backfill:</strong> {formationPreview.statistics.backfillStats.participantsToBackfillCount} participants 
+                      will be added to {formationPreview.statistics.backfillStats.teamsToBackfillCount} existing teams to reach optimal size.
+                    </p>
+                  </div>
+                )}
+
+                {formationPreview.warnings.length > 0 && (
+                  <div className="rounded-md bg-amber-50 dark:bg-amber-950/20 p-3">
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">Warnings:</p>
+                    <ul className="text-sm text-amber-700 dark:text-amber-300 list-disc list-inside">
+                      {formationPreview.warnings.map((warning, i) => (
+                        <li key={i}>{warning}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <p className="text-xs text-muted-foreground">
+                  Preview generated {new Date(formationPreview.generatedAt).toLocaleString()}
+                </p>
+              </div>
+            )}
+
+            {!formationPreview && !formationLoading && (
+              <p className="text-sm text-muted-foreground mt-3">
+                Click "Run Team Formation" to generate a preview of proposed teams based on participant preferences, 
+                skills, and interests. You can review before finalizing.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Pending Removal Requests Alert */}
+        {pendingRemovalCount > 0 && (
+          <Link
+            href="/staff/teams/removal-requests"
+            className="flex items-center justify-between p-4 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/50">
+                <UserMinus className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div>
+                <p className="font-medium text-amber-900 dark:text-amber-100">
+                  {pendingRemovalCount} pending removal request{pendingRemovalCount !== 1 ? "s" : ""}
+                </p>
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  Team leads are waiting for your review
+                </p>
+              </div>
+            </div>
+            <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
+              Review requests →
+            </span>
+          </Link>
+        )}
+
+        {/* Search and Filter Toggle */}
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search teams..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              className="w-full h-10 pl-11 pr-4 text-sm bg-transparent border border-border rounded-full focus:border-zinc-400 focus:outline-none placeholder:text-muted-foreground"
+            />
+          </div>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
+              showFilters || hasActiveFilters
+                ? "border-zinc-900 bg-zinc-900 text-white"
+                : "border-border text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            Filters
+            {hasActiveFilters && (
+              <span className="flex items-center justify-center w-5 h-5 text-xs rounded-full bg-card text-foreground">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-50"
+          >
+            {isExporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            Export CSV
+          </button>
+        </div>
+
+        {/* Collapsible Filter Row */}
+        {showFilters && (
+          <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl bg-muted border border-border/50">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">Status:</span>
+              <div className="flex flex-wrap gap-1">
+                {statusTabs.map((tab) => (
+                  <button
+                    key={tab.value}
+                    onClick={() => {
+                      setStatusFilter(tab.value);
+                      setPage(1);
+                    }}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                      statusFilter === tab.value
+                        ? "bg-zinc-900 text-white"
+                        : "bg-card text-muted-foreground border border-border hover:bg-muted"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">Cohort:</span>
+              <select
+                value={selectedCohortId ?? globalCohortId ?? ""}
+                onChange={(e) => {
+                  setSelectedCohortId(e.target.value || null);
+                  setPage(1);
+                }}
+                className="h-9 px-3 text-sm bg-card border border-border rounded-lg focus:outline-none focus:border-zinc-400"
+              >
+                {cohorts.map((cohort) => (
+                  <option key={cohort.id} value={cohort.id}>
+                    {cohort.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">Brief:</span>
+              <select
+                value={briefFilter}
+                onChange={(e) => {
+                  setBriefFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="h-9 px-3 text-sm bg-card border border-border rounded-lg focus:outline-none focus:border-zinc-400"
+              >
+                <option value="all">All Teams</option>
+                <option value="with">With Brief</option>
+                <option value="without">Without Brief</option>
+              </select>
+            </div>
+            {hasActiveFilters && (
+              <button
+                onClick={clearFilters}
+                className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+                Clear all
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Table */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : teams.length === 0 ? (
+          <div className="rounded-xl border border-border bg-card p-12 text-center">
+            <div className="flex h-12 w-12 mx-auto items-center justify-center rounded-xl bg-muted">
+              <Users className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <h3 className="mt-4 text-lg font-medium text-foreground">No teams found</h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {search
+                ? "No teams match your search criteria."
+                : "Teams will appear here once participants form them."}
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="rounded-xl border border-border bg-card overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Team</th>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Members</th>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Brief</th>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Status</th>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Created</th>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teams.map((team) => (
+                    <TeamRow key={team.id} team={team} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Page {page} of {totalPages} ({teamsData?.total} total)
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="px-3 py-1.5 text-sm font-medium rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page === totalPages}
+                    className="px-3 py-1.5 text-sm font-medium rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Team Formation Finalize Dialog */}
+      <Dialog open={showFormationDialog} onOpenChange={setShowFormationDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Finalize Team Formation</DialogTitle>
+            <DialogDescription>
+              This will create {formationPreview?.statistics?.proposedTeamCount ?? 0} new teams 
+              with {formationPreview?.statistics?.totalEligibleParticipants ?? 0} participants.
+              {formationPreview?.statistics?.backfillStats?.teamsToBackfillCount && formationPreview.statistics.backfillStats.teamsToBackfillCount > 0 && (
+                <span className="block mt-2">
+                  Additionally, {formationPreview.statistics.backfillStats.participantsToBackfillCount} participants 
+                  will be added to existing teams.
+                </span>
+              )}
+              <span className="block mt-2 font-medium">This action cannot be undone.</span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowFormationDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleFinalizeFormation}
+              disabled={finalizeFormationMutation.isPending}
+            >
+              {finalizeFormationMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle className="mr-2 h-4 w-4" />
+              )}
+              Create Teams
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </StaffLayout>
+  );
+}
+
+export default function TeamsPage() {
+  return (
+    <ProtectedRoute portal="staff">
+      <TeamsContent />
+    </ProtectedRoute>
+  );
+}

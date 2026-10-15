@@ -54,22 +54,22 @@ interface ParticipantLayoutProps {
 
 // Main navigation items (shown in both mobile bottom nav and desktop sidebar)
 const mainNavItems = [
-  { icon: Home, label: "Home", href: "/app/dashboard" },
-  { icon: FileText, label: "Briefs", href: "/app/briefs" },
-  { icon: Users, label: "Team", href: "/app/team" },
-  { icon: UserCheck, label: "Mentor", href: "/app/mentors" },
-  { icon: MessageSquare, label: "Chat", href: "/app/chat", hasBadge: true },
+  { icon: Home, label: "Home", href: "/participant/dashboard" },
+  { icon: FileText, label: "Briefs", href: "/participant/briefs" },
+  { icon: Users, label: "Team", href: "/participant/team" },
+  { icon: UserCheck, label: "Mentor", href: "/participant/mentors" },
+  { icon: MessageSquare, label: "Chat", href: "/participant/chat", hasBadge: true },
 ];
 
 // Additional navigation items (desktop sidebar only)
 const secondaryNavItems = [
-  { icon: Send, label: "Submissions", href: "/app/submissions" },
-  { icon: Trophy, label: "Leaderboard", href: "/app/leaderboard" },
-  { icon: BookOpen, label: "Journals", href: "/app/journals" },
-  { icon: FolderOpen, label: "Resources", href: "/app/resources" },
-  { icon: Award, label: "Certificates", href: "/app/certificates" },
-  { icon: Megaphone, label: "Announcements", href: "/app/announcements" },
-  { icon: HelpCircle, label: "Help", href: "/app/help" },
+  { icon: Send, label: "Submissions", href: "/participant/submissions" },
+  { icon: Trophy, label: "Leaderboard", href: "/participant/leaderboard" },
+  { icon: BookOpen, label: "Journals", href: "/participant/journals" },
+  { icon: FolderOpen, label: "Resources", href: "/participant/resources" },
+  { icon: Award, label: "Certificates", href: "/participant/certificates" },
+  { icon: Megaphone, label: "Announcements", href: "/participant/announcements" },
+  { icon: HelpCircle, label: "Help", href: "/participant/help" },
 ];
 
 export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProps) {
@@ -88,7 +88,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
   const handleLogout = () => {
     queryClient.clear();
     logout();
-    router.push("/app/login");
+    router.push("/participant/login");
   };
 
   // Mobile bottom navigation items with badges
@@ -116,7 +116,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
       >
         {/* Logo */}
         <div className="flex h-16 items-center justify-between px-4 border-b border-border/50">
-          <Link href="/app/dashboard" className="flex items-center gap-3">
+          <Link href="/participant/dashboard" className="flex items-center gap-3">
             <Image
               src="/logos/image_only/Brand-Mark_Red.png"
               alt="ATF Logo"
@@ -228,13 +228,13 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuItem asChild>
-                <Link href="/app/profile" className="flex items-center gap-2 cursor-pointer">
+                <Link href="/participant/profile" className="flex items-center gap-2 cursor-pointer">
                   <User className="h-4 w-4" />
                   Profile
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/app/notifications" className="flex items-center gap-2 cursor-pointer">
+                <Link href="/participant/notifications" className="flex items-center gap-2 cursor-pointer">
                   <Bell className="h-4 w-4" />
                   Notifications
                   {unreadCount > 0 && (
@@ -317,7 +317,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
           </button>
 
           {/* Mobile logo */}
-          <Link href="/app/dashboard" className="flex items-center gap-2 md:hidden">
+          <Link href="/participant/dashboard" className="flex items-center gap-2 md:hidden">
             <Image
               src="/logos/image_only/Brand-Mark_Red.png"
               alt="ATF Logo"
@@ -350,7 +350,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
                   <p className="font-semibold">Notifications</p>
                 </div>
                 <DropdownMenuItem asChild>
-                  <Link href="/app/notifications" className="flex items-center justify-center p-4 text-sm text-muted-foreground cursor-pointer">
+                  <Link href="/participant/notifications" className="flex items-center justify-center p-4 text-sm text-muted-foreground cursor-pointer">
                     {unreadCount > 0 ? `View ${unreadCount} notification${unreadCount > 1 ? 's' : ''}` : 'No new notifications'}
                   </Link>
                 </DropdownMenuItem>
@@ -381,13 +381,13 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
                   <p className="text-xs text-muted-foreground">{participant?.email}</p>
                 </div>
                 <DropdownMenuItem asChild>
-                  <Link href="/app/profile" className="flex items-center gap-2 cursor-pointer">
+                  <Link href="/participant/profile" className="flex items-center gap-2 cursor-pointer">
                     <User className="h-4 w-4" />
                     Profile
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/app/notifications" className="flex items-center gap-2 cursor-pointer">
+                  <Link href="/participant/notifications" className="flex items-center gap-2 cursor-pointer">
                     <Bell className="h-4 w-4" />
                     Notifications
                     {unreadCount > 0 && (
@@ -452,7 +452,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
           {/* Mobile header actions */}
           <div className="flex md:hidden items-center gap-2 shrink-0 mr-0.5">
             <Link
-              href="/app/notifications"
+              href="/participant/notifications"
               className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-muted transition-colors shrink-0"
             >
               <Bell className="h-5 w-5 text-muted-foreground" />
@@ -463,10 +463,10 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
               )}
             </Link>
             <Link
-              href="/app/profile"
+              href="/participant/profile"
               className={cn(
                 "flex h-9 w-9 items-center justify-center rounded-full border-2 transition-colors shrink-0",
-                pathname.startsWith("/app/profile")
+                pathname.startsWith("/participant/profile")
                   ? "border-primary bg-primary/10"
                   : "border-muted-foreground/30 hover:border-muted-foreground/50 hover:bg-muted"
               )}
@@ -474,7 +474,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
               <User
                 className={cn(
                   "h-4 w-4",
-                  pathname.startsWith("/app/profile") ? "text-primary" : "text-muted-foreground"
+                  pathname.startsWith("/participant/profile") ? "text-primary" : "text-muted-foreground"
                 )}
               />
             </Link>

@@ -1043,7 +1043,7 @@ export class TeamFormationService {
           type: "team_formation_complete",
           cohortId: cohort.id,
         },
-        url: "/app/team",
+        url: "/participant/team",
       });
       this.logger.log(`Sent push notifications to ${externalUserIds.length} participants`);
     } catch (error) {

@@ -326,7 +326,7 @@ export class TeamsService {
             participantId: participant.id,
             participantName,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send join request push: ${err.message}`));
 
@@ -428,7 +428,7 @@ export class TeamsService {
             teamId: team.id,
             teamName: team.name,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send confirmation push: ${err.message}`));
 
@@ -484,7 +484,7 @@ export class TeamsService {
             teamId: team.id,
             teamName: team.name,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send decline push: ${err.message}`));
 
@@ -564,7 +564,7 @@ export class TeamsService {
               teamId: team.id,
               teamName: team.name,
             },
-            url: "/app/team",
+            url: "/participant/team",
           }
         ).catch((err) => this.logger.warn(`Failed to send removal push: ${err.message}`));
       }
@@ -726,7 +726,7 @@ export class TeamsService {
             teamId: request.teamId,
             teamName: request.team?.name,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send removal notification: ${err.message}`));
     }
@@ -745,7 +745,7 @@ export class TeamsService {
             teamId: request.teamId,
             participantId: request.participantId,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send approval notification: ${err.message}`));
     }
@@ -796,7 +796,7 @@ export class TeamsService {
             teamId: request.teamId,
             participantId: request.participantId,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send rejection notification: ${err.message}`));
     }
@@ -1165,7 +1165,7 @@ export class TeamsService {
           teamId: team.id,
           teamName: team.name,
         },
-        url: "/app/team",
+        url: "/participant/team",
       }
     ).catch((err) => this.logger.warn(`Failed to send invitation push: ${err.message}`));
 
@@ -1298,7 +1298,7 @@ export class TeamsService {
             teamId: invitation.teamId,
             participantId: invitation.participantId,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send acceptance push: ${err.message}`));
     }
@@ -1343,7 +1343,7 @@ export class TeamsService {
             teamId: invitation.teamId,
             participantId: invitation.participantId,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send decline push: ${err.message}`));
     }

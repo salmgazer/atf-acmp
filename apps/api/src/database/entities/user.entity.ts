@@ -46,4 +46,10 @@ export class User extends BaseEntity {
 
   @Column({ name: "password_changed_at", nullable: true })
   passwordChangedAt?: Date;
+
+  @Column({ name: "password_reset_token", nullable: true })
+  passwordResetToken?: string;
+
+  @Column({ name: "password_reset_expires", nullable: true })
+  passwordResetExpires?: Date;
 }

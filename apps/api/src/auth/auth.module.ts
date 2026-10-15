@@ -16,6 +16,7 @@ import { TeamMember } from "../database/entities/team.entity";
 import { Cohort } from "../database/entities/cohort.entity";
 import { Organization } from "../database/entities/organization.entity";
 import { Mentor } from "../database/entities/mentor.entity";
+import { EmailModule } from "../email/email.module";
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { Mentor } from "../database/entities/mentor.entity";
       inject: [ConfigService],
     }),
     TypeOrmModule.forFeature([User, VerificationCode, RefreshToken, Participant, TeamMember, Cohort, Organization, Mentor]),
+    EmailModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, FirebaseService, MagicLinkService, JwtStrategy],

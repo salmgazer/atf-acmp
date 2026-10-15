@@ -67,7 +67,7 @@ export function useVerticals(cohortId?: string) {
  * Hook for organization users to fetch verticals for their assigned cohort.
  * Uses the /organizations/me/verticals endpoint which doesn't require admin roles.
  */
-export function useMyOrganizationVerticals() {
+export function useMyPartnerVerticals() {
   return useQuery({
     queryKey: verticalKeys.myVerticals(),
     queryFn: async () => {

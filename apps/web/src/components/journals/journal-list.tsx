@@ -48,7 +48,7 @@ export function JournalList() {
           </p>
         </div>
         <Button asChild>
-          <Link href="/app/journals/new">
+          <Link href="/participant/journals/new">
             <Plus className="mr-2 h-4 w-4" />
             New Entry
           </Link>
@@ -110,7 +110,7 @@ export function JournalList() {
               Start documenting your team's progress by creating your first weekly entry
             </p>
             <Button asChild>
-              <Link href="/app/journals/new">
+              <Link href="/participant/journals/new">
                 <Plus className="mr-2 h-4 w-4" />
                 Create First Entry
               </Link>

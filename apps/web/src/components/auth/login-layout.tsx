@@ -8,7 +8,7 @@ interface LoginLayoutProps {
   title: string;
   subtitle?: string;
   portalName: string;
-  portalType?: "participant" | "organization" | "mentor" | "staff";
+  portalType?: "participant" | "partner" | "mentor" | "staff";
   imageSide?: "left" | "right";
   className?: string;
 }
@@ -16,7 +16,7 @@ interface LoginLayoutProps {
 function BrandSection({ portalName, portalType }: { portalName: string; portalType?: string }) {
   const imageMap: Record<string, string> = {
     participant: "/login/participant.png",
-    organization: "/login/organization.png",
+    partner: "/login/organization.png",
     mentor: "/login/mentor.png",
     staff: "/login/staff.png",
   };

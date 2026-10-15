@@ -477,6 +477,117 @@ export class AuthService {
     return result.affected || 0;
   }
 
+  /**
+   * Request password reset - generates a token and returns it
+   * The calling code is responsible for sending the email
+   */
+  async requestPasswordReset(
+    email: string,
+    portal: PortalType,
+  ): Promise<{ token: string; firstName: string; expiresAt: Date } | null> {
+    // Generate reset token
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1); // Token valid for 1 hour
+
+    if (portal === PortalType.PARTICIPANT) {
+      const participant = await this.participantRepository.findOne({
+        where: { email: email.toLowerCase() },
+      });
+
+      if (!participant) {
+        // Don't reveal if user exists
+        return null;
+      }
+
+      participant.passwordResetToken = token;
+      participant.passwordResetExpires = expiresAt;
+      await this.participantRepository.save(participant);
+
+      return { token, firstName: participant.firstName, expiresAt };
+    } else {
+      // Staff users
+      const user = await this.userRepository.findOne({
+        where: { email: email.toLowerCase() },
+      });
+
+      if (!user) {
+        return null;
+      }
+
+      // Check if user can access the requested portal
+      if (!this.canAccessPortal(user.role, portal)) {
+        return null;
+      }
+
+      user.passwordResetToken = token;
+      user.passwordResetExpires = expiresAt;
+      await this.userRepository.save(user);
+
+      return { token, firstName: user.firstName || 'User', expiresAt };
+    }
+  }
+
+  /**
+   * Reset password using a reset token
+   */
+  async resetPassword(token: string, newPassword: string): Promise<{ portal: PortalType }> {
+    // Check participant first
+    const participant = await this.participantRepository.findOne({
+      where: { passwordResetToken: token },
+    });
+
+    if (participant) {
+      if (!participant.passwordResetExpires || participant.passwordResetExpires < new Date()) {
+        throw new UnauthorizedException("Password reset token has expired");
+      }
+
+      const passwordHash = await this.hashPassword(newPassword);
+      participant.passwordHash = passwordHash;
+      participant.passwordResetToken = undefined;
+      participant.passwordResetExpires = undefined;
+      participant.mustChangePassword = false;
+      await this.participantRepository.save(participant);
+
+      // Revoke all refresh tokens
+      await this.refreshTokenRepository.update(
+        { participantId: participant.id, isRevoked: false },
+        { isRevoked: true, revokedAt: new Date(), revokedReason: "Password reset" },
+      );
+
+      return { portal: PortalType.PARTICIPANT };
+    }
+
+    // Check staff users
+    const user = await this.userRepository.findOne({
+      where: { passwordResetToken: token },
+    });
+
+    if (user) {
+      if (!user.passwordResetExpires || user.passwordResetExpires < new Date()) {
+        throw new UnauthorizedException("Password reset token has expired");
+      }
+
+      const passwordHash = await this.hashPassword(newPassword);
+      user.passwordHash = passwordHash;
+      user.passwordResetToken = undefined;
+      user.passwordResetExpires = undefined;
+      user.mustChangePassword = false;
+      user.passwordChangedAt = new Date();
+      await this.userRepository.save(user);
+
+      // Revoke all refresh tokens
+      await this.refreshTokenRepository.update(
+        { userId: user.id, isRevoked: false },
+        { isRevoked: true, revokedAt: new Date(), revokedReason: "Password reset" },
+      );
+
+      return { portal: PortalType.STAFF };
+    }
+
+    throw new UnauthorizedException("Invalid or expired password reset token");
+  }
+
   async getActiveSessions(userId: string): Promise<RefreshToken[]> {
     return this.refreshTokenRepository.find({
       where: { userId, isRevoked: false },

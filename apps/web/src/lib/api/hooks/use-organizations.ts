@@ -5,9 +5,9 @@ import { api } from "@/lib/api/client";
 import { toast } from "sonner";
 
 // Types
-export type OrganizationStatus = "pending" | "approved" | "rejected";
+export type PartnerStatus = "pending" | "approved" | "rejected";
 
-export interface OrganizationCohort {
+export interface PartnerCohort {
   id: string;
   name: string;
   description?: string;
@@ -22,7 +22,7 @@ export interface OrganizationCohort {
   };
 }
 
-export interface Organization {
+export interface Partner {
   id: string;
   name: string;
   email: string;
@@ -33,17 +33,17 @@ export interface Organization {
   country?: string;
   contactPerson?: string;
   contactPhone?: string;
-  status: OrganizationStatus;
+  status: PartnerStatus;
   isActive: boolean;
   approvedAt?: string;
   rejectionReason?: string;
   cohortId?: string;
-  cohort?: OrganizationCohort;
+  cohort?: PartnerCohort;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface CreateOrganizationDto {
+export interface CreatePartnerDto {
   name: string;
   email: string;
   website?: string;
@@ -55,7 +55,7 @@ export interface CreateOrganizationDto {
   cohortId?: string;
 }
 
-export interface UpdateOrganizationDto {
+export interface UpdatePartnerDto {
   name?: string;
   website?: string;
   description?: string;
@@ -68,7 +68,7 @@ export interface UpdateOrganizationDto {
 }
 
 // Bulk Import Types
-export interface BulkImportOrganizationRow {
+export interface BulkImportPartnerRow {
   name: string;
   email: string;
   contactPerson?: string;
@@ -110,8 +110,8 @@ export interface BulkInviteResult {
   results: InviteResult[];
 }
 
-export interface OrganizationQueryParams {
-  status?: OrganizationStatus;
+export interface PartnerQueryParams {
+  status?: PartnerStatus;
   search?: string;
   country?: string;
   cohortId?: string;
@@ -119,15 +119,15 @@ export interface OrganizationQueryParams {
   limit?: number;
 }
 
-export interface PaginatedOrganizations {
-  data: Organization[];
+export interface PaginatedPartners {
+  data: Partner[];
   total: number;
   page: number;
   limit: number;
   totalPages: number;
 }
 
-export interface OrganizationStatistics {
+export interface PartnerStatistics {
   total: number;
   pending: number;
   approved: number;
@@ -138,7 +138,7 @@ export interface OrganizationStatistics {
 export const organizationKeys = {
   all: ["organizations"] as const,
   lists: () => [...organizationKeys.all, "list"] as const,
-  list: (params?: OrganizationQueryParams) => [...organizationKeys.lists(), params] as const,
+  list: (params?: PartnerQueryParams) => [...organizationKeys.lists(), params] as const,
   details: () => [...organizationKeys.all, "detail"] as const,
   detail: (id: string) => [...organizationKeys.details(), id] as const,
   statistics: () => [...organizationKeys.all, "statistics"] as const,
@@ -146,7 +146,7 @@ export const organizationKeys = {
 };
 
 // Hooks
-export function useOrganizations(params?: OrganizationQueryParams) {
+export function usePartners(params?: PartnerQueryParams) {
   return useQuery({
     queryKey: organizationKeys.list(params),
     queryFn: async () => {
@@ -158,41 +158,41 @@ export function useOrganizations(params?: OrganizationQueryParams) {
       if (params?.page) searchParams.set("page", String(params.page));
       if (params?.limit) searchParams.set("limit", String(params.limit));
 
-      return api.get<PaginatedOrganizations>(`/organizations?${searchParams.toString()}`);
+      return api.get<PaginatedPartners>(`/organizations?${searchParams.toString()}`);
     },
   });
 }
 
-export function useOrganization(id: string) {
+export function usePartner(id: string) {
   return useQuery({
     queryKey: organizationKeys.detail(id),
-    queryFn: () => api.get<Organization>(`/organizations/${id}`),
+    queryFn: () => api.get<Partner>(`/organizations/${id}`),
     enabled: !!id,
   });
 }
 
-export function useCurrentOrganization() {
+export function useCurrentPartner() {
   return useQuery({
     queryKey: organizationKeys.current(),
-    queryFn: () => api.get<Organization>("/organizations/me"),
+    queryFn: () => api.get<Partner>("/organizations/me"),
   });
 }
 
-export function useOrganizationStatistics() {
+export function usePartnerStatistics() {
   return useQuery({
     queryKey: organizationKeys.statistics(),
-    queryFn: async (): Promise<OrganizationStatistics> => {
-      const result = await api.get<OrganizationStatistics>("/organizations/statistics");
+    queryFn: async (): Promise<PartnerStatistics> => {
+      const result = await api.get<PartnerStatistics>("/organizations/statistics");
       return result ?? { total: 0, pending: 0, approved: 0, rejected: 0 };
     },
   });
 }
 
-export function useRegisterOrganization(options?: { successMessage?: string }) {
+export function useRegisterPartner(options?: { successMessage?: string }) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: CreateOrganizationDto) => api.post<Organization>("/organizations", data),
+    mutationFn: (data: CreatePartnerDto) => api.post<Partner>("/organizations", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: organizationKeys.all });
       toast.success(options?.successMessage || "Registration submitted successfully! We'll review your application shortly.");
@@ -203,16 +203,16 @@ export function useRegisterOrganization(options?: { successMessage?: string }) {
   });
 }
 
-export function useUpdateOrganization() {
+export function useUpdatePartner() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdateOrganizationDto }) =>
-      api.patch<Organization>(`/organizations/${id}`, data),
+    mutationFn: ({ id, data }: { id: string; data: UpdatePartnerDto }) =>
+      api.patch<Partner>(`/organizations/${id}`, data),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: organizationKeys.lists() });
       queryClient.setQueryData(organizationKeys.detail(data.id), data);
-      toast.success("Organization updated successfully");
+      toast.success("Partner updated successfully");
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to update organization");
@@ -220,15 +220,15 @@ export function useUpdateOrganization() {
   });
 }
 
-export function useApproveOrganization() {
+export function useApprovePartner() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ id, approvedBy }: { id: string; approvedBy?: string }) =>
-      api.post<Organization>(`/organizations/${id}/approve`, { approvedBy }),
+      api.post<Partner>(`/organizations/${id}/approve`, { approvedBy }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: organizationKeys.all });
-      toast.success("Organization approved");
+      toast.success("Partner approved");
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to approve organization");
@@ -236,15 +236,15 @@ export function useApproveOrganization() {
   });
 }
 
-export function useRejectOrganization() {
+export function useRejectPartner() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
-      api.post<Organization>(`/organizations/${id}/reject`, { reason }),
+      api.post<Partner>(`/organizations/${id}/reject`, { reason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: organizationKeys.all });
-      toast.success("Organization rejected");
+      toast.success("Partner rejected");
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to reject organization");
@@ -252,7 +252,7 @@ export function useRejectOrganization() {
   });
 }
 
-export function useUploadOrganizationLogo() {
+export function useUploadPartnerLogo() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -276,7 +276,7 @@ export function useUploadOrganizationLogo() {
         throw new Error(error.message || "Failed to upload logo");
       }
 
-      return response.json() as Promise<Organization>;
+      return response.json() as Promise<Partner>;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: organizationKeys.detail(data.id) });
@@ -291,11 +291,11 @@ export function useUploadOrganizationLogo() {
 
 // ============ Bulk Import Hooks ============
 
-export function useBulkImportOrganizations() {
+export function useBulkImportPartners() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ organizations, cohortId }: { organizations: BulkImportOrganizationRow[]; cohortId: string }) =>
+    mutationFn: ({ organizations, cohortId }: { organizations: BulkImportPartnerRow[]; cohortId: string }) =>
       api.post<BulkImportResult>("/organizations/bulk-import", { organizations, cohortId }),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: organizationKeys.all });
@@ -315,7 +315,7 @@ export function useBulkImportOrganizations() {
 
 // ============ Invite Hooks ============
 
-export function useSendOrganizationInvite() {
+export function useSendPartnerInvite() {
   return useMutation({
     mutationFn: ({ id, customMessage }: { id: string; customMessage?: string }) =>
       api.post<InviteResult>(`/organizations/${id}/send-invite`, { customMessage }),

@@ -64,7 +64,7 @@ export function ActiveCohortCard({ cohort, statistics, isLoading }: ActiveCohort
             asChild
             className="bg-zinc-900 text-white hover:bg-zinc-800 border-0 rounded-lg"
           >
-            <Link href={`/portal/cohorts/${cohort.id}`}>
+            <Link href={`/staff/cohorts/${cohort.id}`}>
               View Details
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>
@@ -131,7 +131,7 @@ export function NoCohortCard() {
           There is no active cohort at the moment. Create a new cohort or activate an existing one.
         </p>
         <Button asChild className="mt-6 bg-zinc-900 text-white hover:bg-zinc-800 rounded-lg">
-          <Link href="/portal/cohorts">
+          <Link href="/staff/cohorts">
             Manage Cohorts
           </Link>
         </Button>

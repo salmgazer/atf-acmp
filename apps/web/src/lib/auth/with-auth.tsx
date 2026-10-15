@@ -87,7 +87,7 @@ export function withGuest<P extends object>(
       if (isAuthenticated && user) {
         // Check if user can access this portal
         if (canAccessPortal(user.role, portal)) {
-          const dashboardPath = redirectTo || `/${portal === "staff" ? "portal" : portal === "organization" ? "org" : portal === "participant" ? "app" : "mentor"}/dashboard`;
+          const dashboardPath = redirectTo || `/${portal === "staff" ? "portal" : portal === "partner" ? "partners" : portal === "participant" ? "app" : "mentor"}/dashboard`;
           router.push(dashboardPath);
         }
       }

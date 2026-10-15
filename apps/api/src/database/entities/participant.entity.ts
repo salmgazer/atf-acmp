@@ -141,6 +141,12 @@ export class Participant extends BaseEntity {
   )
   preference?: ParticipantPreference;
 
+  @Column({ name: "password_reset_token", nullable: true })
+  passwordResetToken?: string;
+
+  @Column({ name: "password_reset_expires", nullable: true })
+  passwordResetExpires?: Date;
+
   /**
    * Get full name
    */

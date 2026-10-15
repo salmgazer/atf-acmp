@@ -152,6 +152,21 @@ export class EmailService {
     await this.sendEmail(to, subject, html);
   }
 
+  async sendPasswordResetLink(params: {
+    to: string;
+    token: string;
+    firstName?: string;
+    portal: string;
+  }): Promise<void> {
+    const frontendUrl = this.configService.get<string>("FRONTEND_URL", "https://challenge.atf.africa");
+    const resetUrl = `${frontendUrl}/${params.portal}/reset-password?token=${params.token}`;
+    
+    const subject = "Reset Your ATF Password";
+    const html = this.getPasswordResetLinkTemplate(resetUrl, params.firstName);
+
+    await this.sendEmail(params.to, subject, html);
+  }
+
   /**
    * Send a custom email with provided subject and HTML content
    */
@@ -446,6 +461,61 @@ export class EmailService {
                     </p>
                     <p style="margin: 0; color: #6b7280; font-size: 14px; line-height: 1.6;">
                       If you didn&apos;t request a password reset, please ignore this email or contact support if you have concerns.
+                    </p>
+                  </td>
+                </tr>
+                ${this.getEmailFooter()}
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `;
+  }
+
+  private getPasswordResetLinkTemplate(resetUrl: string, firstName?: string): string {
+    const greeting = firstName ? `Hi ${firstName},` : "Hi,";
+    
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Reset Your Password</title>
+      </head>
+      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f9fafb;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9fafb; padding: 40px 20px;">
+          <tr>
+            <td align="center">
+              <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);">
+                ${this.getEmailHeader()}
+                <tr>
+                  <td style="padding: 0 40px 32px 40px;">
+                    <h1 style="margin: 0 0 24px 0; color: #111827; font-size: 24px; font-weight: 600; text-align: center;">Reset Your Password</h1>
+                    <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+                      ${greeting}
+                    </p>
+                    <p style="margin: 0 0 24px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+                      We received a request to reset your password. Click the button below to create a new password:
+                    </p>
+                    <div style="text-align: center; margin: 0 0 24px 0;">
+                      <a href="${resetUrl}" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
+                        Reset Password
+                      </a>
+                    </div>
+                    <p style="margin: 0 0 16px 0; color: #6b7280; font-size: 14px; line-height: 1.6;">
+                      This link will expire in <strong>1 hour</strong>.
+                    </p>
+                    <p style="margin: 0 0 16px 0; color: #6b7280; font-size: 14px; line-height: 1.6;">
+                      If the button doesn't work, copy and paste this link into your browser:
+                    </p>
+                    <p style="margin: 0 0 16px 0; color: #6b7280; font-size: 12px; line-height: 1.6; word-break: break-all;">
+                      ${resetUrl}
+                    </p>
+                    <p style="margin: 0; color: #6b7280; font-size: 14px; line-height: 1.6;">
+                      If you didn't request a password reset, please ignore this email or contact support if you have concerns.
                     </p>
                   </td>
                 </tr>

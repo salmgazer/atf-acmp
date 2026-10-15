@@ -68,6 +68,28 @@ export class ChangePasswordDto {
   newPassword: string;
 }
 
+export class ForgotPasswordDto {
+  @ApiProperty({ description: "User email address" })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({ description: "Portal type", enum: PortalType })
+  @IsEnum(PortalType)
+  portal: PortalType;
+}
+
+export class ResetPasswordDto {
+  @ApiProperty({ description: "Password reset token" })
+  @IsString()
+  @IsNotEmpty()
+  token: string;
+
+  @ApiProperty({ description: "New password (min 8 characters)" })
+  @IsString()
+  @MinLength(8)
+  newPassword: string;
+}
+
 export class RefreshTokenDto {
   @ApiProperty({ description: "Refresh token" })
   @IsString()

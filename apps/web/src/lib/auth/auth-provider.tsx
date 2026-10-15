@@ -44,9 +44,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   // Determine current portal from pathname
   const getCurrentPortal = (): Portal | null => {
-    if (pathname.startsWith("/portal")) return "staff";
-    if (pathname.startsWith("/org")) return "organization";
-    if (pathname.startsWith("/app")) return "participant";
+    if (pathname.startsWith("/staff")) return "staff";
+    if (pathname.startsWith("/partners")) return "partner";
+    if (pathname.startsWith("/participant")) return "participant";
     if (pathname.startsWith("/mentor")) return "mentor";
     return null;
   };
@@ -121,8 +121,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       // Check if user needs to change password
       if (user.mustChangePassword && !pathname.includes("/change-password")) {
-        const portalPath = currentPortal === "participant" ? "app" : 
-                          currentPortal === "organization" ? "org" : currentPortal;
+        const portalPath = currentPortal === "participant" ? "participant" : 
+                          currentPortal === "partner" ? "partners" : currentPortal;
         router.replace(`/${portalPath}/change-password`);
         return;
       }

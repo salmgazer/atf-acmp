@@ -104,11 +104,11 @@ export function GuestRoute({
         redirectTo ||
         `/${
           portal === "staff"
-            ? "portal"
-            : portal === "organization"
-            ? "org"
+            ? "staff"
+            : portal === "partner"
+            ? "partners"
             : portal === "participant"
-            ? "app"
+            ? "participant"
             : "mentor"
         }/dashboard`;
       router.push(dashboardPath);

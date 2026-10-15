@@ -549,7 +549,7 @@ export class EvaluationsService {
             stageId: evaluation.stageId,
             stageName,
           },
-          url: "/app/evaluations",
+          url: "/participant/evaluations",
         });
       }
     } catch (error) {

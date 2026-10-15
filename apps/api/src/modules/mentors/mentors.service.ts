@@ -712,7 +712,7 @@ export class MentorsService {
         teamId,
         mentorId: mentor.id,
       },
-      url: "/app/team",
+      url: "/participant/team",
     });
 
     // Also notify the mentor

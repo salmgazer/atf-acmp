@@ -13,7 +13,7 @@ export type Role =
   | "mentor";
 
 // Portal types
-export type Portal = "staff" | "organization" | "participant" | "mentor";
+export type Portal = "staff" | "partner" | "participant" | "mentor";
 
 // Base user type
 export interface User {

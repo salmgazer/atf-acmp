@@ -199,7 +199,7 @@ export class NotificationTriggersService {
         requestId: params.requestId,
         reason: params.reason,
       },
-      actionUrl: `/portal/teams/removal-requests`,
+      actionUrl: `/staff/teams/removal-requests`,
       iconName: "user-minus",
       priority: NotificationPriority.HIGH,
     });
@@ -555,7 +555,7 @@ export class NotificationTriggersService {
         organizationName: params.organizationName,
         verticalName: params.verticalName,
       },
-      actionUrl: `/portal/briefs/${params.briefId}`,
+      actionUrl: `/staff/briefs/${params.briefId}`,
       priority: NotificationPriority.HIGH,
     });
   }
@@ -585,7 +585,7 @@ export class NotificationTriggersService {
         stageName: params.stageName,
         cohortName: params.cohortName,
       },
-      actionUrl: `/portal/submissions/review?stageId=${params.stageId}`,
+      actionUrl: `/staff/submissions/review?stageId=${params.stageId}`,
       priority: NotificationPriority.HIGH,
     });
   }
@@ -695,7 +695,7 @@ export class NotificationTriggersService {
         ? `/app/chat?channel=${params.channelId}`
         : params.recipientType === NotificationRecipientType.MENTOR
         ? `/mentor/chat?channel=${params.channelId}`
-        : `/portal/chat?channel=${params.channelId}`;
+        : `/staff/chat?channel=${params.channelId}`;
 
     return this.notificationsService.create({
       recipientId: params.recipientId,

@@ -167,7 +167,7 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
       });
       queryClient.invalidateQueries({ queryKey: ["submissions"] });
       setShowSubmitDialog(false);
-      router.push("/app/submissions");
+      router.push("/participant/submissions");
     } catch (err: any) {
       setError(err.response?.data?.message || "Failed to submit");
       setShowSubmitDialog(false);
@@ -265,7 +265,7 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
         <CardContent className="flex flex-col items-center justify-center py-12">
           <AlertCircle className="h-12 w-12 text-destructive mb-4" />
           <h3 className="text-lg font-medium mb-1">Stage not found</h3>
-          <Button onClick={() => router.push("/app/submissions")} className="mt-4">
+          <Button onClick={() => router.push("/participant/submissions")} className="mt-4">
             Back to Submissions
           </Button>
         </CardContent>
@@ -283,7 +283,7 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
       <div className="space-y-3">
         {/* Back Button and Title Row */}
         <div className="flex items-start gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0 mt-0.5" onClick={() => router.push("/app/submissions")}>
+          <Button variant="ghost" size="icon" className="shrink-0 mt-0.5" onClick={() => router.push("/participant/submissions")}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1 min-w-0">
@@ -467,7 +467,7 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
               {team?.githubRepoUrl ? (
                 <span> Your team's repository: <a href={team.githubRepoUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{team.githubRepoUrl}</a></span>
               ) : (
-                <span> Please set your team's GitHub repository URL in the <a href="/app/team" className="text-primary hover:underline">Team Settings</a>.</span>
+                <span> Please set your team's GitHub repository URL in the <a href="/participant/team" className="text-primary hover:underline">Team Settings</a>.</span>
               )}
             </AlertDescription>
           </Alert>

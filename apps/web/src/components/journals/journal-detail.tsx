@@ -41,7 +41,7 @@ export function JournalDetail({ id }: JournalDetailProps) {
       <Card>
         <CardContent className="flex flex-col items-center justify-center py-12">
           <p className="text-muted-foreground">Journal entry not found</p>
-          <Button className="mt-4" onClick={() => router.push("/app/journals")}>
+          <Button className="mt-4" onClick={() => router.push("/participant/journals")}>
             Back to Journals
           </Button>
         </CardContent>
@@ -54,7 +54,7 @@ export function JournalDetail({ id }: JournalDetailProps) {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/app/journals")}>
+          <Button variant="ghost" size="icon" onClick={() => router.push("/participant/journals")}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>

@@ -1,8 +1,9 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Get, Req } from "@nestjs/common";
+import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Get, Req, Logger } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from "@nestjs/swagger";
 import { Request } from "express";
 import { AuthService } from "./auth.service";
 import { MagicLinkService } from "./magic-link.service";
+import { EmailService } from "../email/email.service";
 import {
   FirebaseVerifyDto,
   LoginDto,
@@ -10,6 +11,8 @@ import {
   VerifyMagicCodeDto,
   RefreshTokenDto,
   ChangePasswordDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
   AuthResponseDto,
   PortalType,
 } from "./dto/auth.dto";
@@ -21,9 +24,12 @@ import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
-    private readonly magicLinkService: MagicLinkService
+    private readonly magicLinkService: MagicLinkService,
+    private readonly emailService: EmailService,
   ) {}
 
   @Post("firebase/verify")
@@ -149,6 +155,55 @@ export class AuthController {
   async passwordChanged(@CurrentUser("id") userId: string): Promise<{ message: string }> {
     await this.authService.markPasswordChanged(userId);
     return { message: "Password change recorded" };
+  }
+
+  @Post("forgot-password")
+  @Public()
+  @StrictThrottle()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Request password reset email" })
+  @ApiResponse({ status: 200, description: "If the email exists, a reset link will be sent" })
+  async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<{ message: string }> {
+    const result = await this.authService.requestPasswordReset(dto.email, dto.portal);
+    
+    // Always return success to prevent email enumeration
+    // The email will only be sent if the user exists
+    if (result) {
+      // Determine the portal path for the reset URL
+      const portalPath = dto.portal === PortalType.PARTICIPANT ? 'participant' : 'staff';
+      
+      try {
+        await this.emailService.sendPasswordResetLink({
+          to: dto.email,
+          token: result.token,
+          firstName: result.firstName,
+          portal: portalPath,
+        });
+        this.logger.log(`Password reset email sent to ${dto.email}`);
+      } catch (error) {
+        this.logger.error(`Failed to send password reset email to ${dto.email}: ${error.message}`);
+        // Don't reveal the error to the user
+      }
+    }
+    
+    return { 
+      message: "If an account with that email exists, you will receive a password reset link shortly." 
+    };
+  }
+
+  @Post("reset-password")
+  @Public()
+  @StrictThrottle()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Reset password using token" })
+  @ApiResponse({ status: 200, description: "Password reset successful" })
+  @ApiResponse({ status: 401, description: "Invalid or expired token" })
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<{ message: string; portal: string }> {
+    const result = await this.authService.resetPassword(dto.token, dto.newPassword);
+    return { 
+      message: "Password has been reset successfully. You can now log in with your new password.",
+      portal: result.portal,
+    };
   }
 
   @Get("sessions")

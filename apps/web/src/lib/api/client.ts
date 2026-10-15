@@ -180,12 +180,12 @@ const createApiClient = (): AxiosInstance => {
             const path = window.location.pathname;
             let loginPath = "/";
             
-            if (path.startsWith("/portal")) {
-              loginPath = "/portal/login";
-            } else if (path.startsWith("/org")) {
-              loginPath = "/org/login";
-            } else if (path.startsWith("/app")) {
-              loginPath = "/app/login";
+            if (path.startsWith("/staff")) {
+              loginPath = "/staff/login";
+            } else if (path.startsWith("/partners")) {
+              loginPath = "/partners/login";
+            } else if (path.startsWith("/participant")) {
+              loginPath = "/participant/login";
             } else if (path.startsWith("/mentor")) {
               loginPath = "/mentor/login";
             }

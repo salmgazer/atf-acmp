@@ -64,12 +64,12 @@ const notificationIcons: Record<string, typeof Bell> = {
 
 interface NotificationBellProps {
   token: string;
-  notificationsPath?: string; // e.g., "/app/notifications"
+  notificationsPath?: string; // e.g., "/participant/notifications"
 }
 
 export function NotificationBell({
   token,
-  notificationsPath = "/app/notifications",
+  notificationsPath = "/participant/notifications",
 }: NotificationBellProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);

@@ -137,7 +137,7 @@ export function HumanScoringForm({ evaluationId }: HumanScoringFormProps) {
       });
       queryClient.invalidateQueries({ queryKey: ["evaluations"] });
       toast.success("Human scores submitted successfully");
-      router.push("/portal/evaluations");
+      router.push("/staff/evaluations");
     } catch (err: any) {
       setError(err.message || "Failed to submit scores");
     }
@@ -157,7 +157,7 @@ export function HumanScoringForm({ evaluationId }: HumanScoringFormProps) {
         <CardContent className="flex flex-col items-center justify-center py-12">
           <AlertCircle className="h-12 w-12 text-destructive mb-4" />
           <h3 className="text-lg font-medium">Evaluation not found</h3>
-          <Button onClick={() => router.push("/portal/evaluations")} className="mt-4">
+          <Button onClick={() => router.push("/staff/evaluations")} className="mt-4">
             Back to Evaluations
           </Button>
         </CardContent>
@@ -175,7 +175,7 @@ export function HumanScoringForm({ evaluationId }: HumanScoringFormProps) {
         {/* Header */}
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => router.push("/portal/evaluations")}>
+            <Button variant="ghost" size="icon" onClick={() => router.push("/staff/evaluations")}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>
@@ -429,7 +429,7 @@ export function HumanScoringForm({ evaluationId }: HumanScoringFormProps) {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => router.push("/portal/evaluations")}
+                  onClick={() => router.push("/staff/evaluations")}
                 >
                   Cancel
                 </Button>

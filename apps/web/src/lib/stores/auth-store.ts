@@ -10,7 +10,7 @@ export type Role =
   | "participant"
   | "mentor";
 
-export type Portal = "staff" | "organization" | "participant" | "mentor";
+export type Portal = "staff" | "partner" | "participant" | "mentor";
 
 export interface AuthUser {
   id: string;
@@ -148,7 +148,7 @@ export function getPortalFromRole(role: Role): Portal {
     case "viewer":
       return "staff";
     case "organization":
-      return "organization";
+      return "partner";
     case "participant":
       return "participant";
     case "mentor":
@@ -168,11 +168,11 @@ export function canAccessPortal(role: Role, portal: Portal): boolean {
 export function getLoginPath(portal: Portal): string {
   switch (portal) {
     case "staff":
-      return "/portal/login";
-    case "organization":
-      return "/org/login";
+      return "/staff/login";
+    case "partner":
+      return "/partners/login";
     case "participant":
-      return "/app/login";
+      return "/participant/login";
     case "mentor":
       return "/mentor/login";
     default:
@@ -184,11 +184,11 @@ export function getLoginPath(portal: Portal): string {
 export function getDashboardPath(portal: Portal): string {
   switch (portal) {
     case "staff":
-      return "/portal/dashboard";
-    case "organization":
-      return "/org/dashboard";
+      return "/staff/dashboard";
+    case "partner":
+      return "/partners/dashboard";
     case "participant":
-      return "/app/dashboard";
+      return "/participant/dashboard";
     case "mentor":
       return "/mentor/dashboard";
     default:

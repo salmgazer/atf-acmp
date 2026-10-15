@@ -35,7 +35,7 @@ interface ThreadListProps {
 
 export function ThreadList({
   categoryId,
-  basePath = "/app/forum",
+  basePath = "/participant/forum",
   onNewThread,
 }: ThreadListProps) {
   const [page, setPage] = useState(1);

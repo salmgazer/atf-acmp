@@ -201,15 +201,15 @@ export class ActivityInterceptor implements NestInterceptor {
     const path = request.path || request.url;
 
     // Check path patterns first
-    if (path.startsWith("/admin") || path.startsWith("/portal")) {
+    if (path.startsWith("/admin") || path.startsWith("/staff")) {
       return ActivityPortal.STAFF;
     }
 
-    if (path.startsWith("/participant") || path.startsWith("/app")) {
+    if (path.startsWith("/participant")) {
       return ActivityPortal.PARTICIPANT;
     }
 
-    if (path.startsWith("/organization") || path.startsWith("/org")) {
+    if (path.startsWith("/partners")) {
       return ActivityPortal.ORGANIZATION;
     }
 

@@ -28,7 +28,7 @@ export function NewThreadDialog({
   open,
   onOpenChange,
   categoryId,
-  basePath = "/app/forum",
+  basePath = "/participant/forum",
 }: NewThreadDialogProps) {
   const router = useRouter();
   const [title, setTitle] = useState("");

@@ -21,7 +21,7 @@ export interface OverviewMetrics {
   disqualifiedTeams: number;
   totalParticipants: number;
   totalMentors: number;
-  totalOrganizations: number;
+  totalPartners: number;
   submissionRate: number;
   averageTeamSize: number;
   dropoutRate: number;
