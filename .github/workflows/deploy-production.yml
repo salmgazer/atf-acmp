@@ -204,7 +204,7 @@ jobs:
                 "name": "migration",
                 "image": "${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:${{ env.IMAGE_TAG }}-migration",
                 "essential": true,
-                "command": ["npx", "typeorm", "migration:run", "-d", "dist/src/database/data-source.js"],
+                "command": ["npx", "typeorm", "migration:run", "-d", "dist/apps/api/src/database/data-source.js"],
                 "environment": [
                   {"name": "NODE_ENV", "value": "production"},
                   {"name": "DATABASE_HOST", "value": "${{ vars.DATABASE_HOST }}"},
