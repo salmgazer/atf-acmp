@@ -1,5 +1,15 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
+/**
+ * Migration: AddPasswordResetFields
+ * 
+ * Adds password reset functionality fields to users and participants tables.
+ * These fields support the forgot password flow for staff and participant portals.
+ * 
+ * Fields added:
+ * - password_reset_token: Stores the hashed reset token
+ * - password_reset_expires: Token expiration timestamp (1 hour from creation)
+ */
 export class AddPasswordResetFields1728950400000 implements MigrationInterface {
   name = 'AddPasswordResetFields1728950400000';
 
