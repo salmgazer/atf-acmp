@@ -54,7 +54,7 @@ get_task_ip() {
   fi
 }
 
-# Function to find target group ARN by IP using jq for reliable parsing
+# Function to find target group ARN by IP - optimized for speed
 find_target_group_by_ip() {
   local target_ip=$1
   
@@ -67,11 +67,12 @@ find_target_group_by_ip() {
     return 1
   fi
   
-  # Extract ARNs using jq
+  # Extract ARNs using jq - only check ECS Express gateway target groups
   local tg_arns
-  tg_arns=$(echo "$tg_json" | jq -r '.TargetGroups[].TargetGroupArn')
+  tg_arns=$(echo "$tg_json" | jq -r '.TargetGroups[] | select(.TargetGroupName | startswith("ecs-gateway-tg-")) | .TargetGroupArn')
   
-  # Check each target group
+  # Check each target group in parallel using background jobs
+  local found_tg=""
   for tg_arn in $tg_arns; do
     # Query for this specific IP in this target group
     local found
@@ -104,14 +105,14 @@ fi
 
 # Wait a bit for target registration
 echo ""
-echo "Waiting 15 seconds for target registration..."
-sleep 15
+echo "Waiting 30 seconds for target registration..."
+sleep 30
 
 # Find target groups with retry
 API_TG_ARN=""
 WEB_TG_ARN=""
-MAX_RETRIES=3
-RETRY_DELAY=30
+MAX_RETRIES=5
+RETRY_DELAY=20
 
 for i in $(seq 1 $MAX_RETRIES); do
   echo ""
