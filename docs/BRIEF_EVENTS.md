@@ -66,6 +66,8 @@ Both API workflows validate that all four settings exist before building the ima
 
 Configuration changes take effect on the next API deployment. Merge the feature into `staging` or `main`, or dispatch the appropriate workflow on the feature branch with `deploy_api=true`, `deploy_web=true`, and `run_migrations=true` for the initial release. The initial release includes the cohort group and brief event migrations and the matching portal changes. Subsequent configuration-only deployments can select just the API. Verify event creation in the deployed partner portal after the workflow completes.
 
+Custom-domain routing reads the active ECS Express Gateway configuration, service revision and gateway listener rule to select the serving target group. The deployment role needs ECS read access and `elasticloadbalancing:DescribeRules`, plus `elasticloadbalancing:ModifyRule` scoped to that environment's custom-domain listener-rule ARNs. Staging's `staging-custom-domain-routing` inline policy grants updates to its two custom-domain rules. The script can be checked without changing traffic using `DRY_RUN=true bash scripts/update-alb-rules.sh staging`; it fails on missing rules or ambiguous active targets.
+
 ## Calendar investigation
 
 The mentor workflow uses a delegated Google service account. On mentor confirmation, it creates a Google Calendar event with `conferenceData.createRequest` set to `hangoutsMeet`, includes the mentor and team members as attendees, and requests invitation email delivery with `sendUpdates: all`.

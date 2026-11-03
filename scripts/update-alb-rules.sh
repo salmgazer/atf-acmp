@@ -1,223 +1,96 @@
-#!/bin/bash
-# ==============================================================================
-# Update ALB Listener Rules for Custom Domains
-# ==============================================================================
-# This script updates the ALB listener rules to point to the correct target
-# groups after ECS Express Mode deployments. ECS Express Mode rotates target
-# groups during deployments, so we need to update our custom domain rules.
-#
-# Usage: ./update-alb-rules.sh <environment>
-# Example: ./update-alb-rules.sh staging
-# ==============================================================================
+#!/usr/bin/env bash
+# Refresh custom-domain routes from the active ECS Express Gateway listener.
+# Usage: DRY_RUN=true bash scripts/update-alb-rules.sh staging
+set -euo pipefail
 
 ENVIRONMENT=${1:-staging}
 AWS_REGION=${AWS_REGION:-eu-central-1}
 LISTENER_ARN=${LISTENER_ARN:-"arn:aws:elasticloadbalancing:eu-central-1:338324195747:listener/app/ecs-express-gateway-alb-897d68bc/64625719adf9d240/ec30f9a1c834e7bc"}
+DRY_RUN=${DRY_RUN:-false}
 
-echo "========================================"
-echo "Updating ALB rules for: $ENVIRONMENT"
-echo "Region: $AWS_REGION"
-echo "========================================"
+case "$ENVIRONMENT" in
+  production)
+    API_DOMAIN="api.atfchallenge.org"
+    APP_DOMAIN="app.atfchallenge.org"
+    BUILT_DOMAIN="built.atfchallenge.org"
+    ;;
+  staging)
+    API_DOMAIN="api-staging.atfchallenge.org"
+    APP_DOMAIN="app-staging.atfchallenge.org"
+    BUILT_DOMAIN=""
+    ;;
+  *) echo "Unknown environment: $ENVIRONMENT" >&2; exit 1 ;;
+esac
+CLUSTER="acmp-$ENVIRONMENT"
 
-# Determine cluster and domains based on environment
-if [ "$ENVIRONMENT" = "production" ]; then
-  CLUSTER="acmp-production"
-  API_DOMAIN="api.atfchallenge.org"
-  APP_DOMAIN="app.atfchallenge.org"
-  BUILT_DOMAIN="built.atfchallenge.org"  # Alternative production web domain
-  API_SERVICE="acmp-api-production"
-  WEB_SERVICE="acmp-web-production"
-else
-  CLUSTER="acmp-staging"
-  API_DOMAIN="api-staging.atfchallenge.org"
-  APP_DOMAIN="app-staging.atfchallenge.org"
-  BUILT_DOMAIN=""  # No alternative domain for staging
-  API_SERVICE="acmp-api-staging"
-  WEB_SERVICE="acmp-web-staging"
-fi
+echo "Updating $ENVIRONMENT custom-domain routes in $AWS_REGION (dry run: $DRY_RUN)"
 
-echo ""
-echo "Cluster: $CLUSTER"
-echo "API Domain: $API_DOMAIN"
-echo "App Domain: $APP_DOMAIN"
-if [ -n "$BUILT_DOMAIN" ]; then
-  echo "Built Domain: $BUILT_DOMAIN"
-fi
-
-# Function to get task IP for a service
-get_task_ip() {
-  local cluster=$1
-  local service=$2
-  
-  TASK_ARN=$(aws ecs list-tasks --cluster "$cluster" --service-name "$service" --region "$AWS_REGION" --query "taskArns[0]" --output text 2>/dev/null || echo "")
-  
-  if [ -n "$TASK_ARN" ] && [ "$TASK_ARN" != "None" ]; then
-    aws ecs describe-tasks --cluster "$cluster" --tasks "$TASK_ARN" --region "$AWS_REGION" \
-      --query "tasks[0].attachments[0].details[?name=='privateIPv4Address'].value" --output text 2>/dev/null || echo ""
-  else
-    echo ""
-  fi
-}
-
-# Function to find target group ARN by IP - optimized for speed
-find_target_group_by_ip() {
-  local target_ip=$1
-  
-  # Get all target groups as JSON array
-  local tg_json
-  tg_json=$(aws elbv2 describe-target-groups --region "$AWS_REGION" --output json 2>/dev/null)
-  
-  if [ -z "$tg_json" ]; then
-    echo ""
+# Express Gateway uses two target groups during deployment. Read its active
+# listener rule to select the serving group, without scanning target health.
+get_service_target_group() {
+  local service=$1 service_arn configuration revision_arn gateway_rule
+  service_arn=$(aws ecs describe-services --cluster "$CLUSTER" --services "$service" \
+    --region "$AWS_REGION" --query 'services[0].serviceArn' --output text) || return 1
+  if [ -z "$service_arn" ] || [ "$service_arn" = "None" ]; then
+    echo "Could not find ECS service $service" >&2
     return 1
   fi
-  
-  # Extract ARNs using jq - only check ECS Express gateway target groups
-  local tg_arns
-  tg_arns=$(echo "$tg_json" | jq -r '.TargetGroups[] | select(.TargetGroupName | startswith("ecs-gateway-tg-")) | .TargetGroupArn')
-  
-  # Check each target group in parallel using background jobs
-  local found_tg=""
-  for tg_arn in $tg_arns; do
-    # Query for this specific IP in this target group
-    local found
-    found=$(aws elbv2 describe-target-health --target-group-arn "$tg_arn" --region "$AWS_REGION" \
-      --query "TargetHealthDescriptions[?Target.Id=='$target_ip'].Target.Id" --output text 2>/dev/null)
-    
-    if [ -n "$found" ] && [ "$found" != "None" ] && [ "$found" != "" ]; then
-      echo "$tg_arn"
-      return 0
-    fi
-  done
-  
-  echo ""
-  return 1
+
+  configuration=$(aws ecs describe-express-gateway-service --service-arn "$service_arn" \
+    --region "$AWS_REGION" --query 'service.{status:status.statusCode,revisions:activeConfigurations[].serviceRevisionArn}' \
+    --output json) || return 1
+  revision_arn=$(jq -er 'select(.status == "ACTIVE" and (.revisions | length) == 1) | .revisions[0]' \
+    <<< "$configuration") || return 1
+  gateway_rule=$(aws ecs describe-service-revisions --service-revision-arns "$revision_arn" \
+    --region "$AWS_REGION" --query 'serviceRevisions[0].loadBalancers[0].advancedConfiguration.productionListenerRule' \
+    --output text) || return 1
+  if [ -z "$gateway_rule" ] || [ "$gateway_rule" = "None" ]; then
+    echo "Could not find the Express Gateway listener rule for $service" >&2
+    return 1
+  fi
+
+  aws elbv2 describe-rules --rule-arns "$gateway_rule" --region "$AWS_REGION" --output json | \
+    jq -er '[.Rules[].Actions[] | select(.Type == "forward") |
+      if .ForwardConfig then .ForwardConfig.TargetGroups[] | select((.Weight // 1) > 0)
+      else {TargetGroupArn: .TargetGroupArn} end] |
+      unique_by(.TargetGroupArn) |
+      if length == 1 and .[0].TargetGroupArn != null then .[0].TargetGroupArn
+      else error("Gateway traffic has not settled on one target group yet") end'
 }
 
-# Get task IPs
-echo ""
-echo "Finding service IPs..."
-API_IP=$(get_task_ip "$CLUSTER" "$API_SERVICE")
-WEB_IP=$(get_task_ip "$CLUSTER" "$WEB_SERVICE")
-
-echo "  $API_SERVICE: ${API_IP:-NOT FOUND}"
-echo "  $WEB_SERVICE: ${WEB_IP:-NOT FOUND}"
-
-if [ -z "$API_IP" ] || [ -z "$WEB_IP" ]; then
-  echo "ERROR: Could not find task IPs. Services may not be running."
-  exit 1
-fi
-
-# Wait a bit for target registration
-echo ""
-echo "Waiting 30 seconds for target registration..."
-sleep 30
-
-# Find target groups with retry
 API_TG_ARN=""
 WEB_TG_ARN=""
-MAX_RETRIES=5
-RETRY_DELAY=20
-
-for i in $(seq 1 $MAX_RETRIES); do
-  echo ""
-  echo "Attempt $i of $MAX_RETRIES: Finding target groups..."
-  
-  API_TG_ARN=$(find_target_group_by_ip "$API_IP")
-  WEB_TG_ARN=$(find_target_group_by_ip "$WEB_IP")
-  
-  echo "  API Target Group: ${API_TG_ARN:-NOT FOUND}"
-  echo "  Web Target Group: ${WEB_TG_ARN:-NOT FOUND}"
-  
-  if [ -n "$API_TG_ARN" ] && [ -n "$WEB_TG_ARN" ]; then
-    break
-  fi
-  
-  if [ $i -lt $MAX_RETRIES ]; then
-    echo ""
-    echo "Target groups not found yet. Waiting $RETRY_DELAY seconds before retry..."
-    sleep $RETRY_DELAY
-  fi
+for attempt in 1 2 3 4 5; do
+  echo "Discovering active routing targets (attempt $attempt of 5)..."
+  API_TG_ARN=$(get_service_target_group "acmp-api-$ENVIRONMENT") || API_TG_ARN=""
+  WEB_TG_ARN=$(get_service_target_group "acmp-web-$ENVIRONMENT") || WEB_TG_ARN=""
+  if [ -n "$API_TG_ARN" ] && [ -n "$WEB_TG_ARN" ]; then break; fi
+  if [ "$attempt" -lt 5 ]; then sleep 20; fi
 done
-
 if [ -z "$API_TG_ARN" ] || [ -z "$WEB_TG_ARN" ]; then
-  echo ""
-  echo "ERROR: Could not find target groups after multiple retries."
-  echo ""
-  echo "Looking for IPs: API=$API_IP, Web=$WEB_IP"
-  echo ""
-  echo "Debug info - listing all target groups with their targets:"
-  
-  aws elbv2 describe-target-groups --region "$AWS_REGION" --output json 2>/dev/null | jq -r '.TargetGroups[].TargetGroupArn' | while read -r tg; do
-    echo "  TG: $tg"
-    aws elbv2 describe-target-health --target-group-arn "$tg" --region "$AWS_REGION" --output json 2>/dev/null | \
-      jq -r '.TargetHealthDescriptions[] | "    \(.Target.Id) - \(.TargetHealth.State)"' 2>/dev/null || echo "    (no targets)"
-  done
-  
+  echo "Could not determine stable API and web routing targets" >&2
   exit 1
 fi
 
-# Get current listener rules
-echo ""
-echo "Updating listener rules..."
-RULES=$(aws elbv2 describe-rules --listener-arn "$LISTENER_ARN" --region "$AWS_REGION" --output json 2>/dev/null)
+RULES=$(aws elbv2 describe-rules --listener-arn "$LISTENER_ARN" --region "$AWS_REGION" --output json)
 
-if [ -z "$RULES" ]; then
-  echo "ERROR: Could not fetch listener rules."
-  exit 1
-fi
-
-# Update API rule
-API_RULE_ARN=$(echo "$RULES" | jq -r ".Rules[] | select(.Conditions[0].Values[0]==\"$API_DOMAIN\") | .RuleArn" 2>/dev/null || echo "")
-if [ -n "$API_RULE_ARN" ] && [ "$API_RULE_ARN" != "null" ]; then
-  echo "  Updating $API_DOMAIN -> $API_TG_ARN"
-  aws elbv2 modify-rule --rule-arn "$API_RULE_ARN" \
-    --actions "[{\"Type\":\"forward\",\"TargetGroupArn\":\"$API_TG_ARN\"}]" \
-    --region "$AWS_REGION" --output text > /dev/null 2>&1
-  if [ $? -eq 0 ]; then
-    echo "    ✓ Updated successfully"
-  else
-    echo "    ✗ Failed to update"
+update_domain() {
+  local domain=$1 target_group=$2 rule_arn
+  rule_arn=$(jq -er --arg domain "$domain" '[.Rules[] |
+    select(any(.Conditions[]?;
+      .Field == "host-header" and ((.Values // .HostHeaderConfig.Values // []) | index($domain)))) |
+    .RuleArn] | if length == 1 then .[0] else error("Expected exactly one listener rule for " + $domain) end' \
+    <<< "$RULES")
+  echo "$domain -> $target_group"
+  if [ "$DRY_RUN" != "true" ]; then
+    aws elbv2 modify-rule --rule-arn "$rule_arn" \
+      --actions "[{\"Type\":\"forward\",\"TargetGroupArn\":\"$target_group\"}]" \
+      --region "$AWS_REGION" --output json > /dev/null
+    echo "Updated $domain"
   fi
-else
-  echo "  WARNING: No rule found for $API_DOMAIN"
-fi
+}
 
-# Update App rule
-APP_RULE_ARN=$(echo "$RULES" | jq -r ".Rules[] | select(.Conditions[0].Values[0]==\"$APP_DOMAIN\") | .RuleArn" 2>/dev/null || echo "")
-if [ -n "$APP_RULE_ARN" ] && [ "$APP_RULE_ARN" != "null" ]; then
-  echo "  Updating $APP_DOMAIN -> $WEB_TG_ARN"
-  aws elbv2 modify-rule --rule-arn "$APP_RULE_ARN" \
-    --actions "[{\"Type\":\"forward\",\"TargetGroupArn\":\"$WEB_TG_ARN\"}]" \
-    --region "$AWS_REGION" --output text > /dev/null 2>&1
-  if [ $? -eq 0 ]; then
-    echo "    ✓ Updated successfully"
-  else
-    echo "    ✗ Failed to update"
-  fi
-else
-  echo "  WARNING: No rule found for $APP_DOMAIN"
-fi
-
-# Update Built domain rule (production only)
-if [ -n "$BUILT_DOMAIN" ]; then
-  BUILT_RULE_ARN=$(echo "$RULES" | jq -r ".Rules[] | select(.Conditions[0].Values[0]==\"$BUILT_DOMAIN\") | .RuleArn" 2>/dev/null || echo "")
-  if [ -n "$BUILT_RULE_ARN" ] && [ "$BUILT_RULE_ARN" != "null" ]; then
-    echo "  Updating $BUILT_DOMAIN -> $WEB_TG_ARN"
-    aws elbv2 modify-rule --rule-arn "$BUILT_RULE_ARN" \
-      --actions "[{\"Type\":\"forward\",\"TargetGroupArn\":\"$WEB_TG_ARN\"}]" \
-      --region "$AWS_REGION" --output text > /dev/null 2>&1
-    if [ $? -eq 0 ]; then
-      echo "    ✓ Updated successfully"
-    else
-      echo "    ✗ Failed to update"
-    fi
-  else
-    echo "  WARNING: No rule found for $BUILT_DOMAIN"
-  fi
-fi
-
-echo ""
-echo "========================================"
-echo "ALB rules updated successfully!"
-echo "========================================"
+update_domain "$API_DOMAIN" "$API_TG_ARN"
+update_domain "$APP_DOMAIN" "$WEB_TG_ARN"
+if [ -n "$BUILT_DOMAIN" ]; then update_domain "$BUILT_DOMAIN" "$WEB_TG_ARN"; fi
+echo "Custom-domain routing check completed successfully"
