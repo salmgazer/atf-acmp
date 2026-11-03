@@ -98,8 +98,9 @@ export default function HomePage() {
                 src="/logos/full/Bright-color-logo.png"
                 alt="ATF Logo"
                 width={180}
-                height={54}
-                className="object-contain mx-auto w-[140px] lg:w-[180px]"
+                height={46}
+                priority
+                className="h-auto object-contain mx-auto w-[140px] lg:w-[180px]"
               />
             </div>
             
@@ -147,6 +148,8 @@ export default function HomePage() {
                     src={portal.image}
                     alt={portal.name}
                     fill
+                    sizes="(min-width: 1280px) 326px, (min-width: 1024px) 315px, (min-width: 768px) 235px, (min-width: 640px) 608px, calc(100vw - 32px)"
+                    priority
                     className="object-cover transition-transform duration-500 group-hover:scale-110"
                   />
                   {/* Gradient overlay */}
@@ -185,8 +188,8 @@ export default function HomePage() {
               src="/logos/full/Full-color-logo.png"
               alt="ATF Logo"
               width={100}
-              height={30}
-              className="object-contain w-[80px] lg:w-[100px]"
+              height={26}
+              className="h-auto object-contain w-[80px] lg:w-[100px]"
             />
             <p className="text-xs text-muted-foreground">
               © {new Date().getFullYear()} African Technology Forum. All rights reserved.

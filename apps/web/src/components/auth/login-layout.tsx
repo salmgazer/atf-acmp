@@ -31,8 +31,9 @@ function BrandSection({ portalName, portalType }: { portalName: string; portalTy
           src="/logos/full/Bright-color-logo.png"
           alt="ATF Logo"
           width={180}
-          height={54}
-          className="object-contain"
+          height={46}
+          priority
+          className="h-auto object-contain"
         />
       </div>
       
@@ -45,6 +46,7 @@ function BrandSection({ portalName, portalType }: { portalName: string; portalTy
               src={portalImage}
               alt={`${portalName} illustration`}
               fill
+              sizes="(min-width: 1280px) calc(50vw - 96px), (min-width: 1024px) calc(50vw - 64px), 0px"
               className="object-cover"
               priority
             />
@@ -118,8 +120,9 @@ export function LoginLayout({
               src="/logos/full/Full-color-logo.png"
               alt="ATF Logo"
               width={180}
-              height={54}
-              className="mx-auto mb-2"
+              height={46}
+              priority
+              className="h-auto mx-auto mb-2"
             />
             <p className="text-muted-foreground text-sm">{portalName}</p>
           </div>
