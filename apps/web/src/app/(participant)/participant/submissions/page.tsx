@@ -17,7 +17,7 @@ function SubmissionsContent() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Submissions</h1>
           <p className="text-muted-foreground">
-            View and manage your team's stage submissions
+            View and manage your team&apos;s stage submissions
           </p>
         </div>
 

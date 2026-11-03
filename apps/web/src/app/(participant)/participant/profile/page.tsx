@@ -406,6 +406,7 @@ function ProfileContent() {
               </div>
             </div>
           </div>
+          <div className="border-t py-3"><p className="text-sm font-medium">Group</p><p className="text-sm text-muted-foreground">{participant.group || "Not assigned"}</p></div>
         </CardContent>
       </Card>
 

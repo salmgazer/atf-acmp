@@ -39,7 +39,7 @@ import { MentorsService } from "@/modules/mentors/mentors.service";
 // Map user roles to sender types
 function getSenderType(role: string): SenderType {
   const normalizedRole = role?.toLowerCase();
-  if (normalizedRole === "admin" || normalizedRole === "super_admin" || normalizedRole === "program_manager" || normalizedRole === "reviewer" || normalizedRole === "evaluator") {
+  if (normalizedRole === "admin" || normalizedRole === "super_admin" || normalizedRole === "program_manager" || normalizedRole === "reviewer" || normalizedRole === "evaluator" || normalizedRole === "viewer") {
     return SenderType.STAFF;
   }
   if (normalizedRole === "mentor") {
@@ -68,6 +68,8 @@ export class ChannelsController {
    * channel memberships are stored with Mentor entity IDs.
    */
   private async getEffectiveMemberId(user: any, senderType: SenderType): Promise<string> {
+    if (senderType === SenderType.ORGANIZATION && user.organizationId) return user.organizationId;
+    if (senderType === SenderType.MENTOR && user.mentorId) return user.mentorId;
     if (senderType === SenderType.MENTOR) {
       const mentor = await this.mentorsService.findByEmail(user.email);
       if (mentor) {
@@ -109,8 +111,7 @@ export class ChannelsController {
   ) {
     const channel = await this.chatService.findChannel(id);
     Object.assign(channel, dto);
-    // Save would be done via repository in service
-    return channel;
+    return this.chatService.updateChannel(id, dto);
   }
 
   @Post(":id/archive")
@@ -154,7 +155,7 @@ export class ChannelsController {
     @Body() dto: RemoveMemberDto
   ) {
     await this.chatService.removeMember(id, dto.memberId, dto.memberType);
-    this.chatGateway.emitMemberLeft(id, dto.memberId, dto.memberType);
+    await this.chatGateway.emitMemberLeft(id, dto.memberId, dto.memberType);
   }
 
   @Post(":id/leave")

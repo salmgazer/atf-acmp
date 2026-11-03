@@ -36,6 +36,7 @@ import {
   Settings,
   ClipboardList,
   AlertTriangle,
+  Tags,
 } from "lucide-react";
 import { useStagesWithStats } from "@/lib/api/hooks/use-stages";
 import {
@@ -161,7 +162,7 @@ function CohortDetailContent({ id }: { id: string }) {
                   Stages Not Configured
                 </h3>
                 <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
-                  This cohort doesn't have any stages set up yet. Stages are required to manage submissions and evaluations.
+                  This cohort doesn&apos;t have any stages set up yet. Stages are required to manage submissions and evaluations.
                 </p>
                 <Button asChild className="mt-3" size="sm">
                   <Link href={`/staff/cohorts/${id}/stages`}>
@@ -174,6 +175,27 @@ function CohortDetailContent({ id }: { id: string }) {
           </div>
         )}
 
+        <section aria-labelledby="cohort-groups-heading" className="rounded-lg border bg-card p-6">
+          <div className="flex items-center justify-between gap-4">
+            <h2 id="cohort-groups-heading" className="flex items-center gap-2 text-lg font-semibold">
+              <Tags className="h-5 w-5" />
+              Groups ({cohort.groups?.length || 0})
+            </h2>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/staff/cohorts/${id}/edit#groups`}>Manage groups</Link>
+            </Button>
+          </div>
+          <Separator className="my-4" />
+          {cohort.groups?.length ? (
+            <div className="flex flex-wrap gap-2">
+              {cohort.groups.map(group => (
+                <Badge key={group} variant="secondary">{group}</Badge>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No groups configured. Use Manage groups to add them.</p>
+          )}
+        </section>
         {/* Stats */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-lg border bg-card p-4">
@@ -400,7 +422,7 @@ function CohortDetailContent({ id }: { id: string }) {
           <DialogHeader>
             <DialogTitle>{transition.label} Cohort</DialogTitle>
             <DialogDescription>
-              Are you sure you want to change the status of "{cohort.name}" from{" "}
+              Are you sure you want to change the status of &quot;{cohort.name}&quot; from{" "}
               <strong>{cohort.status}</strong> to <strong>{transition.next}</strong>?
               {transition.next === "active" && (
                 <span className="block mt-2 text-warning">
@@ -429,7 +451,7 @@ function CohortDetailContent({ id }: { id: string }) {
           <DialogHeader>
             <DialogTitle>Delete Cohort</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{cohort.name}"? This action cannot be undone.
+              Are you sure you want to delete &quot;{cohort.name}&quot;? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

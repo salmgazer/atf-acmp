@@ -10,6 +10,7 @@ import { ScoringStep } from "./components/scoring-step";
 import { ReviewStep } from "./components/review-step";
 import { SuccessStep } from "./components/success-step";
 import { ThemeToggle } from "./components/theme-toggle";
+import { getSubmissionErrors } from "./submission-errors";
 
 const STEPS = [
   { id: 1, name: "Organisation", description: "Your details" },
@@ -22,7 +23,7 @@ export default function OnboardPartnerPage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [formState, setFormState] = useState<FormState>(createInitialFormState);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitErrors, setSubmitErrors] = useState<string[]>([]);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
   const updateOrg = useCallback((updates: Partial<FormState["org"]>) => {
@@ -78,7 +79,7 @@ export default function OnboardPartnerPage() {
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
-    setSubmitError(null);
+    setSubmitErrors([]);
 
     try {
       // Clean up the form data before submission
@@ -115,17 +116,18 @@ export default function OnboardPartnerPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || "Submission failed");
+        setSubmitErrors(getSubmissionErrors(result.message));
+        return;
       }
 
       if (result.duplicate) {
-        setSubmitError("This form has already been submitted.");
+        setSubmitErrors(["This form has already been submitted."]);
         return;
       }
 
       setIsSubmitted(true);
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Failed to submit. Please try again.");
+    } catch {
+      setSubmitErrors(["We couldn't submit your form. Please try again."]);
     } finally {
       setIsSubmitting(false);
     }
@@ -220,7 +222,7 @@ export default function OnboardPartnerPage() {
             onBack={() => setCurrentStep(3)}
             onEdit={goToStep}
             isSubmitting={isSubmitting}
-            submitError={submitError}
+            submitErrors={submitErrors}
           />
         )}
       </main>

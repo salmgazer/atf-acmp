@@ -4,10 +4,15 @@ import { ConfigService } from "@nestjs/config";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import helmet from "helmet";
 import { AppModule } from "./app.module";
+import { RedisSocketAdapter } from "./common/services/redis-socket.adapter";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
+  const sockets = new RedisSocketAdapter(app, configService);
+  await sockets.connect();
+  app.useWebSocketAdapter(sockets);
+  app.enableShutdownHooks();
 
   // Security headers with Helmet
   app.use(

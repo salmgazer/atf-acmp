@@ -59,9 +59,9 @@ export class OrganizationsController {
   @ApiOperation({ summary: "Get the current organization (for logged-in org users)" })
   @ApiResponse({ status: 200, description: "Current organization details" })
   @ApiResponse({ status: 404, description: "Organization not found" })
-  async getCurrentOrganization(@CurrentUser("email") email: string) {
-    // Look up organization by the user's email
-    const org = await this.organizationsService.findByEmail(email);
+  async getCurrentOrganization(@CurrentUser() user: any) {
+    if (!user.organizationId) throw new BadRequestException("An organization account is required");
+    const org = await this.organizationsService.findOne(user.organizationId);
     
     if (!org) {
       throw new Error("Organization not found");
@@ -73,8 +73,9 @@ export class OrganizationsController {
   @ApiOperation({ summary: "Get verticals for the current organization's cohort" })
   @ApiResponse({ status: 200, description: "List of verticals for the org's cohort" })
   @ApiResponse({ status: 404, description: "Organization not found or no cohort assigned" })
-  async getMyVerticals(@CurrentUser("email") email: string) {
-    return this.organizationsService.getVerticalsForOrganization(email);
+  async getMyVerticals(@CurrentUser() user: any) {
+    if (!user.organizationId) throw new BadRequestException("An organization account is required");
+    return this.organizationsService.getVerticalsForOrganization(user.organizationId);
   }
 
   @Post()

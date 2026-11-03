@@ -57,7 +57,7 @@ function EditBriefContent({ id }: { id: string }) {
             <AlertCircle className="mx-auto h-12 w-12 text-yellow-600" />
             <h2 className="mt-4 text-lg font-semibold">Cannot Edit</h2>
             <p className="mt-2 text-muted-foreground">
-              This brief cannot be edited because it has status "{brief.status}".
+              This brief cannot be edited because it has status &quot;{brief.status}&quot;.
               Only drafts and briefs with revision requests can be edited.
             </p>
             <Button asChild className="mt-4" variant="outline">

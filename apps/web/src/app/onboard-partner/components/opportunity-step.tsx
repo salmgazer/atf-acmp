@@ -35,6 +35,8 @@ export function OpportunityStep({
     const newErrors: Partial<Record<keyof Opportunity, string>> = {};
 
     if (!opp.title.trim()) newErrors.title = "Title is required";
+    else if (opp.title.trim().length < 5) newErrors.title = "Title must be at least 5 characters";
+    else if (opp.title.length > 255) newErrors.title = "Title must be 255 characters or fewer";
     if (!opp.description.trim()) newErrors.description = "Description is required";
     if (opp.description.trim().length < 20) newErrors.description = "Please provide more detail (at least 20 characters)";
     if (!opp.whatChanges.trim()) newErrors.whatChanges = "Please describe what would change";
@@ -58,6 +60,8 @@ export function OpportunityStep({
       const oppErrors: Partial<Record<keyof Opportunity, string>> = {};
 
       if (!opportunity.title.trim()) oppErrors.title = "Title is required";
+      else if (opportunity.title.trim().length < 5) oppErrors.title = "Title must be at least 5 characters";
+      else if (opportunity.title.length > 255) oppErrors.title = "Title must be 255 characters or fewer";
       if (!opportunity.description.trim()) oppErrors.description = "Description is required";
       if (opportunity.description.trim().length < 20) oppErrors.description = "Please provide more detail";
       if (!opportunity.whatChanges.trim()) oppErrors.whatChanges = "Required";

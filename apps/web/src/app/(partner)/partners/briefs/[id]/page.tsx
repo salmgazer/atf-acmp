@@ -1,5 +1,9 @@
 "use client";
 
+import { BriefEvents } from "@/components/briefs/brief-events";
+
+import { SafeHtml } from "@/components/ui/safe-html";
+
 import { use, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -423,27 +427,28 @@ function BriefDetailContent({ id }: { id: string }) {
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
+            <BriefEvents briefId={id} />
             <div className="rounded-lg border bg-card p-6">
               <h2 className="text-lg font-semibold mb-4">Description</h2>
-              <div
+              <SafeHtml
                 className="prose prose-sm max-w-none dark:prose-invert"
-                dangerouslySetInnerHTML={{ __html: brief.description }}
+                html={brief.description}
               />
             </div>
 
             <div className="rounded-lg border bg-card p-6">
               <h2 className="text-lg font-semibold mb-4">Problem Statement</h2>
-              <div
+              <SafeHtml
                 className="prose prose-sm max-w-none dark:prose-invert"
-                dangerouslySetInnerHTML={{ __html: brief.problemStatement }}
+                html={brief.problemStatement}
               />
             </div>
 
             <div className="rounded-lg border bg-card p-6">
               <h2 className="text-lg font-semibold mb-4">Expected Outcomes</h2>
-              <div
+              <SafeHtml
                 className="prose prose-sm max-w-none dark:prose-invert"
-                dangerouslySetInnerHTML={{ __html: brief.expectedOutcomes }}
+                html={brief.expectedOutcomes}
               />
             </div>
 
@@ -589,7 +594,7 @@ function BriefDetailContent({ id }: { id: string }) {
                   <h3 className="mt-4 text-lg font-medium">No Teams Assigned Yet</h3>
                   <p className="mt-2 text-sm text-muted-foreground max-w-md mx-auto">
                     Your brief has been approved and is available for teams to select.
-                    You'll see team progress here once participants are matched to your brief.
+                    You&apos;ll see team progress here once participants are matched to your brief.
                   </p>
                 </div>
               </div>
@@ -725,7 +730,7 @@ function BriefDetailContent({ id }: { id: string }) {
           <DialogHeader>
             <DialogTitle>Submit Brief for Review</DialogTitle>
             <DialogDescription>
-              Your brief will be submitted for review by the ATF team. You won't be able to edit it until the review is complete.
+              Your brief will be submitted for review by the ATF team. You won&apos;t be able to edit it until the review is complete.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -744,7 +749,7 @@ function BriefDetailContent({ id }: { id: string }) {
           <DialogHeader>
             <DialogTitle>Delete Brief</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{brief.title}"? This action cannot be undone.
+              Are you sure you want to delete &quot;{brief.title}&quot;? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

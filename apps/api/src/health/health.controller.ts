@@ -1,4 +1,4 @@
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get, ServiceUnavailableException } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse } from "@nestjs/swagger";
 import { InjectDataSource } from "@nestjs/typeorm";
 import { DataSource } from "typeorm";
@@ -77,6 +77,14 @@ export class HealthController {
     };
   }
 
+  @Get("ready")
+  @Public()
+  async getReadiness() {
+    const health = await this.getFullHealth();
+    if (health.status !== "ok") throw new ServiceUnavailableException(health);
+    return health;
+  }
+
   @Get("db")
   @Public()
   @ApiOperation({ summary: "Database health check" })
@@ -111,6 +119,7 @@ export class HealthController {
   @ApiResponse({ status: 200, description: "Redis connection status" })
   async getRedisHealth(): Promise<RedisHealthStatus> {
     if (!this.redisClient) {
+      if (["production", "staging"].includes(this.configService.get<string>("NODE_ENV") || "")) throw new ServiceUnavailableException("Redis is required");
       return {
         status: "ok",
         timestamp: new Date().toISOString(),

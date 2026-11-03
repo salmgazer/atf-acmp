@@ -110,7 +110,7 @@ function StaffEditBriefContent({ id }: { id: string }) {
                   Staff Edit Mode
                 </p>
                 <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
-                  You are editing a brief with status "{config.label}". This change will be recorded 
+                  You are editing a brief with status &quot;{config.label}&quot;. This change will be recorded
                   in the revision history with your name. {isApprovedOrRejected && 
                   "Since this brief has already been reviewed, consider whether this edit is necessary."}
                 </p>

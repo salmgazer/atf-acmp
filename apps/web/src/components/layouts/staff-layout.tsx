@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore, useStaffCohortStore } from "@/lib/stores";
+import { signOut } from "@/lib/auth";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useChatContext } from "@/lib/contexts/chat-context";
 import { useCohorts } from "@/lib/api/hooks/use-cohorts";
@@ -113,10 +114,10 @@ export function StaffLayout({ children }: StaffLayoutProps) {
     }
   }, [cohortsData, setCohorts, initializeGlobalCohort]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     // Clear all cached queries to prevent stale data on next login
     queryClient.clear();
-    logout();
+    await signOut();
     router.push("/staff/login");
   };
 

@@ -1,3 +1,4 @@
+import { AuthModule } from "@/auth/auth.module";
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { JwtModule } from "@nestjs/jwt";
@@ -18,15 +19,8 @@ import {
 
 @Module({
   imports: [
+    AuthModule,
     TypeOrmModule.forFeature([Notification, NotificationPreference, PushToken]),
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>("JWT_SECRET"),
-        signOptions: { expiresIn: "7d" },
-      }),
-      inject: [ConfigService],
-    }),
   ],
   controllers: [NotificationsController, AdminNotificationsController],
   providers: [

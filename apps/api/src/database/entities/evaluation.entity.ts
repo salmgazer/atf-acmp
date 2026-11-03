@@ -110,7 +110,7 @@ export class Evaluation extends BaseEntity {
   @Column({ name: "final_score", type: "decimal", precision: 5, scale: 2, nullable: true })
   finalScore?: number;
 
-  @Column({ name: "ai_weight", type: "decimal", precision: 3, scale: 2, default: 0.4 })
+  @Column({ name: "ai_weight", type: "decimal", precision: 3, scale: 2, default: () => "0.4" })
   aiWeight: number; // Default 40% AI, 60% human
 
   @Column({ name: "metrics", type: "jsonb", nullable: true })
@@ -160,6 +160,7 @@ export class Evaluation extends BaseEntity {
 @Index(["status"])
 @Index(["teamId", "stageId"])
 @Index(["createdAt"])
+@Index("evaluation_one_active_job", ["teamId", "stageId"], { unique: true, where: "status IN ('pending', 'processing') AND deleted_at IS NULL" })
 export class EvaluationJob extends BaseEntity {
   @Column({ name: "team_id" })
   teamId: string;

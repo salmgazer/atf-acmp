@@ -67,7 +67,7 @@ export const useAuthStore = create<AuthStore>()(
           if (token) {
             localStorage.setItem("auth_token", token);
             // Also set cookie for middleware
-            document.cookie = `auth_token=${token}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
+            document.cookie = `auth_token=present; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
           } else {
             localStorage.removeItem("auth_token");
             document.cookie = "auth_token=; path=/; max-age=0";
@@ -88,8 +88,9 @@ export const useAuthStore = create<AuthStore>()(
           isLoading: false,
         });
         if (typeof window !== "undefined") {
+          localStorage.removeItem("refresh_token");
           localStorage.setItem("auth_token", token);
-          document.cookie = `auth_token=${token}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
+          document.cookie = `auth_token=present; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
           document.cookie = `auth_portal=${portal}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
         }
       },
@@ -104,6 +105,7 @@ export const useAuthStore = create<AuthStore>()(
         });
         if (typeof window !== "undefined") {
           localStorage.removeItem("auth_token");
+          localStorage.removeItem("refresh_token");
           document.cookie = "auth_token=; path=/; max-age=0";
           document.cookie = "auth_portal=; path=/; max-age=0";
         }
@@ -178,6 +180,14 @@ export function getLoginPath(portal: Portal): string {
     default:
       return "/";
   }
+}
+
+/** Allow local return paths within the authenticated portal only. */
+export function safeReturnPath(value: string | null | undefined, portal: Portal): string {
+  const fallback = getDashboardPath(portal);
+  const base = fallback.slice(0, fallback.lastIndexOf("/"));
+  if (!value || /[\\\s]/.test(value)) return fallback;
+  try { const url = new URL(value, "https://local.invalid"); return url.origin === "https://local.invalid" && (url.pathname === base || url.pathname.startsWith(base + "/")) ? url.pathname + url.search + url.hash : fallback; } catch { return fallback; }
 }
 
 // Helper to get dashboard path for portal

@@ -283,7 +283,7 @@ function DashboardContent() {
           )}
           {hasBrief && team?.brief ? (
             <Link
-              href={`/app/briefs/${team.briefId}`}
+              href={`/participant/briefs/${team.briefId}`}
               className="rounded-lg border bg-card p-4 text-left transition-colors hover:bg-accent"
             >
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100 dark:bg-green-900/30">
@@ -332,7 +332,7 @@ function DashboardContent() {
               {activeStages.map((stage) => (
                 <Link
                   key={stage.id}
-                  href={`/app/submissions/${stage.id}`}
+                  href={`/participant/submissions/${stage.id}`}
                   className="flex items-center justify-between p-3 rounded-lg border bg-background hover:bg-accent transition-colors"
                 >
                   <div className="flex items-center gap-3">

@@ -1,3 +1,5 @@
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import {
   IsString,
   IsUUID,
@@ -89,22 +91,28 @@ export class EvaluationQueryDto {
 
   @IsOptional()
   @IsBoolean()
-  @Type(() => Boolean)
+  @StrictBoolean()
   needsHumanReview?: boolean;
 
   @IsOptional()
   @IsBoolean()
-  @Type(() => Boolean)
+  @StrictBoolean()
   isPublished?: boolean;
 
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number;
 
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number;
 }
 
@@ -124,11 +132,17 @@ export class JobQueryDto {
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number;
 
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number;
 }
 

@@ -32,7 +32,7 @@ export class User extends BaseEntity {
   @Column({ name: "firebase_uid", nullable: true })
   firebaseUid?: string;
 
-  @Column({ name: "password_hash", nullable: true })
+  @Column({ name: "password_hash", nullable: true, select: false })
   passwordHash?: string;
 
   @Column({ name: "must_change_password", default: false })
@@ -47,9 +47,9 @@ export class User extends BaseEntity {
   @Column({ name: "password_changed_at", nullable: true })
   passwordChangedAt?: Date;
 
-  @Column({ name: "password_reset_token", nullable: true })
-  passwordResetToken?: string;
+  @Column({ name: "password_reset_token", type: "varchar", nullable: true, select: false })
+  passwordResetToken?: string | null;
 
-  @Column({ name: "password_reset_expires", nullable: true })
-  passwordResetExpires?: Date;
+  @Column({ name: "password_reset_expires", type: "timestamp", nullable: true, select: false })
+  passwordResetExpires?: Date | null;
 }

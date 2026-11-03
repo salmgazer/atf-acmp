@@ -1,4 +1,5 @@
 "use client";
+import { safeReturnPath } from "@/lib/stores/auth-store";
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -53,7 +54,7 @@ export function EmailPasswordForm({ portal, onForgotPassword }: EmailPasswordFor
       toast.success("Welcome back!");
       
       // Redirect to return URL or dashboard
-      const redirectTo = returnTo || getDashboardPath(portal);
+      const redirectTo = safeReturnPath(returnTo, portal);
       router.push(redirectTo);
     } catch (error: any) {
       console.error("Login error:", error);

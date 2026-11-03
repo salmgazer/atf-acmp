@@ -73,7 +73,7 @@ export function SuccessStep({ orgName, opportunityCount, opportunityTitles }: Su
               📧 Check your inbox
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              We've sent a welcome email to your registered email address with instructions on how to access the Partner Portal. To log in, simply enter your email and we'll send you a verification code.
+              We&apos;ve sent a welcome email to your registered email address with instructions on how to access the Partner Portal. To log in, simply enter your email and we&apos;ll send you a verification code.
             </p>
           </div>
 

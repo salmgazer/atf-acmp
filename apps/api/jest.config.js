@@ -4,18 +4,14 @@ module.exports = {
   rootDir: ".",
   testRegex: ".*\\.spec\\.ts$",
   transform: {
-    "^.+\\.(t|j)s$": "ts-jest",
+    "^.+\\.ts$": ["ts-jest", { tsconfig: { isolatedModules: true } }],
+    "^.+\\.js$": "<rootDir>/test/transform-js.cjs",
   },
   transformIgnorePatterns: [
-    "node_modules/(?!(@nestjs/cache-manager)/)",
+    "node_modules/(?!(@nestjs/cache-manager|@nestjs/schedule|htmlparser2|domhandler|domutils|domelementtype|dom-serializer|entities)/)",
   ],
-  // Skip test files with outdated mocks pending proper dependency updates
-  testPathIgnorePatterns: [
-    "/node_modules/",
-    "cohorts.service.spec.ts",
-    "teams.service.spec.ts",
-    "evaluation.processor.spec.ts",
-  ],
+  watchman: false,
+  testPathIgnorePatterns: ["/node_modules/"],
   collectCoverageFrom: [
     "src/**/*.(t|j)s",
     "!src/**/*.module.ts",

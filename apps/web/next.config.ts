@@ -12,15 +12,14 @@ const nextConfig: NextConfig = {
     APP_VERSION: process.env.npm_package_version || "0.1.3",
   },
   
-  // Ignore ESLint and TypeScript errors during production build
-  // These should be caught in CI/pre-commit hooks instead
-  eslint: {
-    ignoreDuringBuilds: true,
+  async redirects() {
+    return [
+      { source: "/app/:path*", destination: "/participant/:path*", permanent: true },
+      { source: "/org/:path*", destination: "/partners/:path*", permanent: true },
+      { source: "/portal/:path*", destination: "/staff/:path*", permanent: true },
+    ];
   },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  
+
   images: {
     remotePatterns: [
       {

@@ -49,6 +49,7 @@ const notificationIcons: Record<string, typeof Bell> = {
   mentor_session_reminder: Clock,
   brief_status_changed: FileText,
   brief_selected: FileText,
+  brief_event: Calendar,
   submission_received: FileText,
   submission_deadline: Clock,
   evaluation_complete: Check,

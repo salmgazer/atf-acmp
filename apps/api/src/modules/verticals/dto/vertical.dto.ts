@@ -1,3 +1,4 @@
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import {
   IsString,
   IsNotEmpty,
@@ -52,8 +53,9 @@ export class VerticalQueryDto {
 
   @ApiPropertyOptional({ description: "Include inactive verticals", default: false })
   @IsBoolean()
+  @StrictBoolean()
   @IsOptional()
-  @Type(() => Boolean)
+  @StrictBoolean()
   includeInactive?: boolean;
 }
 

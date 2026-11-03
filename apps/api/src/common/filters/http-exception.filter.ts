@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Logger,
 } from "@nestjs/common";
+import { QueryFailedError } from "typeorm";
 import { Request, Response } from "express";
 
 @Catch()
@@ -32,6 +33,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         message = responseObj.message || message;
         errors = responseObj.errors;
       }
+    } else if (exception instanceof QueryFailedError && (exception.driverError as any)?.code === "23514") {
+      status = HttpStatus.BAD_REQUEST;
+      message = (exception.driverError as any).message || "Group assignment is not valid";
+    } else if (exception instanceof QueryFailedError && ["23505", "P0001", "40001", "40P01"].includes((exception.driverError as any)?.code)) {
+      status = HttpStatus.CONFLICT;
+      message = "This action conflicts with the current state. Refresh and try again.";
     } else if (exception instanceof Error) {
       message = exception.message;
       this.logger.error(

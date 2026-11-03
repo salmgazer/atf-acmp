@@ -418,7 +418,8 @@ export class TeamsController {
     return this.teamsService.searchAvailableParticipants(
       query.cohortId,
       query.query,
-      query.limit
+      query.limit,
+      query.ungrouped ? null : query.group
     );
   }
 

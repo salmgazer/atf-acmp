@@ -106,7 +106,7 @@ function MentorDetailContent({ id }: { id: string }) {
           <div className="flex-1">
             <h1 className="text-xl font-bold">Mentor Profile</h1>
             <p className="text-sm text-muted-foreground">
-              Review this mentor's profile before claiming
+              Review this mentor&apos;s profile before claiming
             </p>
           </div>
         </div>
@@ -338,11 +338,11 @@ function MentorDetailContent({ id }: { id: string }) {
           <DialogHeader>
             <DialogTitle>Claim Mentor</DialogTitle>
             <DialogDescription>
-              You're about to claim{" "}
+              You&apos;re about to claim{" "}
               <strong>
                 {mentor.firstName} {mentor.lastName}
               </strong>{" "}
-              as your team's mentor.
+              as your team&apos;s mentor.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4 space-y-3">

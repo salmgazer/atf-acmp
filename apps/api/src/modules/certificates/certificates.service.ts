@@ -1,3 +1,4 @@
+import PDFDocument from "pdfkit";
 import { Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, In } from "typeorm";
@@ -41,7 +42,7 @@ export class CertificatesService {
     private leaderboardService: LeaderboardService,
     private configService: ConfigService,
   ) {
-    this.appUrl = this.configService.get<string>("app.url") || "https://acmp.atf.org";
+    this.appUrl = this.configService.get<string>("FRONTEND_URL", "http://localhost:3000");
   }
 
   async generateCertificates(
@@ -176,11 +177,31 @@ export class CertificatesService {
     return result;
   }
 
+  async renderPdf(certificate: Certificate): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 48 });
+      const chunks: Buffer[] = [];
+      doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
+      doc.lineWidth(3).strokeColor("#F70035").rect(24, 24, doc.page.width - 48, doc.page.height - 48).stroke();
+      doc.fillColor("#111111").fontSize(18).text("AFRICAN TECHNOLOGY FORUM", { align: "center" });
+      doc.moveDown().fontSize(32).text("Certificate of " + certificate.tier.charAt(0).toUpperCase() + certificate.tier.slice(1), { align: "center" });
+      doc.moveDown().fontSize(16).text("Presented to", { align: "center" });
+      doc.moveDown(0.5).fontSize(28).text(certificate.participantName, { align: "center" });
+      doc.moveDown().fontSize(17).text(certificate.cohortName, { align: "center" });
+      if (certificate.teamName) doc.fontSize(14).text("Team: " + certificate.teamName, { align: "center" });
+      doc.moveDown().fontSize(11).text("Certificate ID: " + certificate.certificateId, { align: "center" });
+      doc.moveDown().fontSize(10).text(certificate.verificationUrl || this.generateQRCodeData(certificate.certificateId), { align: "center", link: certificate.verificationUrl });
+      doc.end();
+    });
+  }
+
   private determineTier(
     rankInfo: { rank: number; score: number } | undefined,
     thresholds: TierThresholds,
   ): CertificateTier {
-    if (!rankInfo) {
+    if (!rankInfo || rankInfo.score <= 0) {
       return CertificateTier.PARTICIPATION;
     }
 

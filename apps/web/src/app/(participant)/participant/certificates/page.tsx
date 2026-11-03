@@ -13,10 +13,13 @@ function CertificatesContent() {
 
   const handleDownload = async (certificateId: string) => {
     try {
-      const response = await api.get<{ pdfUrl?: string }>(`/certificates/my/${certificateId}/download`);
-      if ((response as any)?.pdfUrl) {
-        window.open((response as any).pdfUrl, "_blank");
-      }
+      const document = await api.get<Blob>(`/certificates/my/${certificateId}/download`, { responseType: "blob" });
+      const url = URL.createObjectURL(document);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = `${certificateId}.pdf`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
       console.error("Download failed:", error);
     }

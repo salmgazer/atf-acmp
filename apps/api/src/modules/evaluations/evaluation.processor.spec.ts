@@ -1,3 +1,4 @@
+import { DocumentExtractionService } from "./document-extraction.service";
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { Job } from "bullmq";
@@ -52,10 +53,11 @@ describe("EvaluationProcessor", () => {
   const mockStage = {
     id: "stage-1",
     number: 1,
+    cohortId: "cohort-1", isActive: true, requiresAiEvaluation: true, approvalMode: "auto",
     name: "Stage 1",
     evaluationCriteria: [
-      { id: "innovation", name: "Innovation", maxScore: 10, weight: 25 },
-      { id: "feasibility", name: "Feasibility", maxScore: 10, weight: 25 },
+      { id: "innovation", name: "Innovation", maxScore: 10, weight: 50 },
+      { id: "feasibility", name: "Feasibility", maxScore: 10, weight: 50 },
     ],
   };
 
@@ -94,9 +96,12 @@ describe("EvaluationProcessor", () => {
   beforeEach(async () => {
     evaluationRepo = createMockRepository();
     evaluationJobRepo = createMockRepository();
+    evaluationJobRepo.findOne.mockResolvedValue({ id: "job-1", status: EvaluationJobStatus.PENDING });
     submissionRepo = createMockRepository();
     teamRepo = createMockRepository();
     stageRepo = createMockRepository();
+    teamRepo.findOne.mockResolvedValue(mockTeam);
+    stageRepo.findOne.mockResolvedValue(mockStage);
 
     geminiService = {
       isAvailable: jest.fn().mockReturnValue(true),
@@ -106,6 +111,8 @@ describe("EvaluationProcessor", () => {
     };
 
     githubService = {
+      parseGitHubUrl: jest.fn().mockReturnValue({ owner: "test", repo: "repo" }),
+      getSourceSamples: jest.fn().mockResolvedValue([{ path: "src/index.ts", content: "export const value = 1;" }]),
       getRepositoryInfo: jest.fn().mockResolvedValue({ name: "repo", stars: 10 }),
       getRecentCommits: jest.fn().mockResolvedValue([
         { commit: { message: "feat: add feature", author: { date: "2024-01-01", name: "dev" } } },
@@ -118,6 +125,7 @@ describe("EvaluationProcessor", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EvaluationProcessor,
+        { provide: DocumentExtractionService, useValue: { extract: jest.fn().mockResolvedValue({ name: "doc.pdf", content: "Test content" }) } },
         { provide: getRepositoryToken(Evaluation), useValue: evaluationRepo },
         { provide: getRepositoryToken(EvaluationJob), useValue: evaluationJobRepo },
         { provide: getRepositoryToken(Submission), useValue: submissionRepo },
@@ -142,9 +150,21 @@ describe("EvaluationProcessor", () => {
   } as Job<EvaluationJobData>);
 
   describe("process", () => {
+    it("does not process a cancelled job", async () => {
+      evaluationJobRepo.findOne.mockResolvedValue({ status: EvaluationJobStatus.CANCELLED });
+      await processor.process(createMockJob(mockJobData));
+      expect(geminiService.evaluateSubmission).not.toHaveBeenCalled();
+      expect(evaluationRepo.save).not.toHaveBeenCalled();
+    });
+    it("requires approval when the stage uses manual approval", async () => {
+      stageRepo.findOne.mockResolvedValue({ ...mockStage, requiresManualApproval: true });
+      submissionRepo.findOne.mockResolvedValue(mockSubmission);
+      await expect(processor.process(createMockJob(mockJobData))).rejects.toThrow("No approved submission");
+      expect(geminiService.evaluateSubmission).not.toHaveBeenCalled();
+    });
     it("should successfully process an evaluation job", async () => {
       submissionRepo.findOne.mockResolvedValue(mockSubmission);
-      teamRepo.findOne.mockResolvedValue(mockTeam);
+      teamRepo.findOne.mockResolvedValue({ ...mockTeam, githubRepoUrl: mockSubmission.githubUrl });
       stageRepo.findOne.mockResolvedValue(mockStage);
       evaluationRepo.findOne.mockResolvedValue(null);
       evaluationRepo.create.mockReturnValue(mockEvaluation);
@@ -157,7 +177,7 @@ describe("EvaluationProcessor", () => {
 
       // Verify job status updates
       expect(evaluationJobRepo.update).toHaveBeenCalledWith(
-        "job-1",
+        expect.objectContaining({ id: "job-1" }),
         expect.objectContaining({
           status: EvaluationJobStatus.PROCESSING,
           currentStep: EVALUATION_STEPS.FETCH_SUBMISSION,
@@ -166,7 +186,7 @@ describe("EvaluationProcessor", () => {
 
       // Verify final completion
       expect(evaluationJobRepo.update).toHaveBeenCalledWith(
-        "job-1",
+        expect.objectContaining({ id: "job-1" }),
         expect.objectContaining({
           status: EvaluationJobStatus.COMPLETED,
           progress: 100,
@@ -183,13 +203,13 @@ describe("EvaluationProcessor", () => {
 
       const job = createMockJob(mockJobData);
 
-      await expect(processor.process(job)).rejects.toThrow("No submission found for team");
+      await expect(processor.process(job)).rejects.toThrow("No approved submission found for team");
 
       expect(evaluationJobRepo.update).toHaveBeenCalledWith(
-        "job-1",
+        expect.objectContaining({ id: "job-1" }),
         expect.objectContaining({
           status: EvaluationJobStatus.FAILED,
-          error: "No submission found for team",
+          error: "No approved submission found for team and stage",
         })
       );
     });
@@ -207,7 +227,7 @@ describe("EvaluationProcessor", () => {
 
     it("should throw error if stage not found", async () => {
       submissionRepo.findOne.mockResolvedValue(mockSubmission);
-      teamRepo.findOne.mockResolvedValue(mockTeam);
+      teamRepo.findOne.mockResolvedValue({ ...mockTeam, githubRepoUrl: mockSubmission.githubUrl });
       stageRepo.findOne.mockResolvedValue(null);
       evaluationJobRepo.update.mockResolvedValue({ affected: 1, raw: {}, generatedMaps: [] });
 
@@ -235,7 +255,7 @@ describe("EvaluationProcessor", () => {
 
     it("should handle GitHub analysis failure gracefully", async () => {
       submissionRepo.findOne.mockResolvedValue(mockSubmission);
-      teamRepo.findOne.mockResolvedValue(mockTeam);
+      teamRepo.findOne.mockResolvedValue({ ...mockTeam, githubRepoUrl: mockSubmission.githubUrl });
       stageRepo.findOne.mockResolvedValue(mockStage);
       evaluationRepo.findOne.mockResolvedValue(null);
       evaluationRepo.create.mockReturnValue(mockEvaluation);
@@ -253,10 +273,10 @@ describe("EvaluationProcessor", () => {
       expect(evaluationRepo.save).toHaveBeenCalled();
     });
 
-    it("should skip AI evaluation if Gemini not available", async () => {
+    it("should fail without saving results if Gemini not available", async () => {
       geminiService.isAvailable.mockReturnValue(false);
       submissionRepo.findOne.mockResolvedValue(mockSubmission);
-      teamRepo.findOne.mockResolvedValue(mockTeam);
+      teamRepo.findOne.mockResolvedValue({ ...mockTeam, githubRepoUrl: mockSubmission.githubUrl });
       stageRepo.findOne.mockResolvedValue(mockStage);
       evaluationRepo.findOne.mockResolvedValue(null);
       evaluationRepo.create.mockReturnValue(mockEvaluation);
@@ -265,16 +285,16 @@ describe("EvaluationProcessor", () => {
 
       const job = createMockJob(mockJobData);
 
-      await processor.process(job);
+      await expect(processor.process(job)).rejects.toThrow("Gemini AI service is not configured");
 
       expect(geminiService.evaluateSubmission).not.toHaveBeenCalled();
-      expect(evaluationRepo.save).toHaveBeenCalled();
+      expect(evaluationRepo.save).not.toHaveBeenCalled();
     });
 
     it("should update existing evaluation if found", async () => {
       const existingEvaluation = { ...mockEvaluation };
       submissionRepo.findOne.mockResolvedValue(mockSubmission);
-      teamRepo.findOne.mockResolvedValue(mockTeam);
+      teamRepo.findOne.mockResolvedValue({ ...mockTeam, githubRepoUrl: mockSubmission.githubUrl });
       stageRepo.findOne.mockResolvedValue(mockStage);
       evaluationRepo.findOne.mockResolvedValue(existingEvaluation);
       evaluationRepo.save.mockResolvedValue(existingEvaluation);
@@ -290,7 +310,7 @@ describe("EvaluationProcessor", () => {
 
     it("should track processing time", async () => {
       submissionRepo.findOne.mockResolvedValue(mockSubmission);
-      teamRepo.findOne.mockResolvedValue(mockTeam);
+      teamRepo.findOne.mockResolvedValue({ ...mockTeam, githubRepoUrl: mockSubmission.githubUrl });
       stageRepo.findOne.mockResolvedValue(mockStage);
       evaluationRepo.findOne.mockResolvedValue(null);
       evaluationRepo.create.mockReturnValue(mockEvaluation);
@@ -302,7 +322,7 @@ describe("EvaluationProcessor", () => {
       await processor.process(job);
 
       expect(evaluationJobRepo.update).toHaveBeenCalledWith(
-        "job-1",
+        expect.objectContaining({ id: "job-1" }),
         expect.objectContaining({
           status: EvaluationJobStatus.COMPLETED,
           processingTimeMs: expect.any(Number),
@@ -319,7 +339,7 @@ describe("EvaluationProcessor", () => {
       await expect(processor.process(job)).rejects.toThrow();
 
       expect(evaluationJobRepo.update).toHaveBeenCalledWith(
-        "job-1",
+        expect.objectContaining({ id: "job-1" }),
         expect.objectContaining({
           status: EvaluationJobStatus.FAILED,
           attempts: 3, // attemptsMade + 1
@@ -331,7 +351,7 @@ describe("EvaluationProcessor", () => {
   describe("progress updates", () => {
     it("should update progress through all steps", async () => {
       submissionRepo.findOne.mockResolvedValue(mockSubmission);
-      teamRepo.findOne.mockResolvedValue(mockTeam);
+      teamRepo.findOne.mockResolvedValue({ ...mockTeam, githubRepoUrl: mockSubmission.githubUrl });
       stageRepo.findOne.mockResolvedValue(mockStage);
       evaluationRepo.findOne.mockResolvedValue(null);
       evaluationRepo.create.mockReturnValue(mockEvaluation);
@@ -359,7 +379,7 @@ describe("EvaluationProcessor", () => {
         ...mockSubmission,
         githubUrl: "https://github.com/owner/repo",
       });
-      teamRepo.findOne.mockResolvedValue(mockTeam);
+      teamRepo.findOne.mockResolvedValue({ ...mockTeam, githubRepoUrl: mockSubmission.githubUrl });
       stageRepo.findOne.mockResolvedValue(mockStage);
       evaluationRepo.findOne.mockResolvedValue(null);
       evaluationRepo.create.mockReturnValue(mockEvaluation);
@@ -370,7 +390,7 @@ describe("EvaluationProcessor", () => {
 
       await processor.process(job);
 
-      expect(githubService.getRepositoryInfo).toHaveBeenCalledWith("owner", "repo");
+      expect(githubService.getRepositoryInfo).toHaveBeenCalledWith("test", "repo");
     });
 
     it("should handle GitHub URL with .git suffix", async () => {
@@ -378,7 +398,7 @@ describe("EvaluationProcessor", () => {
         ...mockSubmission,
         githubUrl: "https://github.com/owner/repo.git",
       });
-      teamRepo.findOne.mockResolvedValue(mockTeam);
+      teamRepo.findOne.mockResolvedValue({ ...mockTeam, githubRepoUrl: mockSubmission.githubUrl });
       stageRepo.findOne.mockResolvedValue(mockStage);
       evaluationRepo.findOne.mockResolvedValue(null);
       evaluationRepo.create.mockReturnValue(mockEvaluation);
@@ -389,7 +409,7 @@ describe("EvaluationProcessor", () => {
 
       await processor.process(job);
 
-      expect(githubService.getRepositoryInfo).toHaveBeenCalledWith("owner", "repo");
+      expect(githubService.getRepositoryInfo).toHaveBeenCalledWith("test", "repo");
     });
 
     it("should skip analysis for invalid GitHub URL", async () => {
@@ -397,13 +417,14 @@ describe("EvaluationProcessor", () => {
         ...mockSubmission,
         githubUrl: "https://invalid-url.com/not-github",
       });
-      teamRepo.findOne.mockResolvedValue(mockTeam);
+      teamRepo.findOne.mockResolvedValue({ ...mockTeam, githubRepoUrl: "https://invalid-url.com/not-github" });
       stageRepo.findOne.mockResolvedValue(mockStage);
       evaluationRepo.findOne.mockResolvedValue(null);
       evaluationRepo.create.mockReturnValue(mockEvaluation);
       evaluationRepo.save.mockResolvedValue(mockEvaluation);
       evaluationJobRepo.update.mockResolvedValue({ affected: 1, raw: {}, generatedMaps: [] });
 
+      githubService.parseGitHubUrl.mockReturnValue(null);
       const job = createMockJob(mockJobData);
 
       await processor.process(job);
@@ -422,7 +443,7 @@ describe("EvaluationProcessor", () => {
       };
 
       submissionRepo.findOne.mockResolvedValue(mockSubmission);
-      teamRepo.findOne.mockResolvedValue(mockTeam);
+      teamRepo.findOne.mockResolvedValue({ ...mockTeam, githubRepoUrl: mockSubmission.githubUrl });
       stageRepo.findOne.mockResolvedValue(stageWithCriteria);
       evaluationRepo.findOne.mockResolvedValue(null);
       evaluationRepo.create.mockReturnValue(mockEvaluation);
@@ -438,7 +459,7 @@ describe("EvaluationProcessor", () => {
         expect.objectContaining({
           criteria: stageWithCriteria.evaluationCriteria,
         }),
-        expect.anything()
+        expect.objectContaining({ sampleCode: expect.any(Array) })
       );
     });
 
@@ -446,7 +467,7 @@ describe("EvaluationProcessor", () => {
       const stageWithoutCriteria = { ...mockStage, evaluationCriteria: undefined };
 
       submissionRepo.findOne.mockResolvedValue(mockSubmission);
-      teamRepo.findOne.mockResolvedValue(mockTeam);
+      teamRepo.findOne.mockResolvedValue({ ...mockTeam, githubRepoUrl: mockSubmission.githubUrl });
       stageRepo.findOne.mockResolvedValue(stageWithoutCriteria);
       evaluationRepo.findOne.mockResolvedValue(null);
       evaluationRepo.create.mockReturnValue(mockEvaluation);
@@ -467,7 +488,7 @@ describe("EvaluationProcessor", () => {
             expect.objectContaining({ id: "impact" }),
           ]),
         }),
-        expect.anything()
+        expect.objectContaining({ sampleCode: expect.any(Array) })
       );
     });
   });

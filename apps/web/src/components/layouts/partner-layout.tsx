@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/lib/stores";
+import { signOut } from "@/lib/auth";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useState } from "react";
 import {
@@ -57,10 +58,10 @@ export function PartnerLayout({ children }: PartnerLayoutProps) {
   const { user, logout } = useAuthStore();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     // Clear all cached queries to prevent stale data on next login
     queryClient.clear();
-    logout();
+    await signOut();
     router.push("/partners/login");
   };
 

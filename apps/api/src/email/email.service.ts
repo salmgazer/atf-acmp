@@ -24,6 +24,13 @@ interface ParticipantWelcomeEmailParams {
   portalUrl: string;
 }
 
+interface TeamFormationEmailParams {
+  to: string;
+  firstName: string;
+  teamName: string;
+  cohortName: string;
+}
+
 interface MentorWelcomeEmailParams {
   to: string;
   firstName: string;
@@ -60,6 +67,9 @@ export class EmailService {
         host: smtpHost,
         port: smtpPort,
         secure: smtpSecure,
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 20000,
         auth: this.configService.get<string>("SMTP_USER")
           ? {
               user: this.configService.get<string>("SMTP_USER"),
@@ -145,6 +155,27 @@ export class EmailService {
     await this.sendEmail(to, subject, html);
   }
 
+  async sendTeamFormationEmail(params: TeamFormationEmailParams): Promise<void> {
+    const { to, firstName, teamName, cohortName } = params;
+    const teamUrl = `${this.frontendUrl}/participant/team`;
+    const html = this.getTeamFormationTemplate(firstName, teamName, cohortName, teamUrl);
+    const text = `Hi ${firstName},
+
+Team formation for ${cohortName} is complete. You've been assigned to ${teamName}.
+
+What's next?
+- Meet your teammates in the participant portal.
+- Introduce yourself in the team chat.
+- Review your team's challenge brief.
+
+View your team: ${teamUrl}
+
+We're excited to see what you and your team will create!
+
+The ATF Team`;
+    await this.sendEmail(to, `You've Been Assigned to ${teamName}!`, html, text);
+  }
+
   async sendPasswordResetCode(to: string, code: string, firstName?: string): Promise<void> {
     const subject = `Your ATF Password Reset Code: ${code}`;
     const html = this.getPasswordResetTemplate(code, firstName);
@@ -174,7 +205,11 @@ export class EmailService {
     await this.sendEmail(to, subject, html, text);
   }
 
-  private async sendEmail(to: string, subject: string, html: string, text?: string): Promise<void> {
+  async sendCalendarInvitation(to: string, subject: string, html: string, text: string, calendar: { method: "REQUEST" | "CANCEL"; content: string }): Promise<void> {
+    await this.sendEmail(to, subject, html, text, calendar);
+  }
+
+  private async sendEmail(to: string, subject: string, html: string, text?: string, calendar?: { method: "REQUEST" | "CANCEL"; content: string }): Promise<void> {
     // Try Resend first (primary email provider)
     if (this.resendClient) {
       try {
@@ -186,6 +221,7 @@ export class EmailService {
           subject,
           html,
           text,
+          ...(calendar ? { attachments: [{ filename: "invite.ics", content: Buffer.from(calendar.content).toString("base64"), contentType: `text/calendar; charset=utf-8; method=${calendar.method}` }] } : {}),
         });
 
         // Resend SDK returns errors in response, not as thrown exceptions
@@ -213,6 +249,7 @@ export class EmailService {
           subject,
           html,
           text,
+          ...(calendar ? { icalEvent: { filename: "invite.ics", method: calendar.method, content: calendar.content } } : {}),
         });
 
         this.logger.log(`Email sent via SMTP to ${to}`);
@@ -224,6 +261,7 @@ export class EmailService {
 
     // Fall back to Mailchimp
     if (!this.mailchimpApiKey) {
+      if (calendar) throw new Error("Calendar invitation email delivery is not configured");
       this.logger.warn(`Email not sent (no API key configured): ${to} - ${subject}`);
       this.logger.debug(`Email content: ${html}`);
       return;
@@ -233,6 +271,7 @@ export class EmailService {
       // Mailchimp Transactional API (Mandrill)
       const response = await fetch("https://mandrillapp.com/api/1.0/messages/send", {
         method: "POST",
+        signal: AbortSignal.timeout(20000),
         headers: {
           "Content-Type": "application/json",
         },
@@ -244,6 +283,8 @@ export class EmailService {
             to: [{ email: to, type: "to" }],
             subject,
             html,
+            text,
+            ...(calendar ? { attachments: [{ type: `text/calendar; method=${calendar.method}`, name: "invite.ics", content: Buffer.from(calendar.content).toString("base64") }] } : {}),
           },
         }),
       });
@@ -251,6 +292,13 @@ export class EmailService {
       if (!response.ok) {
         const error = await response.text();
         throw new Error(`Mailchimp API error: ${error}`);
+      }
+
+      if (calendar) {
+        const recipients = await response.json();
+        if (!Array.isArray(recipients) || recipients.some(result => !["sent", "queued", "scheduled"].includes(result.status))) {
+          throw new Error("Calendar invitation email was rejected by the provider");
+        }
       }
 
       this.logger.log(`Email sent via Mailchimp to ${to}`);
@@ -427,6 +475,62 @@ export class EmailService {
     `;
   }
 
+  private getTeamFormationTemplate(firstName: string, teamName: string, cohortName: string, teamUrl: string): string {
+    const escape = (value: string) => value.replace(/[&<>"']/g, character => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[character]!));
+
+    return `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Team Formation Complete</title>
+      </head>
+      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f9fafb;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9fafb; padding: 40px 20px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);">
+                ${this.getEmailHeader()}
+                <tr>
+                  <td style="padding: 0 40px 32px 40px;">
+                    <h1 style="margin: 0 0 24px 0; color: #111827; font-size: 24px; font-weight: 600; text-align: center;">Team Formation Complete!</h1>
+                    <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.6;">Hi ${escape(firstName)},</p>
+                    <p style="margin: 0 0 24px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+                      Team formation for <strong>${escape(cohortName)}</strong> is complete. You&apos;ve been assigned to:
+                    </p>
+                    <div style="background: #f3f4f6; border-radius: 8px; padding: 20px; margin: 0 0 24px 0;">
+                      <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 14px;">Your team:</p>
+                      <p style="margin: 0; font-size: 18px; font-weight: 600; color: #111827; overflow-wrap: anywhere; word-break: break-word;">${escape(teamName)}</p>
+                    </div>
+                    <h2 style="margin: 0 0 12px 0; color: #111827; font-size: 18px; font-weight: 600;">What&apos;s next?</h2>
+                    <ul style="margin: 0 0 24px 0; padding-left: 20px; color: #374151; font-size: 16px; line-height: 1.6;">
+                      <li style="margin-bottom: 8px;"><strong>Meet your teammates</strong> in the participant portal.</li>
+                      <li style="margin-bottom: 8px;"><strong>Introduce yourself</strong> in the team chat.</li>
+                      <li><strong>Review your brief</strong> to explore your team&apos;s challenge.</li>
+                    </ul>
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td align="center" style="padding: 8px 0 24px 0;">
+                          <a href="${escape(teamUrl)}" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">View Your Team</a>
+                        </td>
+                      </tr>
+                    </table>
+                    <p style="margin: 0; color: #374151; font-size: 16px; line-height: 1.6;">We&apos;re excited to see what you and your team will create!</p>
+                  </td>
+                </tr>
+                ${this.getEmailFooter()}
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `;
+  }
+
   private getPasswordResetTemplate(code: string, firstName?: string): string {
     const greeting = firstName ? `Hi ${firstName},` : "Hi,";
     
@@ -546,7 +650,7 @@ You have been invited to participate in the ATF AI Challenge. This is an excitin
 
 ${customMessage ? `Message from ATF Team: "${customMessage}"` : ""}
 
-Access your organization portal: ${portalUrl}/org/login
+Access your organization portal: ${portalUrl}/partners/login
 
 Use your email address ${email} to log in. You will receive a verification code to access your account.
 
@@ -572,7 +676,7 @@ The ATF Team
     briefId: string
   ): Promise<boolean> {
     const portalUrl = this.frontendUrl;
-    const briefUrl = `${portalUrl}/org/briefs/${briefId}`;
+    const briefUrl = `${portalUrl}/partners/briefs/${briefId}`;
 
     const html = this.getBriefRevisionTemplate(organizationName, briefTitle, feedback, briefUrl);
     const text = `
@@ -701,7 +805,7 @@ The ATF Team
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
                         <td align="center" style="padding: 8px 0;">
-                          <a href="${portalUrl}/org/login" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
+                          <a href="${portalUrl}/partners/login" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
                             Access Portal
                           </a>
                         </td>
@@ -920,7 +1024,7 @@ The ATF Team
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
                         <td align="center" style="padding: 8px 0;">
-                          <a href="${portalUrl}/app/team" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
+                          <a href="${portalUrl}/participant/team" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
                             View Invitation
                           </a>
                         </td>
@@ -981,7 +1085,7 @@ The ATF Team
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
                         <td align="center" style="padding: 8px 0;">
-                          <a href="${portalUrl}/app/team" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
+                          <a href="${portalUrl}/participant/team" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
                             View Team
                           </a>
                         </td>
@@ -1062,7 +1166,7 @@ The ATF Team
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
                         <td align="center" style="padding: 8px 0;">
-                          <a href="${portalUrl}/app/team" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
+                          <a href="${portalUrl}/participant/team" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
                             Review Request
                           </a>
                         </td>

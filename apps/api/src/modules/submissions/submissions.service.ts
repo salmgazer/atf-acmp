@@ -1,3 +1,6 @@
+import { Transactional } from "@/common/decorators/transactional.decorator";
+import { scoreAgainstRubric } from "@/common/services/rubric-scoring";
+import { UploadService } from "@/common/services/upload.service";
 import {
   Injectable,
   NotFoundException,
@@ -45,11 +48,13 @@ export class SubmissionsService {
     @InjectRepository(User)
     private userRepository: Repository<User>,
     private notificationTriggers: NotificationTriggersService,
+    private uploads: UploadService,
   ) {}
 
   // ============ Stage Operations ============
 
   async createStage(dto: CreateStageDto): Promise<Stage> {
+    if (dto.evaluationCriteria) scoreAgainstRubric(dto.evaluationCriteria, dto.evaluationCriteria.map(item => ({ criterionId: item.id, score: 0 })));
     const stage = this.stageRepository.create({
       ...dto,
       startDate: dto.startDate ? new Date(dto.startDate) : undefined,
@@ -59,6 +64,7 @@ export class SubmissionsService {
   }
 
   async updateStage(id: string, dto: UpdateStageDto): Promise<Stage> {
+    if (dto.evaluationCriteria) scoreAgainstRubric(dto.evaluationCriteria, dto.evaluationCriteria.map(item => ({ criterionId: item.id, score: 0 })));
     const stage = await this.stageRepository.findOne({ where: { id } });
     if (!stage) {
       throw new NotFoundException("Stage not found");
@@ -154,13 +160,15 @@ export class SubmissionsService {
   // ============ Submission Operations ============
 
   async getTeamForParticipant(participantId: string): Promise<Team | null> {
+    if (!participantId) throw new ForbiddenException("Participant authentication is required");
     const membership = await this.teamMemberRepository.findOne({
-      where: { participantId },
+      where: { participantId, status: "confirmed" as any },
       relations: ["team"],
     });
     return membership?.team || null;
   }
 
+  @Transactional()
   async saveDraft(
     participantId: string,
     dto: SaveSubmissionDraftDto,
@@ -177,6 +185,9 @@ export class SubmissionsService {
       where: { teamId: team.id, stageId: dto.stageId },
     });
     const isRejectedSubmission = existingSubmission?.status === SubmissionStatus.REJECTED;
+    this.assertSubmissionAllowed(team, stage, isRejectedSubmission);
+    if (dto.fileUrls) dto.fileUrls = await this.uploads.validateSubmissionDocuments(dto.fileUrls, team.id, stage.requirements.documentMaxSize, stage.requirements.documentTypes);
+    if (dto.videoUrl) await this.uploads.validateSubmissionVideo(dto.videoUrl, team.id, stage.requirements.videoMaxSize, stage.requirements.videoMaxDuration);
     
     // Allow editing if stage is open OR if submission was rejected (for resubmission)
     if (!stage.isOpen() && !isRejectedSubmission) {
@@ -217,6 +228,7 @@ export class SubmissionsService {
     return this.submissionRepository.save(submission);
   }
 
+  @Transactional()
   async submit(
     participantId: string,
     dto: SubmitSubmissionDto,
@@ -238,6 +250,7 @@ export class SubmissionsService {
 
     // Allow resubmission for rejected submissions even past deadline
     const isResubmission = submission?.status === SubmissionStatus.REJECTED;
+    this.assertSubmissionAllowed(team, stage, isResubmission);
     
     if (isPastDeadline && !stage.allowLateSubmissions && !isResubmission) {
       throw new BadRequestException("Deadline has passed and late submissions are not allowed");
@@ -249,8 +262,9 @@ export class SubmissionsService {
 
     // Validate required fields
     const content = dto.content || submission?.content || {};
-    const fileUrls = dto.fileUrls || submission?.fileUrls || [];
+    const fileUrls = await this.uploads.validateSubmissionDocuments(dto.fileUrls || submission?.fileUrls || [], team.id, stage.requirements.documentMaxSize, stage.requirements.documentTypes);
     const videoUrl = dto.videoUrl ?? submission?.videoUrl;
+    await this.uploads.validateSubmissionVideo(videoUrl, team.id, stage.requirements.videoMaxSize, stage.requirements.videoMaxDuration);
 
     // For GitHub requirement, check team's githubRepoUrl
     this.validateRequirements(stage.requirements, {
@@ -319,6 +333,13 @@ export class SubmissionsService {
     return savedSubmission;
   }
 
+  private assertSubmissionAllowed(team: Team, stage: Stage, resubmission: boolean): void {
+    if (team.cohortId !== stage.cohortId) throw new ForbiddenException("Stage and team must belong to the same cohort");
+    if (team.status === "disqualified") throw new ForbiddenException("Disqualified teams cannot submit");
+    if (!stage.isActive || (stage.startDate && stage.startDate > new Date())) throw new BadRequestException("Stage is not open for submissions");
+    if (!resubmission && !stage.isOpen()) throw new BadRequestException("Stage is not open for submissions");
+  }
+
   private validateRequirements(
     requirements: StageRequirements,
     data: {
@@ -329,6 +350,21 @@ export class SubmissionsService {
     },
   ): void {
     const errors: string[] = [];
+    const text = String(data.content?.textContent || "").trim();
+    if (requirements.textRequired && !text) errors.push("Text content is required");
+    if (requirements.textMinLength && text.length < requirements.textMinLength) errors.push("Text content is too short");
+    if (requirements.textMaxLength && text.length > requirements.textMaxLength) errors.push("Text content is too long");
+    if (requirements.urlRequired) {
+      try {
+        const url = new URL(String(data.content?.customUrl || ""));
+        if (!["http:", "https:"].includes(url.protocol)) throw new Error();
+      } catch { errors.push("A valid HTTP(S) URL is required"); }
+    }
+    for (const file of data.fileUrls) {
+      if (requirements.documentMaxSize && (!Number.isFinite(file.size) || file.size > requirements.documentMaxSize * 1024 * 1024)) errors.push("Document exceeds the allowed size");
+      const extension = String(file.name || "").split(".").pop()?.toLowerCase();
+      if (requirements.documentTypes?.length && !requirements.documentTypes.includes(extension || "")) errors.push("Document type is not allowed");
+    }
 
     // Minimum validation: must have at least one file OR some content
     const hasFiles = data.fileUrls && data.fileUrls.length > 0;
@@ -358,6 +394,9 @@ export class SubmissionsService {
 
     if (requirements.additionalFields) {
       for (const field of requirements.additionalFields) {
+        if (field.type === "url" && data.content[field.name]) {
+          try { if (!["http:", "https:"].includes(new URL(data.content[field.name]).protocol)) throw new Error(); } catch { errors.push(`${field.label} must be an HTTP(S) URL`); }
+        }
         if (field.required && !data.content[field.name]) {
           errors.push(`${field.label} is required`);
         }
@@ -462,6 +501,7 @@ export class SubmissionsService {
 
   // ============ Evaluation Operations ============
 
+  @Transactional()
   async evaluateSubmission(
     id: string,
     evaluatorId: string,
@@ -531,6 +571,7 @@ export class SubmissionsService {
     return { submissions, total, page, limit };
   }
 
+  @Transactional()
   async approveSubmission(
     id: string,
     approverId: string,
@@ -561,6 +602,7 @@ export class SubmissionsService {
     return savedSubmission;
   }
 
+  @Transactional()
   async rejectSubmission(
     id: string,
     rejecterId: string,

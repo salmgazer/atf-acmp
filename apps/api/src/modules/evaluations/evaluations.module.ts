@@ -12,6 +12,7 @@ import {
 } from "./evaluations.controller";
 import { EvaluationProcessor } from "./evaluation.processor";
 import { GeminiService } from "./gemini.service";
+import { DocumentExtractionService } from "./document-extraction.service";
 import { GitHubModule } from "@/modules/github/github.module";
 import { NotificationsModule } from "@/modules/notifications/notifications.module";
 import { EVALUATION_QUEUE_NAME, DEFAULT_JOB_OPTIONS } from "./evaluation.constants";
@@ -45,7 +46,7 @@ import { EVALUATION_QUEUE_NAME, DEFAULT_JOB_OPTIONS } from "./evaluation.constan
     NotificationsModule,
   ],
   controllers: [EvaluationsController, ParticipantEvaluationsController],
-  providers: [EvaluationsService, EvaluationProcessor, GeminiService],
+  providers: [EvaluationsService, EvaluationProcessor, GeminiService, DocumentExtractionService],
   exports: [EvaluationsService, GeminiService],
 })
 export class EvaluationsModule {}

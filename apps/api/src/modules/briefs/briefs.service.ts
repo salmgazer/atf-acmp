@@ -9,6 +9,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, ILike, In } from "typeorm";
 import { Brief, BriefStatus, BriefRevision, BriefRevisionAction, BriefRevisionActorType, calculateBriefScores, ScoringAnswers } from "@/database/entities/brief.entity";
 import { Vertical } from "@/database/entities/vertical.entity";
+import { BriefEvent } from "@/database/entities/brief-event.entity";
 import { EmailService } from "@/email/email.service";
 import { NotificationTriggersService } from "@/modules/notifications/notification-triggers.service";
 import { UsersService } from "@/modules/users/users.service";
@@ -475,7 +476,12 @@ export class BriefsService {
       throw new BadRequestException("Only draft briefs can be deleted");
     }
 
-    await this.briefRepository.remove(brief);
+    if (await this.briefRepository.manager.getRepository(BriefEvent).existsBy({ briefId: id })) {
+      // Preserve the event records until the worker cancels Zoom and calendar invitations.
+      await this.briefRepository.softRemove(brief);
+    } else {
+      await this.briefRepository.remove(brief);
+    }
   }
 
   /**

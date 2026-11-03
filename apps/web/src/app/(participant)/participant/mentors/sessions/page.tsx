@@ -300,7 +300,7 @@ function BookSessionDialog({
         <DialogHeader>
           <DialogTitle>Book Session {sessionNumber}</DialogTitle>
           <DialogDescription>
-            Select an available time slot from your mentor's schedule. Your mentor will receive a
+            Select an available time slot from your mentor&apos;s schedule. Your mentor will receive a
             calendar invite with Google Meet link.
           </DialogDescription>
         </DialogHeader>
@@ -318,7 +318,7 @@ function BookSessionDialog({
               <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 text-center">
                 <AlertCircle className="h-6 w-6 text-yellow-600 mx-auto mb-2" />
                 <p className="text-sm text-yellow-800">
-                  Your mentor hasn't set up their availability yet, or all slots are booked.
+                  Your mentor hasn&apos;t set up their availability yet, or all slots are booked.
                 </p>
                 <p className="text-xs text-yellow-700 mt-1">
                   Please contact your mentor to request availability.
@@ -816,7 +816,7 @@ function SessionsPageContent() {
             <CheckCircle2 className="h-8 w-8 text-green-600 mx-auto" />
             <p className="font-medium text-green-800 mt-2">All Sessions Complete!</p>
             <p className="text-sm text-green-700">
-              You've completed all 3 mentoring sessions. Great job!
+              You&apos;ve completed all 3 mentoring sessions. Great job!
             </p>
           </div>
         )}

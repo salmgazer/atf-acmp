@@ -1,3 +1,5 @@
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
 import {
   IsString,
   IsOptional,
@@ -44,6 +46,7 @@ export class CreateChannelDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isPrivate?: boolean;
 }
 
@@ -64,6 +67,7 @@ export class UpdateChannelDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isArchived?: boolean;
 }
 
@@ -120,6 +124,9 @@ export class MessagesQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number = 50;
 
   @ApiPropertyOptional()
@@ -156,6 +163,7 @@ export class AddMemberDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isAdmin?: boolean;
 }
 

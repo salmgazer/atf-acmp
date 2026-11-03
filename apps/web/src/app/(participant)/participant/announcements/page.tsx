@@ -1,5 +1,7 @@
 "use client";
 
+import { SafeHtml } from "@/components/ui/safe-html";
+
 import { useState } from "react";
 import { formatDistanceToNow, format } from "date-fns";
 import { Megaphone, Pin, X, Clock, ChevronRight } from "lucide-react";
@@ -154,11 +156,9 @@ function AnnouncementsContent() {
                   </div>
                 </DialogHeader>
                 <ScrollArea className="max-h-[50vh] pr-4">
-                  <div
+                  <SafeHtml
                     className="prose prose-sm dark:prose-invert max-w-none"
-                    dangerouslySetInnerHTML={{
-                      __html: selectedAnnouncement.content.replace(/\n/g, "<br />"),
-                    }}
+                    html={selectedAnnouncement.content.replace(/\n/g, "<br />")}
                   />
                 </ScrollArea>
               </>

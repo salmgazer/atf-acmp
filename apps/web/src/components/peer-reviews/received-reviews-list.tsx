@@ -53,7 +53,7 @@ export function ReceivedReviewsList() {
           <MessageSquare className="h-12 w-12 text-muted-foreground mb-4" />
           <h3 className="text-lg font-medium mb-1">No Reviews Received Yet</h3>
           <p className="text-muted-foreground text-center max-w-md">
-            You haven't received any peer reviews yet. Reviews will appear here once other teams complete their evaluations.
+            You haven&apos;t received any peer reviews yet. Reviews will appear here once other teams complete their evaluations.
           </p>
         </CardContent>
       </Card>

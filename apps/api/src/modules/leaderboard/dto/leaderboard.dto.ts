@@ -1,3 +1,5 @@
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
 import { IsUUID, IsOptional, IsEnum, IsBoolean, IsInt, Min, Max } from "class-validator";
 import { Type } from "class-transformer";
 
@@ -21,12 +23,18 @@ export class LeaderboardQueryDto {
   @IsInt()
   @Min(1)
   @Max(100)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number = 50;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @QueryIsInt()
+  @QueryMin(0)
+  @QueryMax(1000000)
   offset?: number = 0;
 }
 
@@ -68,10 +76,12 @@ export interface LeaderboardResponse {
 export class UpdateLeaderboardConfigDto {
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isPublic?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   showScores?: boolean;
 
   @IsOptional()

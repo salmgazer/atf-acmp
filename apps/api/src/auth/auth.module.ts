@@ -4,6 +4,7 @@ import { PassportModule } from "@nestjs/passport";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { AuthService } from "./auth.service";
+import { SocketSessionsService } from "./socket-sessions.service";
 import { AuthController } from "./auth.controller";
 import { FirebaseService } from "./firebase.service";
 import { MagicLinkService } from "./magic-link.service";
@@ -24,7 +25,7 @@ import { EmailModule } from "../email/email.module";
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>("jwt.secret") || "fallback-secret-change-in-production",
+        secret: configService.getOrThrow<string>("jwt.secret"),
         signOptions: {
           expiresIn: "1h", // Access token expires in 1 hour
         },
@@ -35,7 +36,7 @@ import { EmailModule } from "../email/email.module";
     EmailModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, FirebaseService, MagicLinkService, JwtStrategy],
-  exports: [AuthService, FirebaseService, JwtModule],
+  providers: [AuthService, FirebaseService, MagicLinkService, JwtStrategy, SocketSessionsService],
+  exports: [AuthService, FirebaseService, JwtModule, JwtStrategy, SocketSessionsService],
 })
 export class AuthModule {}

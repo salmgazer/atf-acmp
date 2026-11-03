@@ -1,3 +1,4 @@
+import { AuthModule } from "@/auth/auth.module";
 import { Module, forwardRef } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { JwtModule } from "@nestjs/jwt";
@@ -18,6 +19,7 @@ import { NotificationsModule } from "@/modules/notifications/notifications.modul
 
 @Module({
   imports: [
+    AuthModule,
     TypeOrmModule.forFeature([
       ChatChannel,
       ChatMessage,
@@ -26,16 +28,6 @@ import { NotificationsModule } from "@/modules/notifications/notifications.modul
       TypingIndicator,
       Team,
     ]),
-    JwtModule.registerAsync({
-      imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>("JWT_SECRET") || "secret",
-        signOptions: {
-          expiresIn: parseInt(configService.get<string>("JWT_EXPIRES_IN") || "604800", 10), // default 7 days in seconds
-        },
-      }),
-      inject: [ConfigService],
-    }),
     forwardRef(() => MentorsModule),
     NotificationsModule,
   ],

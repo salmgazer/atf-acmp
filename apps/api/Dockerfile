@@ -23,7 +23,7 @@ COPY packages/shared/package*.json ./packages/shared/
 COPY packages/validators/package*.json ./packages/validators/
 
 # Install all dependencies (need devDeps for build)
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts --no-audit --no-fund
 
 # Rebuild native modules (bcrypt, sharp)
 RUN npm rebuild bcrypt && \
@@ -48,7 +48,7 @@ RUN npx nest build
 
 # Go back to root and prune dev dependencies
 WORKDIR /app
-RUN npm prune --omit=dev
+RUN npm prune --omit=dev --no-audit --no-fund
 
 # Verify sharp exists after pruning
 RUN ls -la node_modules/sharp 2>/dev/null || ls -la apps/api/node_modules/sharp 2>/dev/null || echo "sharp location check"
@@ -91,7 +91,7 @@ EXPOSE 3000
 
 # Health check for container orchestration
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
+    CMD node -e "require('http').get('http://localhost:' + (process.env.PORT || 3000) + '/api/health/ready', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["dumb-init", "--"]
@@ -112,7 +112,7 @@ COPY packages/shared/package*.json ./packages/shared/
 COPY packages/validators/package*.json ./packages/validators/
 
 # Install all dependencies (including devDependencies)
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
 # Copy source code
 COPY apps/api ./apps/api

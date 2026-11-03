@@ -146,6 +146,7 @@ function parseCSVLine(line: string): string[] {
 function BulkImportContent() {
   const router = useRouter();
   const [selectedCohortId, setSelectedCohortId] = useState("");
+  const [selectedGroup, setSelectedGroup] = useState("");
   const [parsedData, setParsedData] = useState<ParsedParticipant[]>([]);
   const [sendWelcomeEmail, setSendWelcomeEmail] = useState(true);
   const [importResults, setImportResults] = useState<ImportResult[] | null>(null);
@@ -154,6 +155,7 @@ function BulkImportContent() {
   const { data: cohortsData } = useCohorts({ limit: 100 });
   const cohorts = cohortsData?.data || [];
   const activeCohort = cohorts.find((c) => c.status === "active");
+  const groups = cohorts.find(cohort => cohort.id === selectedCohortId)?.groups || [];
 
   const importMutation = useBulkImportParticipants();
 
@@ -187,7 +189,7 @@ function BulkImportContent() {
   );
 
   const handleImport = async () => {
-    if (!selectedCohortId || validCount === 0) return;
+    if (!selectedCohortId || validCount === 0 || (groups.length > 0 && !groups.includes(selectedGroup))) return;
 
     const validParticipants = parsedData
       .filter((p) => p.isValid)
@@ -195,6 +197,7 @@ function BulkImportContent() {
 
     const result = await importMutation.mutateAsync({
       cohortId: selectedCohortId,
+      group: groups.length ? selectedGroup : undefined,
       participants: validParticipants,
       sendWelcomeEmail,
     });
@@ -262,7 +265,7 @@ function BulkImportContent() {
             <h2 className="font-semibold mb-4">1. Select Cohort</h2>
             <Select
               value={selectedCohortId}
-              onValueChange={setSelectedCohortId}
+              onValueChange={value => { setSelectedCohortId(value); setSelectedGroup(""); }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select a cohort" />
@@ -278,6 +281,14 @@ function BulkImportContent() {
                 ))}
               </SelectContent>
             </Select>
+            {groups.length > 0 && <div className="mt-4 space-y-2">
+              <Label htmlFor="import-group">Group for this import</Label>
+              <select id="import-group" value={selectedGroup} onChange={event => setSelectedGroup(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3" required>
+                <option value="" disabled>Select a group</option>
+                {groups.map(group => <option key={group} value={group}>{group}</option>)}
+              </select>
+              <p className="text-sm text-muted-foreground">Every participant in this import will be assigned to this group.</p>
+            </div>}
           </div>
 
           <div className="rounded-lg border bg-card p-6">
@@ -353,7 +364,7 @@ function BulkImportContent() {
                 </Button>
                 <Button
                   onClick={handleImport}
-                  disabled={!selectedCohortId || validCount === 0 || importMutation.isPending}
+                  disabled={!selectedCohortId || validCount === 0 || importMutation.isPending || (groups.length > 0 && !groups.includes(selectedGroup))}
                 >
                   {importMutation.isPending ? (
                     <>

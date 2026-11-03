@@ -76,7 +76,7 @@ export function middleware(request: NextRequest) {
     if (authToken && pathname === config.loginPath) {
       // Redirect authenticated users to their correct portal's dashboard
       // If they have a stored portal, use that; otherwise use current portal
-      const targetPortal = authPortal || portal;
+      const targetPortal = authPortal && Object.hasOwn(PORTAL_CONFIG, authPortal) ? authPortal : portal;
       const targetConfig = PORTAL_CONFIG[targetPortal];
       const dashboardUrl = new URL(targetConfig.dashboardPath, request.url);
       return NextResponse.redirect(dashboardUrl);

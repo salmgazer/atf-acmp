@@ -1,12 +1,11 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { v4 as uuidv4 } from 'uuid';
 import { ThumbnailService } from './thumbnail.service';
 
-// Use require for sharp to handle CJS/ESM interop
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const sharp = require('sharp');
+import sharp from 'sharp';
 
 export interface UploadResult {
   url: string;
@@ -17,6 +16,7 @@ export interface UploadResult {
 }
 
 export interface VideoUploadResult extends UploadResult {
+  durationSeconds?: number;
   thumbnailUrl?: string;
   thumbnailKey?: string;
 }
@@ -39,6 +39,7 @@ const DEFAULT_IMAGE_OPTIONS: ImageUploadOptions = {
 export class UploadService {
   private readonly logger = new Logger(UploadService.name);
   private readonly s3Client: S3Client;
+  private readonly signingClient: S3Client;
   private readonly bucket: string;
   private readonly region: string;
   private readonly publicUrl: string;
@@ -52,7 +53,7 @@ export class UploadService {
     const s3AccessKey = this.configService.get<string>('S3_ACCESS_KEY');
     const s3SecretKey = this.configService.get<string>('S3_SECRET_KEY');
     const s3Bucket = this.configService.get<string>('S3_BUCKET');
-    const s3Region = this.configService.get<string>('S3_REGION') || 'us-east-1';
+    const s3Region = this.configService.get<string>('S3_REGION');
     const s3PublicUrl = this.configService.get<string>('S3_PUBLIC_URL');
 
     // Fallback to legacy AWS config if S3_ vars not set
@@ -87,6 +88,9 @@ export class UploadService {
     }
 
     this.s3Client = new S3Client(s3Config);
+    this.signingClient = s3Endpoint && s3PublicUrl
+      ? new S3Client({ ...s3Config, endpoint: new URL(s3PublicUrl).origin })
+      : this.s3Client;
 
     // Set public URL for accessing files
     // For MinIO: http://localhost:9000/bucket-name
@@ -101,6 +105,51 @@ export class UploadService {
    */
   private getPublicUrl(key: string): string {
     return `${this.publicUrl}/${key}`;
+  }
+
+  async signResponseUrls(value: any): Promise<any> {
+    if (typeof value === 'string') {
+      const key = this.extractKeyFromUrl(value);
+      if (!key) return value;
+      return getSignedUrl(this.signingClient, new GetObjectCommand({ Bucket: this.bucket, Key: key }), { expiresIn: 900 });
+    }
+    if (!value || typeof value !== 'object' || value instanceof Date || Buffer.isBuffer(value)) return value;
+    if (Array.isArray(value)) return Promise.all(value.map(item => this.signResponseUrls(item)));
+    return Object.fromEntries(await Promise.all(Object.entries(value).map(async ([key, item]) => [key, await this.signResponseUrls(item)])));
+  }
+
+  async readDocument(url: string): Promise<Buffer> {
+    const key = this.extractKeyFromUrl(url);
+    if (!key) throw new BadRequestException('Document must be uploaded to this application');
+    const result = await this.s3Client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+    if (!result.Body || !result.ContentLength || result.ContentLength > 25 * 1024 * 1024) throw new BadRequestException('Document is missing or exceeds the extraction limit');
+    return Buffer.from(await result.Body.transformToByteArray());
+  }
+
+  async validateSubmissionDocuments<T extends { url: string; name: string; type: string; size: number }>(files: T[], teamId: string, maxMB = 25, allowedTypes: string[] = []): Promise<T[]> {
+    return Promise.all(files.map(async file => {
+      const key = this.extractKeyFromUrl(file.url);
+      if (!key?.startsWith(`submissions/${teamId}/documents/`)) throw new BadRequestException('Document must be uploaded by this team');
+      const stored = await this.s3Client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key })).catch(() => { throw new BadRequestException('Document could not be verified'); });
+      const extension = key.split('.').pop()?.toLowerCase() || '';
+      if (!stored.ContentLength || stored.ContentLength > Math.min(maxMB, 25) * 1024 * 1024) throw new BadRequestException('Document exceeds the stage size limit');
+      if (allowedTypes.length && !allowedTypes.map(type => type.toLowerCase().replace(/^\./, '')).includes(extension)) throw new BadRequestException('Document type is not allowed for this stage');
+      return { ...file, url: this.getPublicUrl(key), size: stored.ContentLength, type: stored.ContentType || 'application/octet-stream' };
+    }));
+  }
+
+  async validateSubmissionVideo(url: string | undefined, teamId: string, maxMB?: number, maxSeconds?: number): Promise<void> {
+    if (!url) return;
+    const key = this.extractKeyFromUrl(url);
+    if (!key) {
+      if (maxMB || maxSeconds) throw new BadRequestException('Upload the video so its size and duration can be verified');
+      return;
+    }
+    if (!key.startsWith(`submissions/${teamId}/videos/`)) throw new BadRequestException('Video must be uploaded by this team');
+    const stored = await this.s3Client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key })).catch(() => { throw new BadRequestException('Video could not be verified'); });
+    if (!stored.ContentType?.startsWith('video/') || !stored.ContentLength || stored.ContentLength > Math.min(maxMB || 100, 100) * 1024 * 1024) throw new BadRequestException('Video exceeds the stage size limit or is invalid');
+    const duration = Number(stored.Metadata?.['duration-seconds']);
+    if (maxSeconds && (!Number.isFinite(duration) || duration <= 0 || duration > maxSeconds)) throw new BadRequestException('Video exceeds the stage duration limit or could not be measured');
   }
 
   /**
@@ -262,6 +311,7 @@ export class UploadService {
         : 'mov';
       const videoId = uuidv4();
       const key = `${folder}/${videoId}.${extension}`;
+      const durationSeconds = folder.startsWith('submissions/') ? await this.thumbnailService.getVideoDuration(file.buffer) : undefined;
 
       // Upload video to S3
       await this.s3Client.send(
@@ -270,6 +320,7 @@ export class UploadService {
           Key: key,
           Body: file.buffer,
           ContentType: file.mimetype,
+          ...(durationSeconds ? { Metadata: { 'duration-seconds': String(durationSeconds) } } : {}),
           CacheControl: 'public, max-age=31536000', // 1 year cache
         }),
       );
@@ -279,6 +330,7 @@ export class UploadService {
       this.logger.log(`Uploaded video: ${key} (${file.size} bytes)`);
 
       const result: VideoUploadResult = {
+        durationSeconds,
         url,
         key,
         bucket: this.bucket,
@@ -346,8 +398,12 @@ export class UploadService {
 
     try {
       const urlObj = new URL(url);
-      // Remove leading slash
-      return urlObj.pathname.substring(1);
+      const base = new URL(this.publicUrl);
+      const prefix = base.pathname.replace(/\/$/, '') + '/';
+      if (urlObj.origin !== base.origin || !urlObj.pathname.startsWith(prefix)) return null;
+      const key = decodeURIComponent(urlObj.pathname.slice(prefix.length));
+      if (!key || key.split('/').some(segment => segment === '..' || segment === '.')) return null;
+      return key;
     } catch {
       return null;
     }

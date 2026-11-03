@@ -1,3 +1,4 @@
+import { EmailService } from "@/email/email.service";
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import {
@@ -71,6 +72,8 @@ describe("TeamsService", () => {
     briefRepository = createMockRepository();
     chatChannelRepository = createMockRepository();
     channelMemberRepository = createMockRepository();
+    chatChannelRepository.create.mockImplementation(value => ({ id: "channel-1", ...value }));
+    chatChannelRepository.save.mockImplementation(async value => value);
     scheduledSessionRepository = createMockRepository();
     userRepository = createMockRepository();
 
@@ -89,6 +92,7 @@ describe("TeamsService", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TeamsService,
+        { provide: EmailService, useValue: { sendTeamInvitation: jest.fn().mockResolvedValue(undefined), sendTeamInvitationEmail: jest.fn().mockResolvedValue(undefined) } },
         { provide: getRepositoryToken(Team), useValue: teamRepository },
         { provide: getRepositoryToken(TeamMember), useValue: memberRepository },
         { provide: getRepositoryToken(TeamInvitation), useValue: invitationRepository },

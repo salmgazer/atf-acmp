@@ -149,7 +149,7 @@ export default function PartnerRegisterPage() {
           </div>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              You'll receive a confirmation email with further instructions.
+              You&apos;ll receive a confirmation email with further instructions.
             </p>
             <Button asChild variant="outline">
               <Link href="/partners/login">Go to Login</Link>
@@ -335,7 +335,7 @@ export default function PartnerRegisterPage() {
       <div className="hidden lg:flex lg:flex-1 bg-primary text-primary-foreground p-12 items-center justify-center">
         <div className="max-w-md space-y-8">
           <div className="space-y-4">
-            <h2 className="text-3xl font-bold">Partner with Africa's Future Innovators</h2>
+            <h2 className="text-3xl font-bold">Partner with Africa&apos;s Future Innovators</h2>
             <p className="text-primary-foreground/80">
               Submit real-world challenges from your organization and watch talented teams 
               develop innovative AI solutions.

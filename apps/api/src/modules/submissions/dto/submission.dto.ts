@@ -1,3 +1,5 @@
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import {
   IsString,
   IsUUID,
@@ -17,9 +19,19 @@ import {
 import { Type } from "class-transformer";
 import { StageType, SubmissionStatus, StageRequirements } from "@/database/entities/stage.entity";
 
+export class EvaluationCriterionDto {
+  @IsString() id: string;
+  @IsString() name: string;
+  @IsString() description: string;
+  @IsNumber() @Min(1) maxScore: number;
+  @IsNumber() @Min(0) @Max(100) weight: number;
+}
+
 // ============ Stage DTOs ============
 
 export class CreateStageDto {
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => EvaluationCriterionDto)
+  evaluationCriteria?: EvaluationCriterionDto[];
   @IsUUID()
   cohortId: string;
 
@@ -62,6 +74,7 @@ export class CreateStageDto {
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   allowLateSubmissions?: boolean;
 
   @IsOptional()
@@ -76,14 +89,17 @@ export class CreateStageDto {
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   unlocksMentorClaim?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   requiresManualApproval?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   requiresAiEvaluation?: boolean;
 
   @IsOptional()
@@ -92,6 +108,8 @@ export class CreateStageDto {
 }
 
 export class UpdateStageDto {
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => EvaluationCriterionDto)
+  evaluationCriteria?: EvaluationCriterionDto[];
   @IsOptional()
   @IsNumber()
   @Min(1)
@@ -135,10 +153,12 @@ export class UpdateStageDto {
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isActive?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   allowLateSubmissions?: boolean;
 
   @IsOptional()
@@ -153,14 +173,17 @@ export class UpdateStageDto {
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   unlocksMentorClaim?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   requiresManualApproval?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   requiresAiEvaluation?: boolean;
 
   @IsOptional()
@@ -174,7 +197,7 @@ export class FileUrlDto {
   @IsString()
   name: string;
 
-  @IsUrl()
+  @IsUrl({ require_tld: false, protocols: ["http", "https"], require_protocol: true })
   url: string;
 
   @IsString()
@@ -255,7 +278,7 @@ export class StageQueryDto {
 
   @IsOptional()
   @IsBoolean()
-  @Type(() => Boolean)
+  @StrictBoolean()
   activeOnly?: boolean;
 }
 
@@ -275,11 +298,17 @@ export class SubmissionQueryDto {
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number;
 
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number;
 }
 
@@ -395,10 +424,16 @@ export class SubmissionApprovalQueryDto {
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number;
 
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number;
 }

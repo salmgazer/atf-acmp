@@ -45,6 +45,7 @@ export interface Cohort {
   rubric?: RubricConfig;
   countries: string[];
   verticals: string[];
+  groups: string[];
   briefCap: number;
   maxTeamsPerBrief: number;
   sessionRate?: number; // Default rate paid per mentor session
@@ -63,12 +64,13 @@ export interface CreateCohortDto {
   rubric?: RubricConfig;
   countries?: string[];
   verticals?: string[];
+  groups?: string[];
   briefCap?: number;
   maxTeamsPerBrief?: number;
   sessionRate?: number;
 }
 
-export interface UpdateCohortDto extends Partial<CreateCohortDto> {}
+type UpdateCohortDto = Partial<CreateCohortDto>;
 
 export interface CohortQueryParams {
   status?: CohortStatus;

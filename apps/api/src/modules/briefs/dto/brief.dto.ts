@@ -1,3 +1,4 @@
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
 import {
   IsString,
   IsOptional,
@@ -414,9 +415,15 @@ export class BriefQueryDto {
   search?: string;
 
   @IsOptional()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number;
 
   @IsOptional()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number;
 
   @IsOptional()
@@ -504,7 +511,13 @@ export class BriefResponseDto {
 export class PaginatedBriefsDto {
   data: BriefResponseDto[];
   total: number;
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page: number;
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit: number;
   totalPages: number;
 }

@@ -327,7 +327,7 @@ export function RubricForm({ rubric, cohortId, stages, onSave, onCancel }: Rubri
 
           {fields.length === 0 && (
             <div className="text-center py-8 text-muted-foreground">
-              No criteria defined. Click "Add Criterion" to get started.
+              No criteria defined. Click &quot;Add Criterion&quot; to get started.
             </div>
           )}
         </CardContent>

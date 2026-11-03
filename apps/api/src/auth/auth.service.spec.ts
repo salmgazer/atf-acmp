@@ -96,9 +96,9 @@ describe("AuthService", () => {
       expect(result).toHaveProperty("refreshToken");
       expect(result).toHaveProperty("user");
       expect(result.user.email).toBe("staff@example.com");
-      expect(userRepository.findOne).toHaveBeenCalledWith({
-        where: { email: "staff@example.com" },
-      });
+      expect(userRepository.findOne).toHaveBeenCalledWith(expect.objectContaining({
+        where: { email: "staff@example.com" }, select: expect.objectContaining({ passwordHash: true }),
+      }));
     });
 
     it("should throw UnauthorizedException for invalid email", async () => {
@@ -252,7 +252,7 @@ describe("AuthService", () => {
 
       expect(result).toBe(3);
       expect(refreshTokenRepository.update).toHaveBeenCalledWith(
-        { userId: "user-123", isRevoked: false },
+        [{ userId: "user-123", isRevoked: false }, { participantId: "user-123", isRevoked: false }],
         expect.objectContaining({
           isRevoked: true,
           revokedReason: "Logout all sessions",
@@ -341,6 +341,42 @@ describe("AuthService", () => {
   });
 
   describe("verifyFirebaseToken", () => {
+    it("does not reactivate an inactive mentor during token issuance", async () => {
+      mentorRepository.findOne.mockResolvedValue({ status: "inactive", cohort: { status: "active" } });
+      await expect(service.generateTokens({ ...mockUser, role: Role.MENTOR })).rejects.toThrow("inactive");
+      expect(mentorRepository.save).not.toHaveBeenCalled();
+      expect(refreshTokenRepository.save).not.toHaveBeenCalled();
+    });
+    it("activates an imported mentor on the first valid login", async () => {
+      mentorRepository.findOne.mockResolvedValue({ status: "imported", cohort: { status: "active" } });
+      refreshTokenRepository.create.mockReturnValue({ id: "session", token: "refresh-token" });
+      refreshTokenRepository.save.mockResolvedValue({ id: "session", token: "refresh-token" });
+      await service.generateTokens({ ...mockUser, role: Role.MENTOR });
+      expect(mentorRepository.save).toHaveBeenCalledWith(expect.objectContaining({ status: "active" }));
+    });
+    it("does not issue mentor tokens for an archived cohort", async () => {
+      mentorRepository.findOne.mockResolvedValue({ status: "active", cohort: { status: "archived" } });
+      await expect(service.generateTokens({ ...mockUser, role: Role.MENTOR })).rejects.toThrow("COHORT_NOT_ACCESSIBLE");
+      expect(refreshTokenRepository.save).not.toHaveBeenCalled();
+    });
+    it("rejects a token without an email before any account lookup", async () => {
+      firebaseService.verifyIdToken.mockResolvedValue({ uid: "phone-only" });
+      await expect(service.verifyFirebaseToken("token")).rejects.toThrow(UnauthorizedException);
+      expect(userRepository.findOne).not.toHaveBeenCalled();
+    });
+    it("does not link an unverified email to an existing account", async () => {
+      firebaseService.verifyIdToken.mockResolvedValue({ uid: "unknown", email: "staff@example.com", email_verified: false });
+      userRepository.findOne.mockResolvedValueOnce(null);
+      await expect(service.verifyFirebaseToken("token")).rejects.toThrow("Verify your email");
+      expect(userRepository.save).not.toHaveBeenCalled();
+      expect(userRepository.findOne).toHaveBeenCalledTimes(1);
+    });
+    it("does not replace an existing federated identity through email matching", async () => {
+      firebaseService.verifyIdToken.mockResolvedValue({ uid: "new-identity", email: "staff@example.com", email_verified: true });
+      userRepository.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce({ ...mockUser, firebaseUid: "original-identity" });
+      await expect(service.verifyFirebaseToken("token")).rejects.toThrow("already linked");
+      expect(userRepository.save).not.toHaveBeenCalled();
+    });
     it("should authenticate user with valid Firebase token", async () => {
       const decodedToken = { uid: "firebase-uid", email: "test@example.com" };
       firebaseService.verifyIdToken.mockResolvedValue(decodedToken);
@@ -386,7 +422,7 @@ describe("AuthService", () => {
 
       expect(result).toHaveLength(2);
       expect(refreshTokenRepository.find).toHaveBeenCalledWith({
-        where: { userId: "user-123", isRevoked: false },
+        where: [expect.objectContaining({ userId: "user-123", isRevoked: false, expiresAt: expect.anything() }), expect.objectContaining({ participantId: "user-123", isRevoked: false, expiresAt: expect.anything() })],
         order: { lastUsedAt: "DESC" },
       });
     });

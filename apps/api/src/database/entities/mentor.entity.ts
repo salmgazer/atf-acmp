@@ -217,6 +217,7 @@ export enum MentorClaimStatus {
 @Index(["status"])
 // Note: Unique constraint for active claims is handled by a partial index in migration
 // to allow re-claiming after release
+@Index("team_one_active_mentor_claim", ["teamId"], { unique: true, where: "status = 'active' AND deleted_at IS NULL" })
 export class MentorClaim extends BaseEntity {
   @Column({ name: "mentor_id" })
   mentorId: string;
@@ -331,7 +332,7 @@ export class ScheduledSession extends BaseEntity {
   @Column({ name: "session_number" })
   sessionNumber: number; // 1, 2, or 3
 
-  @Column({ name: "scheduled_at", type: "timestamp" })
+  @Column({ name: "scheduled_at", type: "timestamptz" })
   scheduledAt: Date;
 
   @Column({ name: "duration_minutes", default: 45 })

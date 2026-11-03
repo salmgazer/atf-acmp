@@ -9,6 +9,7 @@ import {
   Query,
   UseGuards,
   Request,
+  ForbiddenException,
 } from "@nestjs/common";
 import {
   ApiTags,
@@ -201,11 +202,13 @@ export class ForumController {
       authorId = user.mentorId || user.id;
       authorName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email;
       authorAvatarUrl = user.profileImageUrl || user.avatarUrl;
-    } else {
+    } else if (["super_admin", "program_manager", "evaluator", "viewer"].includes(user.role)) {
       authorType = ForumAuthorType.STAFF;
       authorId = user.id;
       authorName = `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email;
       authorAvatarUrl = user.avatarUrl;
+    } else {
+      throw new ForbiddenException("Forum access is not available for this role");
     }
 
     return {

@@ -237,6 +237,7 @@ function TeamDashboard({
         <div className="flex items-start justify-between">
           <div>
             <h1 className="text-xl font-bold">{team.name}</h1>
+            {team.group && <p className="mt-1 text-sm">Group: {team.group}</p>}
             <p className="text-sm opacity-90 mt-1">
               {confirmedMembers.length} member{confirmedMembers.length !== 1 ? "s" : ""}
               {pendingMembers.length > 0 && (
@@ -274,7 +275,7 @@ function TeamDashboard({
             </div>
           )}
           <Button asChild variant="outline" size="sm" className="mt-3">
-            <Link href={`/app/briefs/${team.brief.id}`}>
+            <Link href={`/participant/briefs/${team.brief.id}`}>
               View Brief
             </Link>
           </Button>
@@ -487,6 +488,7 @@ function TeamDashboard({
         teamId={team.id}
         cohortId={team.cohortId}
         invitedBy={participantId}
+        group={team.group || null}
       />
 
       {/* Settings Dialog */}
@@ -502,7 +504,7 @@ function TeamDashboard({
           <DialogHeader>
             <DialogTitle>Leave Team</DialogTitle>
             <DialogDescription>
-              Are you sure you want to leave "{team.name}"? This action cannot be undone.
+              Are you sure you want to leave &quot;{team.name}&quot;? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -585,19 +587,22 @@ function InviteDialog({
   teamId,
   cohortId,
   invitedBy,
+  group,
 }: {
   open: boolean;
   onClose: () => void;
   teamId: string;
   cohortId: string;
   invitedBy: string;
+  group: string | null;
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [message, setMessage] = useState("");
 
   const { data: participants, isLoading } = useSearchAvailableParticipants(
     cohortId,
-    searchQuery
+    searchQuery,
+    group
   );
   const sendInvitation = useSendInvitation();
 
@@ -626,7 +631,7 @@ function InviteDialog({
             <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
             <p className="text-xs text-blue-700 dark:text-blue-300">
               Only participants who have logged in and completed their onboarding are shown here. 
-              If you can't find someone, ask them to log in first.
+              If you can&apos;t find someone, ask them to log in first.
             </p>
           </div>
 
@@ -749,7 +754,7 @@ function TeamSettingsDialog({
               onChange={(e) => setGithubRepoUrl(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Your team's GitHub repository for submissions and evaluation
+              Your team&apos;s GitHub repository for submissions and evaluation
             </p>
           </div>
         </div>
@@ -770,7 +775,7 @@ function TeamSettingsDialog({
   );
 }
 
-function NoTeamView({ participantId, cohortId }: { participantId: string; cohortId: string }) {
+function NoTeamView({ participantId, cohortId, group }: { participantId: string; cohortId: string; group: string | null }) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [teamName, setTeamName] = useState("");
   const [teamDescription, setTeamDescription] = useState("");
@@ -780,7 +785,8 @@ function NoTeamView({ participantId, cohortId }: { participantId: string; cohort
   const createMutation = useCreateTeam();
   const joinMutation = useJoinTeamByCode();
   const { data: invitations } = useMyInvitations(participantId, "pending");
-  const { data: openTeams, isLoading: teamsLoading } = useOpenTeams(cohortId, teamSearch);
+  const { data: allOpenTeams, isLoading: teamsLoading } = useOpenTeams(cohortId, teamSearch);
+  const openTeams = allOpenTeams?.filter(team => (team.group || null) === group);
 
   const handleCreate = async () => {
     await createMutation.mutateAsync({
@@ -1057,7 +1063,7 @@ function InvitationCard({ invitation }: { invitation: TeamInvitation }) {
             Invited by {invitation.inviter?.firstName} {invitation.inviter?.lastName}
           </p>
           {invitation.message && (
-            <p className="text-sm mt-2 italic">"{invitation.message}"</p>
+            <p className="text-sm mt-2 italic">&quot;{invitation.message}&quot;</p>
           )}
           <p className="text-xs text-muted-foreground mt-2">
             {formatDistanceToNow(new Date(invitation.invitedAt), { addSuffix: true })}
@@ -1130,7 +1136,7 @@ function TeamPageContent() {
       {team ? (
         <TeamDashboard team={team} participantId={participant.id} />
       ) : (
-        <NoTeamView participantId={participant.id} cohortId={participant.cohortId} />
+        <NoTeamView participantId={participant.id} cohortId={participant.cohortId} group={participant.group || null} />
       )}
     </ParticipantLayout>
   );
