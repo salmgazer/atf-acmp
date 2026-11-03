@@ -8,7 +8,10 @@
 - [x] Rescheduling and cancellation update the same calendar invitation.
 - [x] Protected hosting is available to organization owners/admins and program managers.
 - [x] Pending deliveries persist in PostgreSQL and retry after failures or application restarts.
-- [ ] Configure the shared Zoom account and OneSignal credentials in the target environment.
+- [x] Pass Zoom settings from GitHub environment variables/secrets to the staging and production API deployments.
+- [x] Configure the shared Zoom account variables and encrypted client secret in both GitHub environments.
+- [ ] Deploy the feature to the target environment and verify live Zoom event creation.
+- [ ] Configure OneSignal credentials in each target environment that needs browser push.
 
 ## Scheduling and attendance
 
@@ -47,6 +50,21 @@ docker compose up -d api web
 ```
 
 The API development entrypoint applies pending migrations. Without Zoom configuration, the portal disables scheduling and explains that staff must connect the account. SMTP is already routed to Mailpit in the local stack; production requires a configured Resend, SMTP or Mandrill sender. Supply the same Zoom settings through the production runtime's secret and environment configuration before enabling the feature there.
+
+## GitHub Actions deployment configuration
+
+Configure the following in **Settings → Environments → staging / production** for the repository:
+
+| Setting | GitHub type | API runtime variable |
+| --- | --- | --- |
+| `ZOOM_ACCOUNT_ID` | Environment variable | `ZOOM_ACCOUNT_ID` |
+| `ZOOM_CLIENT_ID` | Environment variable | `ZOOM_CLIENT_ID` |
+| `ZOOM_HOST_USER_ID` | Environment variable | `ZOOM_HOST_USER_ID` |
+| `ZOOM_CLIENT_SECRET` | Environment secret | `ZOOM_CLIENT_SECRET` |
+
+Both API workflows validate that all four settings exist before building the image and pass them to ECS at deployment, following the existing Resend/OneSignal pattern. The client secret stays in GitHub secrets; do not commit it or pass it as a Docker build argument. Workflow changes also count as API changes, so changing runtime configuration redeploys the API.
+
+Configuration changes take effect on the next API deployment. Merge the feature into `staging` or `main`, or dispatch the appropriate workflow on the feature branch with `deploy_api=true`, `deploy_web=true`, and `run_migrations=true` for the initial release. The initial release includes the cohort group and brief event migrations and the matching portal changes. Subsequent configuration-only deployments can select just the API. Verify event creation in the deployed partner portal after the workflow completes.
 
 ## Calendar investigation
 

@@ -117,6 +117,7 @@ jobs:
           base: ${{ github.event.before }}
           filters: |
             api:
+              - '.github/workflows/deploy-staging.yml'
               - 'apps/api/**'
               - 'packages/shared/**'
               - 'packages/validators/**'
@@ -308,6 +309,20 @@ jobs:
       - name: Get short commit hash
         run: echo "IMAGE_TAG=${GITHUB_SHA:0:7}" >> $GITHUB_ENV
 
+      - name: Validate Zoom configuration
+        env:
+          ZOOM_ACCOUNT_ID: ${{ vars.ZOOM_ACCOUNT_ID }}
+          ZOOM_CLIENT_ID: ${{ vars.ZOOM_CLIENT_ID }}
+          ZOOM_CLIENT_SECRET: ${{ secrets.ZOOM_CLIENT_SECRET }}
+          ZOOM_HOST_USER_ID: ${{ vars.ZOOM_HOST_USER_ID }}
+        run: |
+          for name in ZOOM_ACCOUNT_ID ZOOM_CLIENT_ID ZOOM_CLIENT_SECRET ZOOM_HOST_USER_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is required for Zoom brief events"
+              exit 1
+            fi
+          done
+
       - name: Build and push API image
         uses: docker/build-push-action@v6
         with:
@@ -366,7 +381,11 @@ jobs:
               {"name": "GEMINI_API_KEY", "value": "${{ secrets.GEMINI_API_KEY }}"},
               {"name": "GITHUB_TOKEN", "value": "${{ secrets.GITHUB_TOKEN }}"},
               {"name": "ONESIGNAL_APP_ID", "value": "${{ vars.ONESIGNAL_APP_ID }}"},
-              {"name": "ONESIGNAL_REST_API_KEY", "value": "${{ secrets.ONESIGNAL_REST_API_KEY }}"}
+              {"name": "ONESIGNAL_REST_API_KEY", "value": "${{ secrets.ONESIGNAL_REST_API_KEY }}"},
+              {"name": "ZOOM_ACCOUNT_ID", "value": ${{ toJSON(vars.ZOOM_ACCOUNT_ID) }}},
+              {"name": "ZOOM_CLIENT_ID", "value": ${{ toJSON(vars.ZOOM_CLIENT_ID) }}},
+              {"name": "ZOOM_CLIENT_SECRET", "value": ${{ toJSON(secrets.ZOOM_CLIENT_SECRET) }}},
+              {"name": "ZOOM_HOST_USER_ID", "value": ${{ toJSON(vars.ZOOM_HOST_USER_ID) }}}
             ]
           secrets: |
             [
