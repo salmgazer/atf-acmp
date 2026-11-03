@@ -118,6 +118,7 @@ jobs:
           filters: |
             api:
               - '.github/workflows/deploy-staging.yml'
+              - 'scripts/update-alb-rules.sh'
               - 'apps/api/**'
               - 'packages/shared/**'
               - 'packages/validators/**'
