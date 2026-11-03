@@ -17,7 +17,7 @@ interface ReviewStepProps {
   onBack: () => void;
   onEdit: (step: number) => void;
   isSubmitting: boolean;
-  submitError: string | null;
+  submitErrors: string[];
 }
 
 export function ReviewStep({
@@ -28,7 +28,7 @@ export function ReviewStep({
   onBack,
   onEdit,
   isSubmitting,
-  submitError,
+  submitErrors,
 }: ReviewStepProps) {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
@@ -186,9 +186,12 @@ export function ReviewStep({
       </div>
 
       {/* Error Message */}
-      {submitError && (
-        <div className="rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 p-4">
-          <p className="text-sm text-red-700 dark:text-red-300">{submitError}</p>
+      {submitErrors.length > 0 && (
+        <div role="alert" className="rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 p-4 text-sm text-red-700 dark:text-red-300">
+          <p className="font-medium">Please check your submission:</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {submitErrors.map(message => <li key={message}>{message}</li>)}
+          </ul>
         </div>
       )}
 
