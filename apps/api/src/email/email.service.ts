@@ -24,6 +24,13 @@ interface ParticipantWelcomeEmailParams {
   portalUrl: string;
 }
 
+interface TeamFormationEmailParams {
+  to: string;
+  firstName: string;
+  teamName: string;
+  cohortName: string;
+}
+
 interface MentorWelcomeEmailParams {
   to: string;
   firstName: string;
@@ -146,6 +153,27 @@ export class EmailService {
     const html = this.getParticipantWelcomeTemplate(firstName, participantId, portalUrl);
 
     await this.sendEmail(to, subject, html);
+  }
+
+  async sendTeamFormationEmail(params: TeamFormationEmailParams): Promise<void> {
+    const { to, firstName, teamName, cohortName } = params;
+    const teamUrl = `${this.frontendUrl}/participant/team`;
+    const html = this.getTeamFormationTemplate(firstName, teamName, cohortName, teamUrl);
+    const text = `Hi ${firstName},
+
+Team formation for ${cohortName} is complete. You've been assigned to ${teamName}.
+
+What's next?
+- Meet your teammates in the participant portal.
+- Introduce yourself in the team chat.
+- Review your team's challenge brief.
+
+View your team: ${teamUrl}
+
+We're excited to see what you and your team will create!
+
+The ATF Team`;
+    await this.sendEmail(to, `You've Been Assigned to ${teamName}!`, html, text);
   }
 
   async sendPasswordResetCode(to: string, code: string, firstName?: string): Promise<void> {
@@ -435,6 +463,62 @@ export class EmailService {
                         </td>
                       </tr>
                     </table>
+                  </td>
+                </tr>
+                ${this.getEmailFooter()}
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
+    `;
+  }
+
+  private getTeamFormationTemplate(firstName: string, teamName: string, cohortName: string, teamUrl: string): string {
+    const escape = (value: string) => value.replace(/[&<>"']/g, character => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[character]!));
+
+    return `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Team Formation Complete</title>
+      </head>
+      <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f9fafb;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9fafb; padding: 40px 20px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);">
+                ${this.getEmailHeader()}
+                <tr>
+                  <td style="padding: 0 40px 32px 40px;">
+                    <h1 style="margin: 0 0 24px 0; color: #111827; font-size: 24px; font-weight: 600; text-align: center;">Team Formation Complete!</h1>
+                    <p style="margin: 0 0 16px 0; color: #374151; font-size: 16px; line-height: 1.6;">Hi ${escape(firstName)},</p>
+                    <p style="margin: 0 0 24px 0; color: #374151; font-size: 16px; line-height: 1.6;">
+                      Team formation for <strong>${escape(cohortName)}</strong> is complete. You&apos;ve been assigned to:
+                    </p>
+                    <div style="background: #f3f4f6; border-radius: 8px; padding: 20px; margin: 0 0 24px 0;">
+                      <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 14px;">Your team:</p>
+                      <p style="margin: 0; font-size: 18px; font-weight: 600; color: #111827; overflow-wrap: anywhere; word-break: break-word;">${escape(teamName)}</p>
+                    </div>
+                    <h2 style="margin: 0 0 12px 0; color: #111827; font-size: 18px; font-weight: 600;">What&apos;s next?</h2>
+                    <ul style="margin: 0 0 24px 0; padding-left: 20px; color: #374151; font-size: 16px; line-height: 1.6;">
+                      <li style="margin-bottom: 8px;"><strong>Meet your teammates</strong> in the participant portal.</li>
+                      <li style="margin-bottom: 8px;"><strong>Introduce yourself</strong> in the team chat.</li>
+                      <li><strong>Review your brief</strong> to explore your team&apos;s challenge.</li>
+                    </ul>
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td align="center" style="padding: 8px 0 24px 0;">
+                          <a href="${escape(teamUrl)}" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">View Your Team</a>
+                        </td>
+                      </tr>
+                    </table>
+                    <p style="margin: 0; color: #374151; font-size: 16px; line-height: 1.6;">We&apos;re excited to see what you and your team will create!</p>
                   </td>
                 </tr>
                 ${this.getEmailFooter()}

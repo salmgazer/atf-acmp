@@ -1,7 +1,6 @@
 import { CACHE_MANAGER } from "@nestjs/cache-manager";
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
-import { ConfigService } from "@nestjs/config";
 import { NotFoundException, BadRequestException } from "@nestjs/common";
 import { TeamFormationService } from "./team-formation.service";
 import { LeadSelectionStrategy } from "./dto/team-formation.dto";
@@ -122,13 +121,7 @@ describe("TeamFormationService", () => {
         {
           provide: EmailService,
           useValue: {
-            sendCustomEmail: jest.fn().mockResolvedValue(true),
-          },
-        },
-        {
-          provide: ConfigService,
-          useValue: {
-            get: jest.fn().mockReturnValue("https://challenge.atf.africa"),
+            sendTeamFormationEmail: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],

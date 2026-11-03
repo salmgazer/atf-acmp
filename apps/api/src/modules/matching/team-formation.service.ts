@@ -22,7 +22,6 @@ import { Brief, BriefStatus } from "@/database/entities/brief.entity";
 import { Vertical } from "@/database/entities/vertical.entity";
 import { OneSignalService } from "@/modules/notifications/onesignal.service";
 import { EmailService } from "@/email/email.service";
-import { ConfigService } from "@nestjs/config";
 import {
   getSkillBreakdown,
   classifyParticipantSkills,
@@ -87,7 +86,6 @@ interface ExistingTeamInfo {
 @Injectable()
 export class TeamFormationService {
   private readonly logger = new Logger(TeamFormationService.name);
-  private readonly frontendUrl: string;
 
   // Cache for preview results
 
@@ -109,10 +107,7 @@ export class TeamFormationService {
     private readonly verticalRepository: Repository<Vertical>,
     private readonly oneSignalService: OneSignalService,
     private readonly emailService: EmailService,
-    private readonly configService: ConfigService,
-  ) {
-    this.frontendUrl = this.configService.get<string>("FRONTEND_URL", "https://challenge.atf.africa");
-  }
+  ) {}
 
   /**
    * Run the team formation algorithm and generate a preview
@@ -1090,70 +1085,14 @@ export class TeamFormationService {
     cohortName: string,
   ): void {
     const teamName = team?.name || "your new team";
-    const subject = `🎉 You've Been Assigned to ${teamName}!`;
-    const html = this.getTeamFormationEmailTemplate(participant, teamName, cohortName);
-
-    this.emailService.sendCustomEmail(participant.email, subject, html).catch((error) => {
+    this.emailService.sendTeamFormationEmail({
+      to: participant.email,
+      firstName: participant.firstName,
+      teamName,
+      cohortName,
+    }).catch((error) => {
       this.logger.warn(`Failed to send team formation email to ${participant.email}: ${error.message}`);
     });
-  }
-
-  /**
-   * Generate HTML template for team formation notification email
-   */
-  private getTeamFormationEmailTemplate(
-    participant: Participant,
-    teamName: string,
-    cohortName: string,
-  ): string {
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Team Assignment</title>
-      </head>
-      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="text-align: center; margin-bottom: 30px;">
-          <h1 style="color: #2563eb; margin: 0;">🎉 Team Formation Complete!</h1>
-        </div>
-        
-        <p>Hi ${participant.firstName},</p>
-        
-        <p>Great news! Team formation for <strong>${cohortName}</strong> is complete, and you've been assigned to:</p>
-        
-        <div style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 20px; border-radius: 12px; text-align: center; margin: 24px 0;">
-          <h2 style="margin: 0; font-size: 24px;">${teamName}</h2>
-        </div>
-        
-        <h3 style="color: #1e40af;">What's Next?</h3>
-        <ul style="padding-left: 20px;">
-          <li><strong>Meet your teammates</strong> – Head to the portal to see who you'll be working with</li>
-          <li><strong>Start collaborating</strong> – Use the team chat to introduce yourself and get to know each other</li>
-          <li><strong>Review your brief</strong> – Check out the challenge your team will be working on</li>
-        </ul>
-        
-        <div style="text-align: center; margin: 30px 0;">
-          <a href="${this.frontendUrl}/participant/team" style="display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">View Your Team</a>
-        </div>
-        
-        <p>We're excited to see what you and your team will create!</p>
-        
-        <p style="color: #666; font-size: 14px; margin-top: 30px;">
-          Best regards,<br>
-          The ATF Challenge Team
-        </p>
-        
-        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-        
-        <p style="color: #9ca3af; font-size: 12px; text-align: center;">
-          This email was sent as part of the ${cohortName} team formation process.<br>
-          If you have any questions, please contact our support team.
-        </p>
-      </body>
-      </html>
-    `;
   }
 
   /**
