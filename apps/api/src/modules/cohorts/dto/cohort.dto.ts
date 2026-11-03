@@ -1,3 +1,4 @@
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
 import {
   IsString,
   IsNotEmpty,
@@ -95,6 +96,10 @@ export class RubricConfigDto {
 }
 
 export class CreateCohortDto {
+  @ApiPropertyOptional({ description: "Participant and team group tags", type: [String] })
+  @IsOptional() @IsArray() @IsString({ each: true })
+  groups?: string[];
+
   @ApiProperty({ description: "Cohort name", example: "AI Challenge 2026" })
   @IsString()
   @IsNotEmpty()
@@ -187,6 +192,9 @@ export class CohortQueryDto {
   @Min(1)
   @IsOptional()
   @Type(() => Number)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number;
 
   @ApiPropertyOptional({ description: "Items per page", default: 10 })
@@ -195,6 +203,9 @@ export class CohortQueryDto {
   @Max(100)
   @IsOptional()
   @Type(() => Number)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number;
 }
 

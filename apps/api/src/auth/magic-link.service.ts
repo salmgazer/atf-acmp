@@ -1,3 +1,4 @@
+import { randomInt, createHash, timingSafeEqual } from "crypto";
 import {
   Injectable,
   UnauthorizedException,
@@ -5,7 +6,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, MoreThan, LessThan } from "typeorm";
+import { Repository, MoreThan, LessThan, IsNull } from "typeorm";
 import { ConfigService } from "@nestjs/config";
 import { User, Role } from "../database/entities/user.entity";
 import {
@@ -99,7 +100,7 @@ export class MagicLinkService {
       {
         email: normalizedEmail,
         type: VerificationCodeType.MAGIC_LINK,
-        usedAt: undefined,
+        usedAt: IsNull(),
       },
       { usedAt: new Date() }
     );
@@ -110,7 +111,7 @@ export class MagicLinkService {
     // Create verification code record
     const verificationCode = this.verificationCodeRepository.create({
       email: normalizedEmail,
-      code,
+      code: createHash("sha256").update(code).digest("hex"),
       type: VerificationCodeType.MAGIC_LINK,
       portal,
       userId: user.id,
@@ -138,7 +139,7 @@ export class MagicLinkService {
       where: {
         email: normalizedEmail,
         type: VerificationCodeType.MAGIC_LINK,
-        usedAt: undefined,
+        usedAt: IsNull(),
         expiresAt: MoreThan(new Date()),
       },
       order: { createdAt: "DESC" },
@@ -154,21 +155,14 @@ export class MagicLinkService {
       throw new UnauthorizedException("Too many attempts. Please request a new code.");
     }
 
-    // Increment attempts
-    verificationCode.attempts += 1;
-    await this.verificationCodeRepository.save(verificationCode);
-
-    // Verify code
-    if (verificationCode.code !== code) {
-      const attemptsLeft = this.maxAttempts - verificationCode.attempts;
-      throw new UnauthorizedException(
-        `Invalid code. ${attemptsLeft} attempt(s) remaining.`
-      );
-    }
-
-    // Mark as used
-    verificationCode.usedAt = new Date();
-    await this.verificationCodeRepository.save(verificationCode);
+    const digest = createHash("sha256").update(code).digest("hex");
+    const matches = verificationCode.code.length === digest.length && timingSafeEqual(Buffer.from(verificationCode.code), Buffer.from(digest));
+    const consumed = await this.verificationCodeRepository.createQueryBuilder()
+      .update()
+      .set({ attempts: () => '"attempts" + 1', ...(matches ? { usedAt: new Date() } : {}) })
+      .where({ id: verificationCode.id, usedAt: IsNull(), expiresAt: MoreThan(new Date()), attempts: LessThan(this.maxAttempts) })
+      .execute();
+    if (consumed.affected !== 1 || !matches) throw new UnauthorizedException("Invalid or expired code");
 
     // Get user
     const user = verificationCode.user || await this.userRepository.findOne({
@@ -198,23 +192,7 @@ export class MagicLinkService {
     user.lastLoginAt = new Date();
     await this.userRepository.save(user);
 
-    // Generate token
-    const accessToken = this.authService.generateToken(user);
-
-    return {
-      accessToken,
-      refreshToken: "", // Magic link doesn't use refresh tokens
-      expiresIn: 86400, // 24 hours default
-      user: {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        avatarUrl: user.avatarUrl,
-        mustChangePassword: user.mustChangePassword,
-      },
-    };
+    return this.authService.generateTokens(user);
   }
 
   async cleanupExpiredCodes(): Promise<number> {
@@ -232,14 +210,14 @@ export class MagicLinkService {
     portal: PortalType
   ): Promise<{ hasAccess: boolean; reason?: string }> {
     if (portal === PortalType.ORGANIZATION) {
+      const account = await this.userRepository.findOne({ where: { email } });
+      const link = account ? await this.userRepository.manager.getRepository("OrganizationUser").findOne({ where: { userId: account.id } }) : null;
       const organization = await this.organizationRepository.findOne({
-        where: { email },
+        where: link ? { id: link.organizationId } : { email },
         relations: ["cohort"],
       });
 
-      if (!organization) {
-        return { hasAccess: true }; // Let other validation handle missing org
-      }
+      if (!organization || !organization.isActive || organization.status !== "approved") return { hasAccess: false, reason: "Organization is not approved and active" };
 
       if (organization.cohort && this.blockedCohortStatuses.includes(organization.cohort.status)) {
         return {
@@ -255,9 +233,7 @@ export class MagicLinkService {
         relations: ["cohort"],
       });
 
-      if (!mentor) {
-        return { hasAccess: true }; // Let other validation handle missing mentor
-      }
+      if (!mentor || mentor.status === "inactive") return { hasAccess: false, reason: "Mentor is not active" };
 
       if (mentor.cohort && this.blockedCohortStatuses.includes(mentor.cohort.status)) {
         return {
@@ -271,6 +247,6 @@ export class MagicLinkService {
   }
 
   private generateCode(): string {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    return randomInt(100000, 1000000).toString();
   }
 }

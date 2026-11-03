@@ -36,6 +36,8 @@ export function PartnerStep({ org, updateOrg, onNext }: PartnerStepProps) {
     const newErrors: typeof errors = {};
 
     if (!org.orgName.trim()) newErrors.orgName = "Organisation name is required";
+    else if (org.orgName.trim().length < 2) newErrors.orgName = "Organisation name must be at least 2 characters";
+    else if (org.orgName.length > 255) newErrors.orgName = "Organisation name must be 255 characters or fewer";
     if (!org.sector) newErrors.sector = "Sector is required";
     if (org.sector === "Other" && !org.sectorOther?.trim()) {
       newErrors.sectorOther = "Please specify your sector";

@@ -1,5 +1,9 @@
 "use client";
 
+import { BriefEvents } from "@/components/briefs/brief-events";
+
+import { SafeHtml } from "@/components/ui/safe-html";
+
 import { use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -145,30 +149,32 @@ function BriefDetailContent({ id }: { id: string }) {
           )}
         </div>
 
+        <BriefEvents briefId={id} />
+
         {/* Description */}
         <div>
           <h3 className="font-semibold mb-2">Description</h3>
-          <div
+          <SafeHtml
             className="prose prose-sm max-w-none dark:prose-invert"
-            dangerouslySetInnerHTML={{ __html: brief.description }}
+            html={brief.description}
           />
         </div>
 
         {/* Problem Statement */}
         <div>
           <h3 className="font-semibold mb-2">Problem Statement</h3>
-          <div
+          <SafeHtml
             className="prose prose-sm max-w-none dark:prose-invert"
-            dangerouslySetInnerHTML={{ __html: brief.problemStatement }}
+            html={brief.problemStatement}
           />
         </div>
 
         {/* Expected Outcomes */}
         <div>
           <h3 className="font-semibold mb-2">Expected Outcomes</h3>
-          <div
+          <SafeHtml
             className="prose prose-sm max-w-none dark:prose-invert"
-            dangerouslySetInnerHTML={{ __html: brief.expectedOutcomes }}
+            html={brief.expectedOutcomes}
           />
         </div>
 

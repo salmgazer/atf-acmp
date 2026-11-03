@@ -83,9 +83,8 @@ export class LeaderboardService {
     });
 
     // Determine which stages contribute to ranking
-    const contributingStageIds = leaderboardConfig.contributingStageIds?.length
-      ? leaderboardConfig.contributingStageIds
-      : stages.map((s) => s.id);
+    if (stageId && !stages.some(stage => stage.id === stageId)) throw new NotFoundException("Stage not found in this cohort");
+    const contributingStageIds = stageId ? [stageId] : (leaderboardConfig.contributingStageIds?.length ? leaderboardConfig.contributingStageIds : stages.map(s => s.id));
 
     // Build team query
     const teamQb = this.teamRepo
@@ -108,8 +107,9 @@ export class LeaderboardService {
     if (country && teamIds.length > 0) {
       const teamsInCountry = await this.participantRepo
         .createQueryBuilder("p")
-        .select("DISTINCT p.teamId", "teamId")
-        .where("p.teamId IN (:...teamIds)", { teamIds })
+        .innerJoin("team_members", "membership", "membership.participant_id = p.id AND membership.status = :confirmed AND membership.deleted_at IS NULL", { confirmed: "confirmed" })
+        .select("DISTINCT membership.team_id", "teamId")
+        .where("membership.team_id IN (:...teamIds)", { teamIds })
         .andWhere("p.country = :country", { country })
         .getRawMany();
       teamIds = teamsInCountry.map((t) => t.teamId);
@@ -134,10 +134,11 @@ export class LeaderboardService {
     // Get member counts
     const memberCounts = await this.participantRepo
       .createQueryBuilder("p")
-      .select("p.teamId", "teamId")
+        .innerJoin("team_members", "membership", "membership.participant_id = p.id AND membership.status = :confirmed AND membership.deleted_at IS NULL", { confirmed: "confirmed" })
+      .select("membership.team_id", "teamId")
       .addSelect("COUNT(*)", "count")
-      .where("p.teamId IN (:...teamIds)", { teamIds })
-      .groupBy("p.teamId")
+      .where("membership.team_id IN (:...teamIds)", { teamIds })
+      .groupBy("membership.team_id")
       .getRawMany();
 
     const memberCountMap = new Map<string, number>();
@@ -146,11 +147,12 @@ export class LeaderboardService {
     // Get primary country for each team (most common)
     const teamCountries = await this.participantRepo
       .createQueryBuilder("p")
-      .select("p.teamId", "teamId")
+        .innerJoin("team_members", "membership", "membership.participant_id = p.id AND membership.status = :confirmed AND membership.deleted_at IS NULL", { confirmed: "confirmed" })
+      .select("membership.team_id", "teamId")
       .addSelect("p.country", "country")
       .addSelect("COUNT(*)", "cnt")
-      .where("p.teamId IN (:...teamIds)", { teamIds })
-      .groupBy("p.teamId")
+      .where("membership.team_id IN (:...teamIds)", { teamIds })
+      .groupBy("membership.team_id")
       .addGroupBy("p.country")
       .orderBy("cnt", "DESC")
       .getRawMany();
@@ -163,12 +165,12 @@ export class LeaderboardService {
     });
 
     // Get evaluations for contributing stages
-    const evaluations = await this.evaluationRepo
+    const evaluations = contributingStageIds.length ? await this.evaluationRepo
       .createQueryBuilder("eval")
       .where("eval.teamId IN (:...teamIds)", { teamIds })
       .andWhere("eval.stageId IN (:...stageIds)", { stageIds: contributingStageIds })
       .andWhere("eval.isPublished = :isPublished", { isPublished: true })
-      .getMany();
+      .getMany() : [];
 
     // Build team scores
     const teamScores: TeamScore[] = [];
@@ -186,7 +188,8 @@ export class LeaderboardService {
       for (const stage of stages) {
         const stageEval = teamEvals.find((e) => e.stageId === stage.id);
         if (stageEval && stageEval.finalScore !== null && stageEval.finalScore !== undefined) {
-          const weight = Number(stage.weightPercentage) || 1;
+          const weight = stageId ? 1 : Number(stage.weightPercentage);
+          if (!contributingStageIds.includes(stage.id) || weight <= 0) continue;
           stageScores.set(stage.id, stageEval.finalScore);
           weightedSum += stageEval.finalScore * weight;
           totalWeight += weight;
@@ -291,8 +294,8 @@ export class LeaderboardService {
     return result;
   }
 
-  async getTeamRank(cohortId: string, teamId: string): Promise<{ rank: number; totalTeams: number } | null> {
-    const leaderboard = await this.getLeaderboard({ cohortId, limit: 10000, offset: 0 }, true);
+  async getTeamRank(cohortId: string, teamId: string, isAdmin = false): Promise<{ rank: number; totalTeams: number } | null> {
+    const leaderboard = await this.getLeaderboard({ cohortId, limit: 10000, offset: 0 }, isAdmin);
     const entry = leaderboard.entries.find((e) => e.teamId === teamId);
 
     if (!entry) {

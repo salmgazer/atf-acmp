@@ -128,7 +128,7 @@ export default function SetupPage() {
           <div>
             <CardTitle className="text-2xl">Welcome to ACMP</CardTitle>
             <CardDescription className="mt-2">
-              Let's set up your platform by creating the first administrator account.
+              Let&apos;s set up your platform by creating the first administrator account.
             </CardDescription>
           </div>
         </CardHeader>

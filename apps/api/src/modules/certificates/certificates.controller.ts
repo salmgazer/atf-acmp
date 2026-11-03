@@ -1,3 +1,4 @@
+import { Public } from "@/common/decorators/public.decorator";
 import {
   Controller,
   Get,
@@ -30,6 +31,7 @@ import {
  */
 @ApiTags("Certificates")
 @Controller("certificates")
+@Public()
 export class CertificatesController {
   constructor(private readonly certificatesService: CertificatesService) {}
 
@@ -71,7 +73,7 @@ export class ParticipantCertificatesController {
     const certificate = await this.certificatesService.getCertificateByCertificateId(certificateId);
 
     // Verify the certificate belongs to the current user
-    if (user.participantId && certificate.participantId !== user.participantId) {
+    if (user.role !== "participant" || !user.participantId || certificate.participantId !== user.participantId) {
       res.status(403).json({ message: "Access denied" });
       return;
     }
@@ -79,25 +81,10 @@ export class ParticipantCertificatesController {
     // Record download
     await this.certificatesService.recordDownload(certificateId);
 
-    // If PDF URL exists, redirect to it
-    if (certificate.pdfUrl) {
-      res.redirect(certificate.pdfUrl);
-      return;
-    }
-
-    // Otherwise return certificate data for client-side rendering
-    res.json({
-      certificateId: certificate.certificateId,
-      participantName: certificate.participantName,
-      teamName: certificate.teamName,
-      cohortName: certificate.cohortName,
-      verticalName: certificate.verticalName,
-      tier: certificate.tier,
-      rank: certificate.rank,
-      finalScore: certificate.finalScore,
-      generatedAt: certificate.generatedAt,
-      qrCodeData: certificate.qrCodeData,
-    });
+    const pdf = await this.certificatesService.renderPdf(certificate);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${certificate.certificateId.replace(/[^a-zA-Z0-9-]/g, "")}.pdf"`);
+    res.send(pdf);
   }
 }
 

@@ -1,3 +1,5 @@
+import { scoreAgainstRubric } from "@/common/services/rubric-scoring";
+import { Transactional } from "@/common/decorators/transactional.decorator";
 import {
   Injectable,
   NotFoundException,
@@ -5,7 +7,7 @@ import {
   ForbiddenException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { Repository, IsNull } from "typeorm";
 import {
   PeerReviewAssignment,
   PeerReviewAssignmentStatus,
@@ -42,6 +44,7 @@ export class PeerReviewsService {
   // ============ Rubric Methods ============
 
   async createRubric(dto: CreateRubricDto): Promise<PeerReviewRubric> {
+    scoreAgainstRubric(dto.criteria, dto.criteria.map(item => ({ criterionId: item.id, score: 0 })));
     // Validate criteria weights sum to 100
     const totalWeight = dto.criteria.reduce((sum, c) => sum + c.weight, 0);
     if (totalWeight !== 100) {
@@ -53,6 +56,7 @@ export class PeerReviewsService {
   }
 
   async updateRubric(id: string, dto: UpdateRubricDto): Promise<PeerReviewRubric> {
+    if (dto.criteria) scoreAgainstRubric(dto.criteria, dto.criteria.map(item => ({ criterionId: item.id, score: 0 })));
     const rubric = await this.rubricRepo.findOne({ where: { id } });
     if (!rubric) {
       throw new NotFoundException("Rubric not found");
@@ -85,7 +89,7 @@ export class PeerReviewsService {
 
     if (!rubric) {
       rubric = await this.rubricRepo.findOne({
-        where: { cohortId, stageId: undefined, isActive: true },
+        where: { cohortId, stageId: IsNull(), isActive: true },
       });
     }
 
@@ -180,7 +184,7 @@ export class PeerReviewsService {
   async getMyAssignedReviews(participantId: string): Promise<PeerReviewAssignment[]> {
     // Get participant's team through TeamMember
     const teamMember = await this.teamMemberRepo.findOne({
-      where: { participantId },
+      where: { participantId, status: "confirmed" as any },
       select: ["teamId"],
     });
 
@@ -198,7 +202,7 @@ export class PeerReviewsService {
   async getMyReceivedReviews(participantId: string): Promise<PeerReview[]> {
     // Get participant's team through TeamMember
     const teamMember = await this.teamMemberRepo.findOne({
-      where: { participantId },
+      where: { participantId, status: "confirmed" as any },
       select: ["teamId"],
     });
 
@@ -242,6 +246,7 @@ export class PeerReviewsService {
 
   // ============ Review Submission Methods ============
 
+  @Transactional()
   async submitReview(participantId: string, dto: SubmitPeerReviewDto): Promise<PeerReview> {
     const { assignmentId, scores, overallComment, strengths, improvements, isAnonymous, timeSpentMinutes } = dto;
 
@@ -257,7 +262,7 @@ export class PeerReviewsService {
 
     // Verify participant belongs to reviewer team through TeamMember
     const teamMember = await this.teamMemberRepo.findOne({
-      where: { participantId },
+      where: { participantId, status: "confirmed" as any },
       select: ["id", "teamId"],
     });
 
@@ -285,23 +290,9 @@ export class PeerReviewsService {
 
     // Calculate overall score (weighted average)
     const rubric = await this.getRubricForStage(assignment.cohortId, assignment.stageId);
-    let overallScore = 0;
-
-    if (rubric) {
-      // Calculate weighted score
-      for (const score of scores) {
-        const criterion = rubric.criteria.find((c) => c.id === score.criterionId);
-        if (criterion) {
-          const normalizedScore = (score.score / score.maxScore) * 100;
-          overallScore += normalizedScore * (criterion.weight / 100);
-        }
-      }
-    } else {
-      // Simple average if no rubric
-      const totalScore = scores.reduce((sum, s) => sum + s.score, 0);
-      const maxTotal = scores.reduce((sum, s) => sum + s.maxScore, 0);
-      overallScore = maxTotal > 0 ? (totalScore / maxTotal) * 100 : 0;
-    }
+    if (assignment.dueDate && new Date(assignment.dueDate) < new Date()) throw new BadRequestException("Peer-review deadline has passed");
+    if (!rubric) throw new BadRequestException("No rubric is configured for this review");
+    const overallScore = scoreAgainstRubric(rubric.criteria, scores);
 
     // Create review
     const review = this.reviewRepo.create({
@@ -338,7 +329,7 @@ export class PeerReviewsService {
 
     // Verify participant belongs to reviewer team through TeamMember
     const teamMember = await this.teamMemberRepo.findOne({
-      where: { participantId },
+      where: { participantId, status: "confirmed" as any },
       select: ["teamId"],
     });
 

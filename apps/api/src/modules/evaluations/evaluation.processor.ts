@@ -1,3 +1,8 @@
+import { Transactional } from "@/common/decorators/transactional.decorator";
+import { Not } from "typeorm";
+import { DocumentExtractionService } from "./document-extraction.service";
+import { DEFAULT_EVALUATION_CRITERIA } from "@/common/services/rubric-scoring";
+import { SubmissionStatus } from "@/database/entities/stage.entity";
 import { Processor, WorkerHost, OnWorkerEvent } from "@nestjs/bullmq";
 import { Logger } from "@nestjs/common";
 import { Job } from "bullmq";
@@ -43,6 +48,7 @@ export class EvaluationProcessor extends WorkerHost {
     private stageRepo: Repository<Stage>,
     private geminiService: GeminiService,
     private githubService: GitHubService,
+    private readonly documents: DocumentExtractionService,
   ) {
     super();
   }
@@ -54,6 +60,8 @@ export class EvaluationProcessor extends WorkerHost {
     this.logger.log(`Processing evaluation job ${job.id} for team ${teamId}`);
 
     try {
+      const state = await this.evaluationJobRepo.findOne({ where: { id: evaluationJobId } });
+      if (!state || state.status === EvaluationJobStatus.CANCELLED) return;
       // Update job status to processing
       await this.updateJobStatus(evaluationJobId, {
         status: EvaluationJobStatus.PROCESSING,
@@ -71,8 +79,12 @@ export class EvaluationProcessor extends WorkerHost {
         throw new Error("Team or stage not found");
       }
 
-      // Step 2: Fetch submission if exists (optional)
+      if (team.cohortId !== stage.cohortId || cohortId !== team.cohortId || !stage.requiresAiEvaluation || !stage.isActive) throw new Error("Stage is not eligible for AI evaluation");
+      if (!this.geminiService.isAvailable()) throw new Error("Gemini AI service is not configured");
+
+      // Step 2: Fetch the submitted work
       const submission = await this.fetchSubmission(teamId, stageId);
+      if (!submission || ![SubmissionStatus.SUBMITTED, SubmissionStatus.APPROVED, SubmissionStatus.LATE, SubmissionStatus.EVALUATED].includes(submission.status) || (stage.requiresManualApproval && ![SubmissionStatus.APPROVED, SubmissionStatus.EVALUATED].includes(submission.status))) throw new Error("No approved submission found for team and stage");
       await this.updateJobProgress(evaluationJobId, 20, EVALUATION_STEPS.FETCH_GITHUB);
 
       // Step 3: Analyze GitHub if available (use team's github repo URL)
@@ -90,6 +102,8 @@ export class EvaluationProcessor extends WorkerHost {
 
       // Step 4: Prepare submission data for AI
       const submissionData = this.prepareSubmissionData(submission, team, stage);
+      if ((submission.fileUrls || []).length > 5) throw new Error("Evaluation supports at most five documents; no documents were omitted");
+      submissionData.documents = await Promise.all((submission.fileUrls || []).map(file => this.documents.extract(file)));
 
       // Step 5: Get rubric from stage requirements
       const rubric = this.buildRubricFromStage(stage);
@@ -116,24 +130,12 @@ export class EvaluationProcessor extends WorkerHost {
 
       await this.updateJobProgress(evaluationJobId, 80, EVALUATION_STEPS.SAVE_RESULTS);
 
-      // Step 7: Save evaluation results
-      await this.saveEvaluationResults(
-        teamId,
-        stageId,
-        cohortId,
-        aiResult,
-        metrics,
-      );
+      const currentState = await this.evaluationJobRepo.findOne({ where: { id: evaluationJobId } });
+      if (currentState?.status === EvaluationJobStatus.CANCELLED) return;
+      if (!aiResult) throw new Error("AI evaluation returned no result");
 
-      // Mark job as completed
       const processingTime = Date.now() - startTime;
-      await this.updateJobStatus(evaluationJobId, {
-        status: EvaluationJobStatus.COMPLETED,
-        completedAt: new Date(),
-        progress: 100,
-        currentStep: undefined,
-        processingTimeMs: processingTime,
-      });
+      await this.commitResults(evaluationJobId, teamId, stageId, cohortId, submission.id, aiResult, metrics, processingTime);
 
       this.logger.log(
         `Completed evaluation job ${job.id} in ${processingTime}ms`,
@@ -142,7 +144,7 @@ export class EvaluationProcessor extends WorkerHost {
       this.logger.error(`Failed evaluation job ${job.id}: ${error.message}`);
 
       await this.updateJobStatus(evaluationJobId, {
-        status: EvaluationJobStatus.FAILED,
+        status: job.attemptsMade + 1 < (job.opts?.attempts || 1) ? EvaluationJobStatus.PENDING : EvaluationJobStatus.FAILED,
         error: error.message,
         errorStack: error.stack,
         attempts: job.attemptsMade + 1,
@@ -175,14 +177,13 @@ export class EvaluationProcessor extends WorkerHost {
 
   private async analyzeGitHub(githubUrl: string): Promise<CodeAnalysisData | undefined> {
     try {
-      // Extract owner/repo from URL
-      const match = githubUrl.match(/github\.com\/([^\/]+)\/([^\/\?#]+)/);
-      if (!match) {
+      const parsed = this.githubService.parseGitHubUrl(githubUrl);
+      if (!parsed) {
         this.logger.warn(`Invalid GitHub URL: ${githubUrl}`);
         return undefined;
       }
 
-      const [, owner, repo] = match;
+      const { owner, repo } = parsed;
       const repoName = repo.replace(/\.git$/, "");
 
       // Fetch repository data
@@ -196,11 +197,12 @@ export class EvaluationProcessor extends WorkerHost {
         repoUrl: githubUrl,
         languages: Object.keys(languages || {}),
         fileCount: structure?.length || 0,
-        totalLines: 0, // Would need deeper analysis
+        totalLines: 0, // Unknown; do not infer a measured line count.
+        sampleCode: await this.githubService.getSourceSamples(owner, repoName, structure || []),
         commits: commits.map((c: any) => ({
-          message: c.commit?.message || "",
-          date: c.commit?.author?.date || "",
-          author: c.commit?.author?.name || c.author?.login || "Unknown",
+          message: c.message || c.commit?.message || "",
+          date: c.author?.date || c.commit?.author?.date || "",
+          author: c.author?.name || c.commit?.author?.name || c.author?.login || "Unknown",
         })),
         readmeContent: readme || undefined,
         structure: structure?.slice(0, 50).map((f: any) => f.path).join("\n"),
@@ -229,47 +231,23 @@ export class EvaluationProcessor extends WorkerHost {
       githubUrl: team.githubRepoUrl,
       videoUrl: submission?.videoUrl,
       additionalContent: submission?.content,
+      evaluationPrompt: stage.evaluationPrompt,
     };
   }
 
   private buildRubricFromStage(stage: Stage): { criteria: any[] } {
-    // Use stage evaluation criteria if defined, otherwise use defaults
-    const defaultCriteria = [
-      {
-        id: "innovation",
-        name: "Innovation & Creativity",
-        description: "Originality of the solution and creative approach to the problem",
-        maxScore: 10,
-        weight: 25,
-      },
-      {
-        id: "feasibility",
-        name: "Technical Feasibility",
-        description: "Technical viability and practical implementation potential",
-        maxScore: 10,
-        weight: 25,
-      },
-      {
-        id: "presentation",
-        name: "Presentation Quality",
-        description: "Clarity, organization, and quality of the submission materials",
-        maxScore: 10,
-        weight: 25,
-      },
-      {
-        id: "impact",
-        name: "Potential Impact",
-        description: "Potential positive impact and scalability of the solution",
-        maxScore: 10,
-        weight: 25,
-      },
-    ];
-
-    return {
-      criteria: (stage as any).evaluationCriteria || defaultCriteria,
-    };
+    return { criteria: stage.evaluationCriteria?.length ? stage.evaluationCriteria : DEFAULT_EVALUATION_CRITERIA };
   }
 
+
+  @Transactional("evaluation-result")
+  private async commitResults(jobId: string, teamId: string, stageId: string, cohortId: string, submissionId: string, aiResult: any, metrics: any, processingTimeMs: number): Promise<void> {
+    const state = await this.evaluationJobRepo.findOne({ where: { id: jobId } });
+    if (!state || state.status === EvaluationJobStatus.CANCELLED) return;
+    await this.saveEvaluationResults(teamId, stageId, cohortId, aiResult, metrics);
+    await this.submissionRepo.update(submissionId, { status: SubmissionStatus.EVALUATED });
+    await this.updateJobStatus(jobId, { status: EvaluationJobStatus.COMPLETED, completedAt: new Date(), progress: 100, currentStep: null as any, processingTimeMs });
+  }
 
   private async saveEvaluationResults(
     teamId: string,
@@ -317,7 +295,7 @@ export class EvaluationProcessor extends WorkerHost {
     jobId: string,
     updates: Partial<EvaluationJob>,
   ): Promise<void> {
-    await this.evaluationJobRepo.update(jobId, updates);
+    await this.evaluationJobRepo.update({ id: jobId, status: Not(EvaluationJobStatus.CANCELLED) }, updates);
   }
 
   private async updateJobProgress(

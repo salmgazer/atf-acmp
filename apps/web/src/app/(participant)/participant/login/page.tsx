@@ -38,7 +38,7 @@ function ParticipantLoginContent() {
           </div>
           <p className="text-center text-sm text-muted-foreground">
             Use the credentials sent to your email by your organization.
-            You'll be prompted to change your password on first login.
+            You&apos;ll be prompted to change your password on first login.
           </p>
         </div>
       </LoginLayout>

@@ -44,7 +44,7 @@ export function JournalList() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Progress Journal</h1>
           <p className="text-muted-foreground">
-            Document your team's weekly progress and learnings
+            Document your team&apos;s weekly progress and learnings
           </p>
         </div>
         <Button asChild>
@@ -107,7 +107,7 @@ export function JournalList() {
             <BookOpen className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-medium mb-1">No journal entries yet</h3>
             <p className="text-sm text-muted-foreground mb-4 text-center">
-              Start documenting your team's progress by creating your first weekly entry
+              Start documenting your team&apos;s progress by creating your first weekly entry
             </p>
             <Button asChild>
               <Link href="/participant/journals/new">
@@ -132,7 +132,7 @@ function JournalCard({ entry }: { entry: JournalEntry }) {
   return (
     <Card className="hover:border-primary/50 transition-colors">
       <CardContent className="p-4">
-        <Link href={`/app/journals/${entry.id}`} className="block">
+        <Link href={`/participant/journals/${entry.id}`} className="block">
           <div className="flex items-start justify-between">
             <div className="flex items-start gap-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">

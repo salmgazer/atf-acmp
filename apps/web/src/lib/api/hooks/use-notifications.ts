@@ -17,6 +17,7 @@ export type NotificationType =
   | "mentor_session_reminder"
   | "brief_status_changed"
   | "brief_selected"
+  | "brief_event"
   | "submission_received"
   | "submission_deadline"
   | "evaluation_complete"

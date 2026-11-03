@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { spawn } from 'child_process';
+import { spawn, execFile } from 'child_process';
+import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -14,6 +15,18 @@ export interface ThumbnailResult {
 @Injectable()
 export class ThumbnailService {
   private readonly logger = new Logger(ThumbnailService.name);
+
+  async getVideoDuration(buffer: Buffer): Promise<number> {
+    const input = path.join(os.tmpdir(), `probe-${uuidv4()}`);
+    try {
+      await fs.promises.writeFile(input, buffer);
+      const { stdout } = await promisify(execFile)('ffprobe', ['-v', 'error', '-show_entries', 'format=duration:stream=codec_type', '-of', 'json', input], { timeout: 15000, maxBuffer: 65536 });
+      const metadata = JSON.parse(stdout);
+      const duration = Number(metadata.format?.duration);
+      if (!metadata.streams?.some((stream: { codec_type: string }) => stream.codec_type === 'video') || !Number.isFinite(duration) || duration <= 0) throw new Error('No valid video stream');
+      return duration;
+    } finally { await this.cleanupFile(input); }
+  }
 
   /**
    * Generate a thumbnail from a video buffer using FFmpeg

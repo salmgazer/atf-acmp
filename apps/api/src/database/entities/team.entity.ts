@@ -53,6 +53,7 @@ export enum RemovalRequestStatus {
 }
 
 @Entity("teams")
+@Index('team_cohort_group', ['cohortId', 'group'])
 @Index(["cohortId", "status"])
 @Index(["briefId"])
 export class Team extends BaseEntity {
@@ -67,6 +68,9 @@ export class Team extends BaseEntity {
 
   @Column({ name: "cohort_id" })
   cohortId: string;
+
+  @Column({ name: 'group_name', type: 'varchar', length: 100, nullable: true })
+  group: string | null;
 
   @ManyToOne(() => Cohort)
   @JoinColumn({ name: "cohort_id" })
@@ -164,6 +168,7 @@ export class Team extends BaseEntity {
 @Index(["teamId"])
 @Index(["participantId"])
 @Unique(["teamId", "participantId"])
+@Index("team_member_one_confirmed_team", ["participantId"], { unique: true, where: "status = 'confirmed' AND deleted_at IS NULL" })
 export class TeamMember extends BaseEntity {
   @Column({ name: "team_id" })
   teamId: string;

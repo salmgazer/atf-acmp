@@ -22,7 +22,7 @@ COPY packages/shared/package*.json ./packages/shared/
 COPY packages/validators/package*.json ./packages/validators/
 
 # Install dependencies
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
 # ------------------------------------------------------------------------------
 # Builder stage
@@ -108,7 +108,7 @@ COPY apps/web/package*.json ./apps/web/
 COPY packages/shared/package*.json ./packages/shared/
 COPY packages/validators/package*.json ./packages/validators/
 
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
 COPY apps/web ./apps/web
 COPY packages ./packages

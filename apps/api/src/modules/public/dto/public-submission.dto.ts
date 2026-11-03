@@ -1,3 +1,4 @@
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   IsString,
@@ -260,6 +261,7 @@ export class PublicSubmissionDto {
 
   @ApiProperty({ description: "Consent given for data processing" })
   @IsBoolean()
+  @StrictBoolean()
   consentGiven: boolean;
 }
 

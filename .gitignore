@@ -84,3 +84,7 @@ deploy/terraform/override.tf
 deploy/terraform/override.tf.json
 deploy/terraform/*_override.tf
 deploy/terraform/*_override.tf.json
+
+# Browser regression artifacts
+**/test-results/
+**/playwright-report/

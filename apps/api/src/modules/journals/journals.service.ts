@@ -40,7 +40,7 @@ export class JournalsService {
 
   async getTeamForParticipant(participantId: string): Promise<TeamMember | null> {
     return this.teamMemberRepository.findOne({
-      where: { participantId },
+      where: { participantId, status: "confirmed" as any },
       relations: ["team"],
     });
   }

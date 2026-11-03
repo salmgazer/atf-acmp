@@ -35,6 +35,7 @@ export interface TeamMember {
     lastName: string;
     country: string;
     institution?: string;
+    group?: string | null;
     skills: string[];
     profileImageUrl?: string;
   };
@@ -51,6 +52,7 @@ export interface Team {
   description?: string;
   status: TeamStatus;
   cohortId: string;
+  group?: string | null;
   cohort?: {
     id: string;
     name: string;
@@ -121,6 +123,8 @@ export interface TeamQueryParams {
   page?: number;
   limit?: number;
   cohortId?: string;
+  group?: string;
+  ungrouped?: boolean;
   status?: TeamStatus;
   briefId?: string;
   organizationId?: string;
@@ -242,6 +246,8 @@ export function useTeams(params?: TeamQueryParams) {
       if (params?.page) searchParams.set("page", String(params.page));
       if (params?.limit) searchParams.set("limit", String(params.limit));
       if (params?.cohortId) searchParams.set("cohortId", params.cohortId);
+      if (params?.group) searchParams.set("group", params.group);
+      if (params?.ungrouped) searchParams.set("ungrouped", "true");
       if (params?.status) searchParams.set("status", params.status);
       if (params?.briefId) searchParams.set("briefId", params.briefId);
       if (params?.organizationId) searchParams.set("organizationId", params.organizationId);
@@ -318,12 +324,12 @@ export function useTeamSessions(teamId: string) {
   });
 }
 
-export function useSearchAvailableParticipants(cohortId: string, query: string) {
+export function useSearchAvailableParticipants(cohortId: string, query: string, group?: string | null) {
   return useQuery({
-    queryKey: teamKeys.searchParticipants(cohortId, query),
+    queryKey: [...teamKeys.searchParticipants(cohortId, query), group],
     queryFn: () =>
       api.get<any[]>(
-        `/teams/search/participants?cohortId=${cohortId}&query=${encodeURIComponent(query)}`
+        `/teams/search/participants?cohortId=${cohortId}&query=${encodeURIComponent(query)}${group === null ? "&ungrouped=true" : group !== undefined ? `&group=${encodeURIComponent(group)}` : ""}`
       ),
     enabled: !!cohortId && query.length >= 2,
   });

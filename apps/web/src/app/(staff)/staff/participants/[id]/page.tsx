@@ -1,4 +1,5 @@
 "use client";
+import { ParticipantGroupEditor } from "@/components/cohorts/participant-group-editor";
 
 import { use, useState } from "react";
 import Link from "next/link";
@@ -442,6 +443,7 @@ function ParticipantDetailContent({ id }: { id: string }) {
             <div className="rounded-lg border bg-card p-6">
               <h2 className="font-semibold mb-4">Program Details</h2>
               <dl className="space-y-3">
+                <ParticipantGroupEditor participant={participant} groups={cohort?.groups || []} />
                 {cohort && (
                   <div>
                     <dt className="text-sm text-muted-foreground">Cohort</dt>

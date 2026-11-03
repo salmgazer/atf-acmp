@@ -17,6 +17,7 @@ import { CacheService } from "./cache.service";
 
         // If no Redis host configured, use in-memory cache
         if (!redisHost) {
+          if (["production", "staging"].includes(configService.get<string>("NODE_ENV") || "")) throw new Error("REDIS_HOST is required for shared production state");
           logger.warn(
             "Redis not configured, using in-memory cache. Set REDIS_HOST for distributed caching.",
           );
@@ -44,6 +45,7 @@ import { CacheService } from "./cache.service";
           };
         } catch (error) {
           logger.error(`Failed to connect to Redis: ${error.message}`);
+          if (["production", "staging"].includes(configService.get<string>("NODE_ENV") || "")) throw error;
           logger.warn("Falling back to in-memory cache");
           return {
             ttl: 60000,

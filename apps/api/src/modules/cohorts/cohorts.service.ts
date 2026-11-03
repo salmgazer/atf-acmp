@@ -1,3 +1,4 @@
+import { normalizeGroups } from "@/common/services/cohort-groups";
 import {
   Injectable,
   NotFoundException,
@@ -164,6 +165,7 @@ export class CohortsService {
       deadlines: createCohortDto.deadlines || {},
       countries: createCohortDto.countries || [],
       verticals: createCohortDto.verticals || [],
+      groups: normalizeGroups(createCohortDto.groups || []),
     });
 
     const savedCohort = await this.cohortRepository.save(cohort);
@@ -524,6 +526,7 @@ export class CohortsService {
   }
 
   async update(id: string, updateCohortDto: UpdateCohortDto): Promise<CohortWithStageCount> {
+    if (updateCohortDto.groups !== undefined) updateCohortDto.groups = normalizeGroups(updateCohortDto.groups);
     const cohortWithCount = await this.findOne(id);
     const cohort = await this.cohortRepository.findOne({ where: { id } });
     if (!cohort) {
@@ -634,6 +637,7 @@ export class CohortsService {
       rubric: source.rubric,
       countries: [...source.countries],
       verticals: [...source.verticals],
+      groups: [...(source.groups || [])],
       briefCap: source.briefCap,
       maxTeamsPerBrief: source.maxTeamsPerBrief,
       status: CohortStatus.DRAFT,

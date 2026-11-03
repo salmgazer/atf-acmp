@@ -191,7 +191,7 @@ function TeamsContent() {
           <div>
             <h1 className="text-2xl font-semibold text-foreground">Teams</h1>
             <p className="text-sm text-muted-foreground">
-              Track teams working on your organization's briefs
+              Track teams working on your organization&apos;s briefs
             </p>
           </div>
         </div>

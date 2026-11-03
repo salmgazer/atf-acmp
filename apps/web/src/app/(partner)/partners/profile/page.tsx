@@ -230,7 +230,7 @@ function ProfileContent() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Partner Profile</h1>
           <p className="text-muted-foreground">
-            Manage your organization's information and settings.
+            Manage your organization&apos;s information and settings.
           </p>
         </div>
 

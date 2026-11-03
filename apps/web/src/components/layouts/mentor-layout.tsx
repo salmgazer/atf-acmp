@@ -24,6 +24,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useNotificationCount } from "@/lib/api/hooks/use-notifications";
 import { useChatContext } from "@/lib/contexts/chat-context";
+import { signOut } from "@/lib/auth";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { Button } from "@/components/ui/button";
 import {
@@ -65,9 +66,9 @@ export function MentorLayout({ children, noPadding }: MentorLayoutProps) {
 
   const unreadCount = (countData as any)?.data?.unread || countData?.unread || 0;
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     queryClient.clear();
-    logout();
+    await signOut();
     router.push("/mentor/login");
   };
 

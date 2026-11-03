@@ -1,3 +1,5 @@
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import {
   IsString,
   IsEmail,
@@ -190,32 +192,44 @@ export class MentorQueryDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  @Type(() => Boolean)
+  @StrictBoolean()
   hasCapacity?: boolean;
 
   @ApiPropertyOptional({ description: "Include only deleted mentors" })
   @IsOptional()
   @IsBoolean()
-  @Type(() => Boolean)
+  @StrictBoolean()
   deleted?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number = 1;
 
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number = 20;
 }
 
 export class PaginatedMentorsDto {
   data: any[];
   total: number;
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page: number;
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit: number;
   totalPages: number;
 }
@@ -394,12 +408,18 @@ export class SessionQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number = 1;
 
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number = 20;
 }
 
@@ -537,12 +557,18 @@ export class MentorPaymentQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number = 1;
 
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number = 20;
 }
 

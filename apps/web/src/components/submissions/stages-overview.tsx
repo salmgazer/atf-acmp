@@ -127,7 +127,7 @@ export function StagesOverview({ cohortId }: { cohortId: string }) {
                 <span>Due: {format(new Date(currentStage.deadline), "MMM d, yyyy 'at' h:mm a")}</span>
               </span>
               <Button asChild size="sm">
-                <Link href={`/app/submissions/${currentStage.id}`}>
+                <Link href={`/participant/submissions/${currentStage.id}`}>
                   {currentStage.submission?.status === "draft" ? "Continue Draft" : "Start Submission"}
                   <ChevronRight className="ml-1 h-4 w-4" />
                 </Link>
@@ -175,7 +175,7 @@ function StageCard({ stage, isCurrent }: { stage: StageWithSubmission; isCurrent
   const isSubmitted = submission?.status && ["submitted", "late", "pending_approval", "approved", "evaluated"].includes(submission.status);
 
   return (
-    <Link href={`/app/submissions/${stage.id}`} className="block">
+    <Link href={`/participant/submissions/${stage.id}`} className="block">
       <Card className={`transition-colors hover:bg-muted/50 cursor-pointer ${isCurrent ? "border-primary" : ""}`}>
         <CardContent className="p-4">
           <div className="flex items-center gap-3">

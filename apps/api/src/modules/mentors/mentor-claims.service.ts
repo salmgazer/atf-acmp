@@ -1,3 +1,6 @@
+import { DateTime } from "luxon";
+import { MentorAvailabilityService } from "./mentor-availability.service";
+import { Transactional } from "@/common/decorators/transactional.decorator";
 import {
   Injectable,
   NotFoundException,
@@ -71,6 +74,7 @@ export class MentorClaimsService {
     @InjectRepository(MentorAvailabilityException)
     private readonly exceptionRepository: Repository<MentorAvailabilityException>,
     private readonly calendarService: GoogleCalendarService,
+    private readonly availabilityService: MentorAvailabilityService,
     private readonly notificationTriggers: NotificationTriggersService,
   ) {}
 
@@ -196,6 +200,7 @@ export class MentorClaimsService {
       throw new NotFoundException("Mentor not found");
     }
 
+    if (mentor.status !== "active" || mentor.cohortId !== team.cohortId) throw new ForbiddenException("Mentor must be active in the team cohort");
     // Check if team already has an active claim
     const existingTeamClaim = await this.claimRepository.findOne({
       where: {
@@ -309,6 +314,7 @@ export class MentorClaimsService {
   /**
    * Claim a mentor for a team
    */
+  @Transactional()
   async claimMentor(
     teamId: string,
     dto: ClaimMentorDto,
@@ -406,6 +412,7 @@ export class MentorClaimsService {
   /**
    * Release a mentor claim (by team)
    */
+  @Transactional()
   async releaseClaim(
     teamId: string,
     dto: ReleaseMentorClaimDto,
@@ -437,6 +444,7 @@ export class MentorClaimsService {
   /**
    * Swap to a different mentor (one-time swap allowed after session 1)
    */
+  @Transactional()
   async swapMentor(
     teamId: string,
     dto: SwapMentorDto,
@@ -526,6 +534,7 @@ export class MentorClaimsService {
   /**
    * Book a session within a claim - validates against mentor's availability
    */
+  @Transactional()
   async bookSession(
     claimId: string,
     dto: BookSessionDto,
@@ -555,24 +564,12 @@ export class MentorClaimsService {
 
     const sessionNumber = bookedSessions + 1;
 
-    // Parse date and time from new DTO format
-    const sessionDate = new Date(dto.date);
-    const dayOfWeek = sessionDate.getDay() as DayOfWeek;
-    const startTime = dto.startTime;
-
-    // Validate the slot is within mentor's availability
-    await this.validateSlotAvailability(claim.mentorId, dto.date, startTime, dayOfWeek);
-
-    // Check slot is not already booked
-    await this.checkSlotNotBooked(claim.mentorId, dto.date, startTime);
-
-    // Get duration from mentor's availability settings
-    const durationMinutes = await this.getSlotDuration(claim.mentorId, dayOfWeek, startTime);
-
-    // Build scheduled datetime
-    const [hour, minute] = startTime.split(":").map(Number);
-    const scheduledAt = new Date(dto.date);
-    scheduledAt.setHours(hour, minute, 0, 0);
+    if (claim.expiresAt < new Date()) throw new BadRequestException("Mentor claim has expired");
+    const availability = await this.availabilityService.getAvailableSlots(claim.mentorId, { startDate: dto.date, endDate: dto.date, timezone: dto.timezone });
+    const slot = availability.slots.find(item => item.startTime === dto.startTime && item.isAvailable);
+    if (!slot) throw new ConflictException("Selected slot is unavailable");
+    const scheduledAt = new Date(slot.startDateTime);
+    const durationMinutes = slot.durationMinutes;
 
     // Create session (calendar event will be created when mentor confirms)
     const session = this.sessionRepository.create({
@@ -724,6 +721,7 @@ export class MentorClaimsService {
   /**
    * Update a scheduled session
    */
+  @Transactional("mentor-session")
   async updateSession(
     sessionId: string,
     dto: UpdateScheduledSessionDto,
@@ -745,6 +743,15 @@ export class MentorClaimsService {
       throw new BadRequestException("Cannot update cancelled session");
     }
 
+    if (dto.scheduledAt || dto.durationMinutes) {
+      const requested = DateTime.fromJSDate(dto.scheduledAt ? new Date(dto.scheduledAt) : session.scheduledAt, { zone: "UTC" });
+      const date = requested.toISODate();
+      if (!date || !requested.isValid) throw new BadRequestException("Invalid session date");
+      const availability = await this.availabilityService.getAvailableSlots(session.mentorId, { startDate: date, endDate: date, timezone: "UTC" }, session.id);
+      const slot = availability.slots.find(item => new Date(item.startDateTime).getTime() === requested.toMillis() && item.isAvailable);
+      if (!slot || (dto.durationMinutes && dto.durationMinutes !== slot.durationMinutes)) throw new ConflictException("Selected slot or duration is unavailable");
+      session.durationMinutes = slot.durationMinutes;
+    }
     // Update fields
     if (dto.scheduledAt) session.scheduledAt = new Date(dto.scheduledAt);
     if (dto.question) session.question = dto.question;
@@ -775,6 +782,7 @@ export class MentorClaimsService {
   /**
    * Cancel a scheduled session
    */
+  @Transactional("mentor-session")
   async cancelSession(
     sessionId: string,
     dto: CancelSessionDto,
@@ -814,6 +822,7 @@ export class MentorClaimsService {
   /**
    * Mark a session as completed (by mentor)
    */
+  @Transactional("mentor-session")
   async completeSession(
     sessionId: string,
     dto: CompleteSessionDto,
@@ -831,6 +840,7 @@ export class MentorClaimsService {
       throw new BadRequestException("Session already completed");
     }
 
+    if (session.status !== ScheduledSessionStatus.CONFIRMED || session.scheduledAt.getTime() + session.durationMinutes * 60000 > Date.now()) throw new BadRequestException("Only finished, confirmed sessions can be completed");
     session.status = ScheduledSessionStatus.COMPLETED;
     session.completedAt = new Date();
     if (dto.notes) session.notes = dto.notes;
@@ -940,6 +950,7 @@ export class MentorClaimsService {
   /**
    * Mentor confirms a session
    */
+  @Transactional("mentor-session")
   async confirmSession(sessionId: string): Promise<ScheduledSessionResponseDto> {
     const session = await this.sessionRepository.findOne({
       where: { id: sessionId },
@@ -1012,6 +1023,7 @@ export class MentorClaimsService {
   /**
    * Mentor declines a session request
    */
+  @Transactional("mentor-session")
   async declineSession(sessionId: string, reason?: string): Promise<ScheduledSessionResponseDto> {
     const session = await this.sessionRepository.findOne({
       where: { id: sessionId },

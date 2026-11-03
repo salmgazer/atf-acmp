@@ -1,5 +1,6 @@
 "use client";
 
+import { apiClient } from "@/lib/api/client";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -465,9 +466,9 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
             <AlertDescription>
               <span className="font-medium">GitHub Repository Required</span> — This stage requires a GitHub repository. 
               {team?.githubRepoUrl ? (
-                <span> Your team's repository: <a href={team.githubRepoUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{team.githubRepoUrl}</a></span>
+                <span> Your team&apos;s repository: <a href={team.githubRepoUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{team.githubRepoUrl}</a></span>
               ) : (
-                <span> Please set your team's GitHub repository URL in the <a href="/participant/team" className="text-primary hover:underline">Team Settings</a>.</span>
+                <span> Please set your team&apos;s GitHub repository URL in the <a href="/participant/team" className="text-primary hover:underline">Team Settings</a>.</span>
               )}
             </AlertDescription>
           </Alert>
@@ -715,30 +716,22 @@ function FileUploadArea({
   maxSize: number;
   disabled?: boolean;
 }) {
-  // Simulated file upload - in production, this would upload to S3/cloud storage
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (disabled) return;
-    const selectedFiles = e.target.files;
-    if (!selectedFiles) return;
-
-    const newFiles: FileUrl[] = [];
-    for (let i = 0; i < selectedFiles.length; i++) {
-      const file = selectedFiles[i];
-      if (file.size > maxSize * 1024 * 1024) {
-        alert(`File ${file.name} exceeds the maximum size of ${maxSize}MB`);
-        continue;
+  const [isUploading, setUploading] = useState(false);
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (disabled || isUploading) return;
+    const input = e.target;
+    const selected = Array.from(input.files || []);
+    setUploading(true);
+    const uploaded: FileUrl[] = [];
+    try {
+      for (const file of selected) {
+        if (file.size > maxSize * 1024 * 1024) throw new Error(`File ${file.name} exceeds ${maxSize}MB`);
+        const form = new FormData(); form.append("file", file);
+        const response = await apiClient.post<FileUrl>("/submissions/upload-document", form);
+        uploaded.push(response.data);
       }
-      // In production: upload to storage and get URL
-      newFiles.push({
-        name: file.name,
-        url: URL.createObjectURL(file), // Placeholder - would be actual URL
-        type: file.type,
-        size: file.size,
-        uploadedAt: new Date().toISOString(),
-      });
-    }
-    onChange([...files, ...newFiles]);
-    e.target.value = "";
+    } catch (error: any) { alert(error.response?.data?.message || error.message || "Document upload failed"); }
+    finally { onChange([...files, ...uploaded]); input.value = ""; setUploading(false); }
   };
 
   const removeFile = (index: number) => {

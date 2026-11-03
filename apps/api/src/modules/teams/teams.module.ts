@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { AuthModule } from "@/auth/auth.module";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import {
   Team,
@@ -19,6 +20,7 @@ import { EmailModule } from "../../email/email.module";
 
 @Module({
   imports: [
+    AuthModule,
     TypeOrmModule.forFeature([
       Team,
       TeamMember,

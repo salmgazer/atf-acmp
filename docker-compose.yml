@@ -88,11 +88,13 @@ services:
       target: development
     container_name: acmp-api
     restart: unless-stopped
+    command: ["sh", "/app/scripts/dev-entrypoint.sh", "api"]
     ports:
       - "3001:3001"
     environment:
       NODE_ENV: development
       PORT: 3001
+      RUN_MIGRATIONS: "true"
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
       DATABASE_USER: ${DATABASE_USER:-postgres}
@@ -128,12 +130,20 @@ services:
       S3_FORCE_PATH_STYLE: "true"
       # AI Evaluation
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       # Google Calendar Integration
       GOOGLE_SERVICE_ACCOUNT_EMAIL: ${GOOGLE_SERVICE_ACCOUNT_EMAIL:-}
       GOOGLE_PRIVATE_KEY: ${GOOGLE_PRIVATE_KEY:-}
       GOOGLE_CALENDAR_EMAIL: ${GOOGLE_CALENDAR_EMAIL:-}
       GOOGLE_ADMIN_EMAIL: ${GOOGLE_ADMIN_EMAIL:-}
+      ZOOM_ACCOUNT_ID: ${ZOOM_ACCOUNT_ID:-}
+      ZOOM_CLIENT_ID: ${ZOOM_CLIENT_ID:-}
+      ZOOM_CLIENT_SECRET: ${ZOOM_CLIENT_SECRET:-}
+      ZOOM_HOST_USER_ID: ${ZOOM_HOST_USER_ID:-}
+      ONESIGNAL_APP_ID: ${ONESIGNAL_APP_ID:-}
+      ONESIGNAL_REST_API_KEY: ${ONESIGNAL_REST_API_KEY:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       # Enable polling for file watching in Docker
       CHOKIDAR_USEPOLLING: "true"
     depends_on:
@@ -143,6 +153,10 @@ services:
         condition: service_healthy
     volumes:
       # Mount source code for hot-reload
+      - ./package.json:/app/package.json:ro
+      - ./package-lock.json:/app/package-lock.json:ro
+      - ./apps/api/package.json:/app/apps/api/package.json:ro
+      - ./scripts/dev-entrypoint.sh:/app/scripts/dev-entrypoint.sh:ro
       - ./apps/api/src:/app/apps/api/src:delegated
       - ./apps/api/tsconfig.json:/app/apps/api/tsconfig.json:ro
       - ./apps/api/nest-cli.json:/app/apps/api/nest-cli.json:ro
@@ -159,6 +173,7 @@ services:
       dockerfile: apps/web/Dockerfile
       target: development
     container_name: acmp-web
+    command: ["sh", "/app/scripts/dev-entrypoint.sh", "web"]
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -166,6 +181,7 @@ services:
       NODE_ENV: development
       NEXT_PUBLIC_API_URL: http://localhost:3001/api
       NEXT_PUBLIC_WS_URL: ws://localhost:3001
+      NEXT_PUBLIC_ONESIGNAL_APP_ID: ${ONESIGNAL_APP_ID:-}
       # Firebase client config - add your credentials
       NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY:-}
       NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
@@ -179,6 +195,10 @@ services:
       - api
     volumes:
       # Mount source code for hot-reload
+      - ./package.json:/app/package.json:ro
+      - ./package-lock.json:/app/package-lock.json:ro
+      - ./apps/web/package.json:/app/apps/web/package.json:ro
+      - ./scripts/dev-entrypoint.sh:/app/scripts/dev-entrypoint.sh:ro
       - ./apps/web/src:/app/apps/web/src:delegated
       - ./apps/web/public:/app/apps/web/public:delegated
       - ./apps/web/next.config.ts:/app/apps/web/next.config.ts:ro

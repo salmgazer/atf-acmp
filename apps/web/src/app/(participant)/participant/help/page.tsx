@@ -124,7 +124,7 @@ function HelpContent() {
             <div className="flex-1">
               <h3 className="font-semibold">Need more help?</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Can't find what you're looking for? Ask in the Technical Help chat.
+                Can&apos;t find what you&apos;re looking for? Ask in the Technical Help chat.
               </p>
               <Button
                 className="mt-3"

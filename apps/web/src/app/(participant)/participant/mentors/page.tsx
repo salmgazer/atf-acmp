@@ -81,7 +81,7 @@ function MentorCard({
 }) {
   return (
     <div className="group relative overflow-hidden rounded-2xl border bg-card transition-all duration-300 hover:shadow-lg hover:shadow-primary/5 hover:border-primary/30">
-      <Link href={`/app/mentors/${mentor.id}`} className="block p-5">
+      <Link href={`/participant/mentors/${mentor.id}`} className="block p-5">
         <div className="flex gap-4">
           {/* Avatar */}
           <div className="relative shrink-0">
@@ -221,7 +221,7 @@ function MentorCard({
             className="h-8 text-muted-foreground hover:text-primary"
             asChild
           >
-            <Link href={`/app/mentors/${mentor.id}`}>
+            <Link href={`/participant/mentors/${mentor.id}`}>
               View Profile
             </Link>
           </Button>
@@ -392,7 +392,7 @@ function CurrentClaimCard({ claim, onManageSessions, onSwap, onRelease, canSwap 
 
       {claim.swapUsed && (
         <p className="text-xs opacity-70 mt-3">
-          Note: You've already used your one-time mentor swap.
+          Note: You&apos;ve already used your one-time mentor swap.
         </p>
       )}
     </div>
@@ -497,7 +497,7 @@ function MentorBrowseContent() {
             claim={claimStatus.claim}
             onManageSessions={() => {
               // Navigate to sessions page
-              window.location.href = `/app/mentors/sessions`;
+              window.location.href = `/participant/mentors/sessions`;
             }}
             onSwap={() => setShowSwapDialog(true)}
             onRelease={() => setShowReleaseDialog(true)}
@@ -669,11 +669,11 @@ function MentorBrowseContent() {
             <DialogHeader>
               <DialogTitle>Claim Mentor</DialogTitle>
               <DialogDescription>
-                You're about to claim{" "}
+                You&apos;re about to claim{" "}
                 <strong>
                   {selectedMentor?.firstName} {selectedMentor?.lastName}
                 </strong>{" "}
-                as your team's mentor.
+                as your team&apos;s mentor.
               </DialogDescription>
             </DialogHeader>
             <div className="py-4 space-y-3">
@@ -715,7 +715,7 @@ function MentorBrowseContent() {
               <DialogTitle>Release Mentor</DialogTitle>
               <DialogDescription>
                 Are you sure you want to release your mentor claim? Any scheduled sessions will be
-                cancelled and you'll need to claim a new mentor.
+                cancelled and you&apos;ll need to claim a new mentor.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter className="gap-2">
@@ -749,7 +749,7 @@ function MentorBrowseContent() {
             <DialogHeader>
               <DialogTitle>Swap Mentor</DialogTitle>
               <DialogDescription>
-                You're about to swap to{" "}
+                You&apos;re about to swap to{" "}
                 <strong>
                   {selectedMentor?.firstName} {selectedMentor?.lastName}
                 </strong>

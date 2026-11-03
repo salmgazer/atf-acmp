@@ -58,7 +58,7 @@ export interface CreateResourceInput {
   sortOrder?: number;
 }
 
-export interface UpdateResourceInput extends Partial<CreateResourceInput> {}
+type UpdateResourceInput = Partial<CreateResourceInput>;
 
 export interface ResourceQuery {
   cohortId?: string;

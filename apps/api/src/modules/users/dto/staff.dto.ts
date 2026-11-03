@@ -1,3 +1,4 @@
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import { IsEmail, IsEnum, IsOptional, IsString, MinLength, IsBoolean } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Role } from "@/database/entities/user.entity";
@@ -51,6 +52,7 @@ export class UpdateStaffDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isActive?: boolean;
 }
 
@@ -68,6 +70,7 @@ export class StaffQueryDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isActive?: boolean;
 }
 

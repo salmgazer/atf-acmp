@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { GroupFilter } from "@/components/cohorts/group-filter";
 import Link from "next/link";
 import { StaffLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -82,6 +83,7 @@ function ParticipantRow({ participant }: { participant: Participant }) {
           <span>{participant.country}</span>
         </div>
       </td>
+      <td className="p-4 text-sm">{participant.group || "Not assigned"}</td>
       <td className="p-4">
         {participant.institution ? (
           <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
@@ -127,6 +129,7 @@ function ParticipantRow({ participant }: { participant: Participant }) {
 function ParticipantsContent() {
   const [statusFilter, setStatusFilter] = useState<ParticipantStatus | "all">("all");
   const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState("all");
   const [selectedCohortId, setSelectedCohortId] = useState<string | null>(null);
   const [hasInitialized, setHasInitialized] = useState(false);
   const [page, setPage] = useState(1);
@@ -150,11 +153,15 @@ function ParticipantsContent() {
 
   // Use local cohort if explicitly set, otherwise fall back to global
   const effectiveCohortId = selectedCohortId ?? globalCohortId ?? undefined;
+  const groupOptions = Array.from(new Set(cohorts.filter(c => !effectiveCohortId || c.id === effectiveCohortId).flatMap(c => c.groups || [])));
+  useEffect(() => { setGroupFilter("all"); setPage(1); }, [effectiveCohortId]);
 
   const { data: participantsData, isLoading } = useParticipants({
     status: statusFilter === "all" ? undefined : statusFilter,
     search: search || undefined,
     cohortId: effectiveCohortId,
+    group: groupFilter.startsWith("group:") ? groupFilter.slice(6) : undefined,
+    ungrouped: groupFilter === "ungrouped" || undefined,
     page,
     limit: pageSize,
   });
@@ -165,6 +172,7 @@ function ParticipantsContent() {
   const totalItems = participantsData?.total || 0;
 
   const activeFilterCount = [
+    groupFilter !== "all",
     statusFilter !== "all",
     selectedCohortId !== null && selectedCohortId !== globalCohortId,
   ].filter(Boolean).length;
@@ -179,10 +187,19 @@ function ParticipantsContent() {
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (search) params.set("search", search);
       if (effectiveCohortId) params.set("cohortId", effectiveCohortId);
-      params.set("limit", "10000"); // Large limit to get all
-
-      const response = await api.get<{ data: Participant[] }>(`/participants?${params.toString()}`);
-      const allParticipants = response.data;
+      if (groupFilter.startsWith("group:")) params.set("group", groupFilter.slice(6));
+      if (groupFilter === "ungrouped") params.set("ungrouped", "true");
+      params.set("limit", "500");
+      const allParticipants: Participant[] = [];
+      let exportPage = 1;
+      let exportPages = 1;
+      do {
+        params.set("page", String(exportPage));
+        const response = await api.get<{ data: Participant[]; totalPages: number }>(`/participants?${params.toString()}`);
+        allParticipants.push(...response.data);
+        exportPages = response.totalPages || 1;
+        exportPage++;
+      } while (exportPage <= exportPages);
 
       if (allParticipants.length === 0) {
         toast.error("No participants to export");
@@ -196,6 +213,7 @@ function ParticipantsContent() {
         "First Name",
         "Last Name",
         "Country",
+        "Group",
         "Institution",
         "Phone Number",
         "Status",
@@ -211,6 +229,7 @@ function ParticipantsContent() {
         p.firstName,
         p.lastName,
         p.country,
+        p.group || "",
         p.institution || "",
         p.phoneNumber || "",
         p.status,
@@ -253,6 +272,7 @@ function ParticipantsContent() {
   };
 
   const clearFilters = () => {
+    setGroupFilter("all");
     setStatusFilter("all");
     setSelectedCohortId(null);
     setPage(1);
@@ -399,6 +419,7 @@ function ParticipantsContent() {
                 ))}
               </select>
             </div>
+            <GroupFilter groups={groupOptions} value={groupFilter} onChange={value => { setGroupFilter(value); setPage(1); }} />
             {hasActiveFilters && (
               <button
                 onClick={clearFilters}
@@ -444,6 +465,7 @@ function ParticipantsContent() {
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Name</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Participant ID</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Country</th>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Group</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Institution</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Status</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Onboarding</th>

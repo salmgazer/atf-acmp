@@ -30,6 +30,7 @@ export interface Participant {
   profileImageUrl?: string;
   status: ParticipantStatus;
   cohortId: string;
+  group?: string | null;
   createdAt: string;
   updatedAt: string;
   preference?: ParticipantPreference;
@@ -52,6 +53,8 @@ export interface ParticipantQueryParams {
   limit?: number;
   search?: string;
   cohortId?: string;
+  group?: string;
+  ungrouped?: boolean;
   country?: string;
   status?: ParticipantStatus;
   onboardingComplete?: boolean;
@@ -90,6 +93,7 @@ export interface BulkImportRow {
 
 export interface BulkImportDto {
   cohortId: string;
+  group?: string;
   participants: BulkImportRow[];
   sendWelcomeEmail?: boolean;
 }
@@ -170,6 +174,8 @@ export function useParticipants(params?: ParticipantQueryParams) {
       if (params?.limit) searchParams.set("limit", String(params.limit));
       if (params?.search) searchParams.set("search", params.search);
       if (params?.cohortId) searchParams.set("cohortId", params.cohortId);
+      if (params?.group) searchParams.set("group", params.group);
+      if (params?.ungrouped) searchParams.set("ungrouped", "true");
       if (params?.country) searchParams.set("country", params.country);
       if (params?.status) searchParams.set("status", params.status);
       if (params?.onboardingComplete !== undefined) {
@@ -178,6 +184,15 @@ export function useParticipants(params?: ParticipantQueryParams) {
 
       return api.get<PaginatedParticipants>(`/participants?${searchParams.toString()}`);
     },
+  });
+}
+
+export function useAssignParticipantGroup() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, group }: { id: string; group: string | null }) => api.patch<Participant>(`/participants/${id}/group`, { group }),
+    onSuccess: () => { cache.invalidateQueries({ queryKey: participantKeys.all }); toast.success("Participant group updated"); },
+    onError: (error: Error) => toast.error(error.message || "Could not assign group"),
   });
 }
 

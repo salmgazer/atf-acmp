@@ -29,6 +29,9 @@ import {
   ApiBody,
 } from "@nestjs/swagger";
 import { ParticipantsService } from "./participants.service";
+import { AssignParticipantGroupDto } from './dto/participant.dto';
+import { Roles } from '@/common/decorators/roles.decorator';
+import { Role } from '@/database/entities/user.entity';
 import {
   CreateParticipantDto,
   UpdateParticipantDto,
@@ -187,6 +190,13 @@ export class ParticipantsController {
     @Body() dto: UpdateParticipantDto
   ) {
     return this.participantsService.update(id, dto);
+  }
+
+  @Patch(':id/group')
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @Audit({ action: AuditAction.UPDATE, entityType: 'Participant', getEntityId: result => result?.id, getDescription: () => 'Assigned participant group' })
+  async assignGroup(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AssignParticipantGroupDto) {
+    return this.participantsService.assignGroup(id, dto.group);
   }
 
   @Patch(":id/status")

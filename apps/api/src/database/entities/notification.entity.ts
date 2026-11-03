@@ -37,6 +37,7 @@ export enum NotificationType {
   BRIEF_STATUS_CHANGED = "brief_status_changed",
   BRIEF_SUBMITTED = "brief_submitted",
   BRIEF_SELECTED = "brief_selected",
+  BRIEF_EVENT = "brief_event",
 
   // Submission related
   SUBMISSION_RECEIVED = "submission_received",

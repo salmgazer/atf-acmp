@@ -91,10 +91,11 @@ export class ResetPasswordDto {
 }
 
 export class RefreshTokenDto {
+  @IsOptional()
   @ApiProperty({ description: "Refresh token" })
   @IsString()
   @IsNotEmpty()
-  refreshToken: string;
+  refreshToken?: string;
 }
 
 export class AuthResponseDto {

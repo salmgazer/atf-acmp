@@ -1,4 +1,4 @@
-import { apiClient } from "@/lib/api/client";
+import { apiClient, withSessionRenewal } from "@/lib/api/client";
 import { useAuthStore, type AuthUser, type Portal } from "@/lib/stores/auth-store";
 
 interface LoginResponse {
@@ -19,20 +19,10 @@ export async function signInWithEmail(
   const response = await apiClient.post<LoginResponse>("/auth/login", {
     email,
     password,
-    portal,
+    portal: portal === "partner" ? "organization" : portal,
   });
 
-  const { accessToken, refreshToken, user } = response.data;
-
-  // Store refresh token for later use
-  if (typeof window !== "undefined") {
-    console.log("[signInWithEmail] Storing refresh token:", !!refreshToken);
-    if (refreshToken) {
-      localStorage.setItem("refresh_token", refreshToken);
-    } else {
-      console.warn("[signInWithEmail] No refresh token in response!");
-    }
-  }
+  const { accessToken, user } = response.data;
 
   return { user, token: accessToken };
 }
@@ -42,13 +32,7 @@ export async function signInWithEmail(
  */
 export async function signOut(): Promise<void> {
   try {
-    const refreshToken = typeof window !== "undefined" 
-      ? localStorage.getItem("refresh_token") 
-      : null;
-    
-    if (refreshToken) {
-      await apiClient.post("/auth/logout", { refreshToken });
-    }
+await apiClient.post("/auth/logout", {});
   } catch (error) {
     console.error("Logout error:", error);
   } finally {
@@ -63,16 +47,8 @@ export async function signOut(): Promise<void> {
  * Refresh access token using refresh token
  */
 export async function refreshAccessToken(): Promise<string | null> {
-  const refreshToken = typeof window !== "undefined" 
-    ? localStorage.getItem("refresh_token") 
-    : null;
-
-  if (!refreshToken) return null;
-
-  try {
-    const response = await apiClient.post<LoginResponse>("/auth/refresh", {
-      refreshToken,
-    });
+try {
+    const response = await apiClient.post<LoginResponse>("/auth/refresh", {});
 
     const { accessToken, user } = response.data;
 
@@ -94,21 +70,24 @@ export async function refreshAccessToken(): Promise<string | null> {
 export async function changePassword(
   currentPassword: string,
   newPassword: string
-): Promise<void> {
-  await apiClient.post("/auth/change-password", {
-    currentPassword,
-    newPassword,
+): Promise<LoginResponse & { message: string }> {
+  return withSessionRenewal(async () => {
+    const response = await apiClient.post<LoginResponse & { message: string }>("/auth/change-password", {
+      currentPassword,
+      newPassword,
+    });
+    const store = useAuthStore.getState();
+    store.setToken(response.data.accessToken);
+    store.setUser({ ...store.user, ...response.data.user, mustChangePassword: false });
+    return response.data;
   });
-
-  // Update local state
-  useAuthStore.getState().updateUser({ mustChangePassword: false });
 }
 
 /**
  * Request magic link code (for organizations/mentors)
  */
 export async function requestMagicLink(email: string, portal: Portal): Promise<void> {
-  await apiClient.post("/auth/magic-link", { email, portal });
+  await apiClient.post("/auth/magic-link", { email, portal: portal === "partner" ? "organization" : portal });
 }
 
 /**

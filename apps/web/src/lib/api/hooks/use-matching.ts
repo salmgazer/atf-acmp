@@ -226,6 +226,7 @@ export interface FinalizeTeamFormationDto {
 }
 
 export interface ProposedTeam {
+  group?: string | null;
   index: number;
   members: {
     participantId: string;
@@ -278,6 +279,7 @@ export interface TeamFormationPreview {
 }
 
 export interface ProposedBackfill {
+  group?: string | null;
   teamId: string;
   teamName: string;
   currentMemberCount: number;
