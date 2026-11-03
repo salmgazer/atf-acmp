@@ -2,6 +2,26 @@ import { test, expect } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => { page.on('pageerror', error => console.error('Browser exception:', error.message)); });
 
+test('homepage hydrates cleanly across reloads and portal navigation', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await page.reload();
+    await expect(page.getByRole('heading', { name: 'Choose Your Portal' })).toBeVisible();
+    await expect(page).toHaveTitle('ATF AI Challenge');
+    await expect(page.locator('head title')).toHaveCount(1);
+    expect(await page.locator('head').evaluate(element => Array.from(element.childNodes)
+      .filter(node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()).length)).toBe(0);
+  }
+  await page.getByRole('link', { name: /Participant Portal/ }).click();
+  await expect(page).toHaveURL(/\/participant\/login$/);
+  await expect(page.getByRole('heading', { name: 'Welcome back', exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Choose Your Portal' })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test('partner magic login and resend use the organization API contract', async ({ page }) => {
   const requests: unknown[] = [];
   await page.route('**/auth/magic-link', async route => { requests.push(route.request().postDataJSON()); await route.fulfill({ json: { message: 'Sent' } }); });

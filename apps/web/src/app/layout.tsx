@@ -46,7 +46,8 @@ export default function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
+      <body className="font-sans antialiased">
+        <Providers>{children}</Providers>
         {oneSignalAppId && (
           <>
             <Script
@@ -70,9 +71,6 @@ export default function RootLayout({
             </Script>
           </>
         )}
-      </head>
-      <body className="font-sans antialiased">
-        <Providers>{children}</Providers>
       </body>
     </html>
   );
