@@ -1,4 +1,4 @@
-import { apiClient } from "@/lib/api/client";
+import { apiClient, withSessionRenewal } from "@/lib/api/client";
 import { useAuthStore, type AuthUser, type Portal } from "@/lib/stores/auth-store";
 
 interface LoginResponse {
@@ -70,14 +70,17 @@ try {
 export async function changePassword(
   currentPassword: string,
   newPassword: string
-): Promise<void> {
-  await apiClient.post("/auth/change-password", {
-    currentPassword,
-    newPassword,
+): Promise<LoginResponse & { message: string }> {
+  return withSessionRenewal(async () => {
+    const response = await apiClient.post<LoginResponse & { message: string }>("/auth/change-password", {
+      currentPassword,
+      newPassword,
+    });
+    const store = useAuthStore.getState();
+    store.setToken(response.data.accessToken);
+    store.setUser({ ...store.user, ...response.data.user, mustChangePassword: false });
+    return response.data;
   });
-
-  // Update local state
-  useAuthStore.getState().updateUser({ mustChangePassword: false });
 }
 
 /**

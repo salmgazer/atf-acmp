@@ -11,6 +11,15 @@ let isRedirecting = false;
 let redirectTimeout: NodeJS.Timeout | null = null;
 let isRefreshing = false;
 let refreshPromise: Promise<string | null> | null = null;
+let pendingSessionRenewal: Promise<unknown> | null = null;
+
+/** Keep requests using the previous token from logging out during session rotation. */
+export async function withSessionRenewal<T>(operation: () => Promise<T>): Promise<T> {
+  const request = Promise.resolve().then(operation);
+  pendingSessionRenewal = request;
+  try { return await request; }
+  finally { if (pendingSessionRenewal === request) pendingSessionRenewal = null; }
+}
 
 /**
  * Generic API response type
@@ -110,9 +119,19 @@ const createApiClient = (): AxiosInstance => {
         originalRequest.url?.includes("/auth/register") ||
         originalRequest.url?.includes("/auth/magic-link") ||
         originalRequest.url?.includes("/auth/verify") ||
+        originalRequest.url?.includes("/auth/change-password") ||
         originalRequest.url?.includes("/auth/refresh") || originalRequest.url?.includes("/auth/logout");
 
       if (error.response?.status === 401 && !isPublicEndpoint && !originalRequest._retry) {
+        if (pendingSessionRenewal) {
+          try { await pendingSessionRenewal; } catch { /* A failed password change leaves the current session intact. */ }
+        }
+        const currentToken = useAuthStore.getState().token;
+        if (currentToken && originalRequest.headers.Authorization !== `Bearer ${currentToken}`) {
+          originalRequest._retry = true;
+          originalRequest.headers.Authorization = `Bearer ${currentToken}`;
+          return client(originalRequest);
+        }
         // Mark request as retried to prevent infinite loops
         originalRequest._retry = true;
         

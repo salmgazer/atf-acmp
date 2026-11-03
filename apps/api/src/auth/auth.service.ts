@@ -1,4 +1,5 @@
 import { SocketSessionsService } from "./socket-sessions.service";
+import { afterCommit, Transactional } from "@/common/decorators/transactional.decorator";
 import { Injectable, UnauthorizedException, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
@@ -246,6 +247,7 @@ export class AuthService {
     const refreshToken = this.refreshTokenRepository.create({
       token,
       participantId: participant.id, // Store participant ID in dedicated field
+      createdAt: new Date(),
       expiresAt,
       userAgent,
       ipAddress,
@@ -430,7 +432,7 @@ export class AuthService {
       passwordChangedAt: now,
     });
 
-    this.socketSessions?.revokePrincipal(userId);
+    afterCommit(this, () => this.socketSessions?.revokePrincipal(userId));
     // Revoke all refresh tokens (invalidate all sessions)
     await this.refreshTokenRepository.update(
       { userId, isRevoked: false },
@@ -473,7 +475,7 @@ export class AuthService {
     participant.mustChangePassword = false;
     await this.participantRepository.save(participant);
 
-    this.socketSessions?.revokePrincipal(participantId);
+    afterCommit(this, () => this.socketSessions?.revokePrincipal(participantId));
     // Revoke all refresh tokens for this participant
     const now = new Date();
     await this.refreshTokenRepository.update(
@@ -487,6 +489,31 @@ export class AuthService {
       expiresAt: LessThan(new Date()),
     });
     return result.affected || 0;
+  }
+
+  @Transactional("password-change")
+  async changePasswordAndRenewSession(
+    userId: string,
+    role: string,
+    currentPassword: string,
+    newPassword: string,
+    userAgent?: string,
+    ipAddress?: string,
+  ): Promise<AuthResponseDto> {
+    if (role === Role.PARTICIPANT) {
+      await this.participantRepository.findOneOrFail({ where: { id: userId }, lock: { mode: "pessimistic_write" } });
+      await this.changeParticipantPassword(userId, currentPassword, newPassword);
+      const participant = await this.participantRepository.findOne({ where: { id: userId }, relations: ["cohort"] });
+      if (!participant || participant.status === "inactive" || (participant.cohort && this.blockedCohortStatuses.includes(participant.cohort.status))) {
+        throw new UnauthorizedException("Participant account is not accessible");
+      }
+      return this.generateParticipantTokens(participant, userAgent, ipAddress);
+    }
+    await this.userRepository.findOneOrFail({ where: { id: userId }, lock: { mode: "pessimistic_write" } });
+    await this.changePassword(userId, currentPassword, newPassword);
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user?.isActive) throw new UnauthorizedException("Account is deactivated");
+    return this.generateTokens(user, userAgent, ipAddress);
   }
 
   /**
@@ -618,6 +645,7 @@ export class AuthService {
     const refreshToken = this.refreshTokenRepository.create({
       token,
       userId: user.id,
+      createdAt: new Date(),
       expiresAt,
       userAgent,
       ipAddress,

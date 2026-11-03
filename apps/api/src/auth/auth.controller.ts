@@ -156,18 +156,18 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Change password" })
-  @ApiResponse({ status: 200, description: "Password changed successfully" })
+  @ApiResponse({ status: 200, description: "Password changed and session renewed", type: AuthResponseDto })
   @ApiResponse({ status: 401, description: "Current password is incorrect" })
   async changePassword(
     @CurrentUser() user: { id: string; role: string },
     @Body() dto: ChangePasswordDto,
-  ): Promise<{ message: string }> {
-    if (user.role === "participant") {
-      await this.authService.changeParticipantPassword(user.id, dto.currentPassword, dto.newPassword);
-    } else {
-      await this.authService.changePassword(user.id, dto.currentPassword, dto.newPassword);
-    }
-    return { message: "Password changed successfully. Please log in again." };
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponseDto & { message: string }> {
+    const session = await this.authService.changePasswordAndRenewSession(
+      user.id, user.role, dto.currentPassword, dto.newPassword, req.headers["user-agent"], req.ip || req.socket.remoteAddress,
+    );
+    return { ...this.setSession(res, session), message: "Password changed successfully" };
   }
 
   @Post("password-changed")
