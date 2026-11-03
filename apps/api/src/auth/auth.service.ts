@@ -1,8 +1,9 @@
-import { Injectable, UnauthorizedException, Logger } from "@nestjs/common";
+import { SocketSessionsService } from "./socket-sessions.service";
+import { Injectable, UnauthorizedException, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, LessThan } from "typeorm";
+import { Repository, LessThan, MoreThan } from "typeorm";
 import * as bcrypt from "bcrypt";
 import * as crypto from "crypto";
 import * as admin from "firebase-admin";
@@ -37,6 +38,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly firebaseService: FirebaseService,
     private readonly configService: ConfigService,
+    @Optional() private readonly socketSessions?: SocketSessionsService,
   ) {}
 
   /**
@@ -51,7 +53,7 @@ export class AuthService {
     ipAddress?: string,
   ): Promise<AuthResponseDto> {
     const decodedToken = await this.firebaseService.verifyIdToken(idToken);
-    if (!decodedToken) {
+    if (!decodedToken?.uid || !decodedToken.email) {
       throw new UnauthorizedException("Invalid Firebase token");
     }
 
@@ -60,11 +62,13 @@ export class AuthService {
     });
 
     if (!user) {
+      if (decodedToken.email_verified !== true) throw new UnauthorizedException("Verify your email before linking an account");
       user = await this.userRepository.findOne({
-        where: { email: decodedToken.email },
+        where: { email: decodedToken.email.toLowerCase() },
       });
 
       if (user) {
+        if (user.firebaseUid && user.firebaseUid !== decodedToken.uid) throw new UnauthorizedException("Account is already linked to a different identity");
         user.firebaseUid = decodedToken.uid;
         await this.userRepository.save(user);
       }
@@ -108,6 +112,7 @@ export class AuthService {
     // For other portals, use the users table
     const user = await this.userRepository.findOne({
       where: { email: email.toLowerCase() },
+      select: { id: true, email: true, role: true, firstName: true, lastName: true, avatarUrl: true, isActive: true, mustChangePassword: true, passwordChangedAt: true, passwordHash: true },
     });
 
     if (!user || !user.passwordHash) {
@@ -151,6 +156,7 @@ export class AuthService {
     const participant = await this.participantRepository.findOne({
       where: { email: email.toLowerCase() },
       relations: ["cohort"],
+      select: { id: true, email: true, participantId: true, firstName: true, lastName: true, cohortId: true, status: true, mustChangePassword: true, passwordHash: true },
     });
 
     if (!participant) {
@@ -190,11 +196,10 @@ export class AuthService {
     userAgent?: string,
     ipAddress?: string,
   ): Promise<AuthResponseDto> {
-    const accessToken = this.generateParticipantAccessToken(participant);
-    
     // Create a pseudo-user for refresh token storage
     // We'll use participant.id as the userId reference
     const refreshToken = await this.createParticipantRefreshToken(participant, userAgent, ipAddress);
+    const accessToken = this.generateParticipantAccessToken(participant, refreshToken.id);
 
     return {
       accessToken,
@@ -217,9 +222,10 @@ export class AuthService {
     };
   }
 
-  private generateParticipantAccessToken(participant: Participant): string {
+  private generateParticipantAccessToken(participant: Participant, sessionId?: string): string {
     const payload = {
       sub: participant.id,
+      sid: sessionId,
       email: participant.email,
       role: Role.PARTICIPANT,
       participantId: participant.participantId,
@@ -293,7 +299,7 @@ export class AuthService {
     await this.refreshTokenRepository.save(refreshToken);
 
     // Generate new access token (keep same refresh token)
-    const accessToken = this.generateAccessToken(user);
+    const accessToken = this.generateAccessToken(user, refreshToken.id);
 
     return {
       accessToken,
@@ -333,7 +339,7 @@ export class AuthService {
     await this.refreshTokenRepository.save(refreshToken);
 
     // Generate new access token
-    const accessToken = this.generateParticipantAccessToken(participant);
+    const accessToken = this.generateParticipantAccessToken(participant, refreshToken.id);
 
     return {
       accessToken,
@@ -362,13 +368,15 @@ export class AuthService {
     });
 
     if (refreshToken) {
+      this.socketSessions?.revokeSession(refreshToken.id);
       await this.revokeRefreshToken(refreshToken.id, "User logout");
     }
   }
 
   async logoutAllSessions(userId: string): Promise<number> {
+    this.socketSessions?.revokePrincipal(userId);
     const result = await this.refreshTokenRepository.update(
-      { userId, isRevoked: false },
+      [{ userId, isRevoked: false }, { participantId: userId, isRevoked: false }],
       { isRevoked: true, revokedAt: new Date(), revokedReason: "Logout all sessions" },
     );
     return result.affected || 0;
@@ -383,6 +391,7 @@ export class AuthService {
   }
 
   async markPasswordChanged(userId: string): Promise<void> {
+    this.socketSessions?.revokePrincipal(userId);
     const now = new Date();
     await this.userRepository.update(userId, {
       mustChangePassword: false,
@@ -401,7 +410,7 @@ export class AuthService {
     currentPassword: string,
     newPassword: string,
   ): Promise<void> {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const user = await this.userRepository.findOne({ where: { id: userId }, select: { id: true, passwordHash: true } });
 
     if (!user || !user.passwordHash) {
       throw new UnauthorizedException("User not found");
@@ -421,6 +430,7 @@ export class AuthService {
       passwordChangedAt: now,
     });
 
+    this.socketSessions?.revokePrincipal(userId);
     // Revoke all refresh tokens (invalidate all sessions)
     await this.refreshTokenRepository.update(
       { userId, isRevoked: false },
@@ -438,6 +448,7 @@ export class AuthService {
   ): Promise<void> {
     const participant = await this.participantRepository.findOne({
       where: { id: participantId },
+      select: { id: true, passwordHash: true },
     });
 
     if (!participant) {
@@ -462,6 +473,7 @@ export class AuthService {
     participant.mustChangePassword = false;
     await this.participantRepository.save(participant);
 
+    this.socketSessions?.revokePrincipal(participantId);
     // Revoke all refresh tokens for this participant
     const now = new Date();
     await this.refreshTokenRepository.update(
@@ -500,7 +512,7 @@ export class AuthService {
         return null;
       }
 
-      participant.passwordResetToken = token;
+      participant.passwordResetToken = crypto.createHash("sha256").update(token).digest("hex");
       participant.passwordResetExpires = expiresAt;
       await this.participantRepository.save(participant);
 
@@ -520,7 +532,7 @@ export class AuthService {
         return null;
       }
 
-      user.passwordResetToken = token;
+      user.passwordResetToken = crypto.createHash("sha256").update(token).digest("hex");
       user.passwordResetExpires = expiresAt;
       await this.userRepository.save(user);
 
@@ -532,65 +544,33 @@ export class AuthService {
    * Reset password using a reset token
    */
   async resetPassword(token: string, newPassword: string): Promise<{ portal: PortalType }> {
-    // Check participant first
-    const participant = await this.participantRepository.findOne({
-      where: { passwordResetToken: token },
-    });
-
-    if (participant) {
-      if (!participant.passwordResetExpires || participant.passwordResetExpires < new Date()) {
-        throw new UnauthorizedException("Password reset token has expired");
+    const digest = crypto.createHash("sha256").update(token).digest("hex");
+    const passwordHash = await this.hashPassword(newPassword);
+    return this.userRepository.manager.transaction(async (manager) => {
+      for (const [entity, portal, identity] of [[Participant, PortalType.PARTICIPANT, "participantId"], [User, PortalType.STAFF, "userId"]] as const) {
+        const repository = manager.getRepository(entity as typeof User);
+        const account = await repository.findOne({ where: { passwordResetToken: digest, passwordResetExpires: MoreThan(new Date()) } });
+        if (!account) continue;
+        const now = new Date();
+        const result = await repository.update(
+          { id: account.id, passwordResetToken: digest, passwordResetExpires: MoreThan(now) },
+          { passwordHash, passwordResetToken: null, passwordResetExpires: null, mustChangePassword: false, ...(portal === PortalType.STAFF ? { passwordChangedAt: now } : {}) },
+        );
+        if (result.affected !== 1) throw new UnauthorizedException("Invalid or expired password reset token");
+        await manager.getRepository(RefreshToken).update(
+          { [identity]: account.id, isRevoked: false },
+          { isRevoked: true, revokedAt: now, revokedReason: "Password reset" },
+        );
+        this.socketSessions?.revokePrincipal(account.id);
+        return { portal };
       }
-
-      const passwordHash = await this.hashPassword(newPassword);
-      participant.passwordHash = passwordHash;
-      participant.passwordResetToken = undefined;
-      participant.passwordResetExpires = undefined;
-      participant.mustChangePassword = false;
-      await this.participantRepository.save(participant);
-
-      // Revoke all refresh tokens
-      await this.refreshTokenRepository.update(
-        { participantId: participant.id, isRevoked: false },
-        { isRevoked: true, revokedAt: new Date(), revokedReason: "Password reset" },
-      );
-
-      return { portal: PortalType.PARTICIPANT };
-    }
-
-    // Check staff users
-    const user = await this.userRepository.findOne({
-      where: { passwordResetToken: token },
+      throw new UnauthorizedException("Invalid or expired password reset token");
     });
-
-    if (user) {
-      if (!user.passwordResetExpires || user.passwordResetExpires < new Date()) {
-        throw new UnauthorizedException("Password reset token has expired");
-      }
-
-      const passwordHash = await this.hashPassword(newPassword);
-      user.passwordHash = passwordHash;
-      user.passwordResetToken = undefined;
-      user.passwordResetExpires = undefined;
-      user.mustChangePassword = false;
-      user.passwordChangedAt = new Date();
-      await this.userRepository.save(user);
-
-      // Revoke all refresh tokens
-      await this.refreshTokenRepository.update(
-        { userId: user.id, isRevoked: false },
-        { isRevoked: true, revokedAt: new Date(), revokedReason: "Password reset" },
-      );
-
-      return { portal: PortalType.STAFF };
-    }
-
-    throw new UnauthorizedException("Invalid or expired password reset token");
   }
 
   async getActiveSessions(userId: string): Promise<RefreshToken[]> {
     return this.refreshTokenRepository.find({
-      where: { userId, isRevoked: false },
+      where: [{ userId, isRevoked: false, expiresAt: MoreThan(new Date()) }, { participantId: userId, isRevoked: false, expiresAt: MoreThan(new Date()) }],
       order: { lastUsedAt: "DESC" },
     });
   }
@@ -599,13 +579,14 @@ export class AuthService {
     return bcrypt.hash(password, 10);
   }
 
-  private async generateTokens(
+  async generateTokens(
     user: User,
     userAgent?: string,
     ipAddress?: string,
   ): Promise<AuthResponseDto> {
-    const accessToken = this.generateAccessToken(user);
+    if (user.role === Role.MENTOR) await this.activateMentorOnLogin(user.email);
     const refreshToken = await this.createRefreshToken(user, userAgent, ipAddress);
+    const accessToken = this.generateAccessToken(user, refreshToken.id);
 
     return {
       accessToken,
@@ -615,9 +596,10 @@ export class AuthService {
     };
   }
 
-  private generateAccessToken(user: User): string {
+  private generateAccessToken(user: User, sessionId?: string): string {
     const payload = {
       sub: user.id,
+      sid: sessionId,
       email: user.email,
       role: user.role,
     };
@@ -669,19 +651,14 @@ export class AuthService {
    * This method updates their status to 'active' when they first log in.
    */
   private async activateMentorOnLogin(email: string): Promise<void> {
-    try {
-      const mentor = await this.mentorRepository.findOne({
-        where: { email: email.toLowerCase() },
-      });
-
-      if (mentor && mentor.status !== MentorStatus.ACTIVE) {
-        mentor.status = MentorStatus.ACTIVE;
-        await this.mentorRepository.save(mentor);
-        this.logger.log(`Mentor ${mentor.id} (${email}) activated on login`);
-      }
-    } catch (error) {
-      // Don't fail the login if mentor activation fails
-      this.logger.warn(`Failed to activate mentor ${email} on login: ${error.message}`);
+    const mentor = await this.mentorRepository.findOne({
+      where: { email: email.toLowerCase() }, relations: ["cohort"],
+    });
+    if (!mentor || mentor.status === MentorStatus.INACTIVE) throw new UnauthorizedException("Mentor account is inactive");
+    if (mentor.cohort && this.blockedCohortStatuses.includes(mentor.cohort.status)) throw new UnauthorizedException("COHORT_NOT_ACCESSIBLE: Your cohort is no longer accessible");
+    if (mentor.status === MentorStatus.IMPORTED) {
+      mentor.status = MentorStatus.ACTIVE;
+      await this.mentorRepository.save(mentor);
     }
   }
 

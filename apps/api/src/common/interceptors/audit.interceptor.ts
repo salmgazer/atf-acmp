@@ -6,9 +6,11 @@ import {
   Logger,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { Observable, tap } from "rxjs";
+import { Observable, from, mergeMap } from "rxjs";
+import { DataSource } from "typeorm";
 import { AuditService } from "@/modules/audit/audit.service";
 import { AUDIT_KEY, AuditMetadata } from "@/common/decorators/audit.decorator";
+import { redactSensitive } from "../services/safe-content";
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -16,7 +18,8 @@ export class AuditInterceptor implements NestInterceptor {
 
   constructor(
     private readonly reflector: Reflector,
-    private readonly auditService: AuditService
+    private readonly auditService: AuditService,
+    private readonly db: DataSource,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
@@ -34,23 +37,27 @@ export class AuditInterceptor implements NestInterceptor {
     const user = request.user;
     const args = [request.params, request.body, request.query];
 
-    return next.handle().pipe(
-      tap({
-        next: async (result) => {
+    const id = request.params?.id;
+    const metadata = this.db.entityMetadatas.find(item => item.name === auditMetadata.entityType);
+    const before = id && metadata ? this.db.getRepository(metadata.target).findOne({ where: { id } }).then(value => this.sanitizeData(value)).catch(() => undefined) : Promise.resolve(undefined);
+    return from(before).pipe(mergeMap(snapshot => next.handle().pipe(
+      mergeMap(async (result) => {
           try {
-            const entityId = auditMetadata.getEntityId?.(result, args);
+            const entityId = auditMetadata.getEntityId?.(result, args) || id;
             const entityName = auditMetadata.getEntityName?.(result, args);
             const description = auditMetadata.getDescription?.(result, args);
 
             await this.auditService.log({
-              actorId: user?.id,
+              actorId: user?.role === "participant" ? undefined : user?.id,
               actorEmail: user?.email,
               action: auditMetadata.action,
               entityType: auditMetadata.entityType,
               entityId,
               entityName,
               description,
+              before: snapshot,
               after: this.sanitizeData(result),
+              metadata: { principalId: user?.id, principalRole: user?.role },
               ipAddress: this.getIpAddress(request),
               userAgent: request.headers["user-agent"],
             });
@@ -58,12 +65,9 @@ export class AuditInterceptor implements NestInterceptor {
             // Log error but don't fail the request
             this.logger.error(`Failed to create audit log: ${error.message}`);
           }
-        },
-        error: () => {
-          // Don't log failed operations
-        },
+          return result;
       })
-    );
+    )));
   }
 
   private getIpAddress(request: any): string | undefined {
@@ -77,28 +81,6 @@ export class AuditInterceptor implements NestInterceptor {
 
   private sanitizeData(data: any): Record<string, any> | undefined {
     if (!data) return undefined;
-
-    // Convert to plain object if needed
-    const obj = typeof data.toJSON === "function" ? data.toJSON() : { ...data };
-
-    // Remove sensitive fields
-    const sensitiveFields = [
-      "password",
-      "passwordHash",
-      "token",
-      "refreshToken",
-      "accessToken",
-      "secret",
-      "apiKey",
-    ];
-
-    const sanitized = { ...obj };
-    for (const field of sensitiveFields) {
-      if (field in sanitized) {
-        sanitized[field] = "[REDACTED]";
-      }
-    }
-
-    return sanitized;
+    return redactSensitive(data);
   }
 }

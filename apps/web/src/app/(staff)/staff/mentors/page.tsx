@@ -1081,7 +1081,7 @@ function MentorsContent() {
               <span className="font-medium text-foreground">
                 {mentorToRestore?.firstName} {mentorToRestore?.lastName}
               </span>
-              ? They will be set to "Imported" status and can log in again.
+              ? They will be set to &quot;Imported&quot; status and can log in again.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

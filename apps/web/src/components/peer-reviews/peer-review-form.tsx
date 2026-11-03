@@ -269,7 +269,7 @@ export function PeerReviewForm({ assignmentId }: PeerReviewFormProps) {
                 <div>
                   <CardTitle className="text-lg">{assignment.stage.name}</CardTitle>
                   <CardDescription>
-                    Review this team's submission for Stage {assignment.stage.number}
+                    Review this team&apos;s submission for Stage {assignment.stage.number}
                   </CardDescription>
                 </div>
               </div>
@@ -475,7 +475,7 @@ export function PeerReviewForm({ assignmentId }: PeerReviewFormProps) {
             <AlertDialogHeader>
               <AlertDialogTitle>Submit Peer Review?</AlertDialogTitle>
               <AlertDialogDescription>
-                Once submitted, you won't be able to make changes to this review.
+                Once submitted, you won&apos;t be able to make changes to this review.
                 Your calculated score is <strong>{calculateOverallScore()}%</strong>.
               </AlertDialogDescription>
             </AlertDialogHeader>

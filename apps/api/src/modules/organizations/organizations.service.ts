@@ -106,7 +106,7 @@ export class OrganizationsService {
   async findOne(id: string): Promise<Organization> {
     const organization = await this.organizationRepository.findOne({
       where: { id },
-      relations: ["users"],
+      relations: ["users", "cohort"],
     });
 
     if (!organization) {
@@ -123,9 +123,9 @@ export class OrganizationsService {
     });
   }
 
-  async getVerticalsForOrganization(email: string): Promise<Vertical[]> {
+  async getVerticalsForOrganization(organizationId: string): Promise<Vertical[]> {
     const organization = await this.organizationRepository.findOne({
-      where: { email },
+      where: { id: organizationId },
       relations: ["cohort"],
     });
 

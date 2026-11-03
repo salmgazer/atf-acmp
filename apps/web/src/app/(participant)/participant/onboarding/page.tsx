@@ -753,7 +753,7 @@ function VerticalsStep({
       <div>
         <h2 className="text-xl font-bold">Preferred Verticals</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Select up to 2 verticals you're interested in
+          Select up to 2 verticals you&apos;re interested in
         </p>
       </div>
 

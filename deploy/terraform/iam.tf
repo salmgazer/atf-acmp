@@ -5,7 +5,7 @@
 # ECS Task Execution Role
 resource "aws_iam_role" "ecs_task_execution" {
   name = "ecsTaskExecutionRole-${var.environment}"
-  
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -27,7 +27,7 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
 resource "aws_iam_role_policy" "ecs_secrets_access" {
   name = "secrets-access"
   role = aws_iam_role.ecs_task_execution.id
-  
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -54,11 +54,16 @@ resource "aws_iam_role_policy" "ecs_secrets_access" {
   })
 }
 
+resource "aws_iam_role" "ecs_task" {
+  name               = "acmp-runtime-${var.environment}"
+  assume_role_policy = aws_iam_role.ecs_task_execution.assume_role_policy
+}
+
 # Allow ECS tasks to access S3 for file uploads
 resource "aws_iam_role_policy" "ecs_s3_access" {
   name = "s3-uploads-access"
-  role = aws_iam_role.ecs_task_execution.id
-  
+  role = aws_iam_role.ecs_task.id
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -82,7 +87,7 @@ resource "aws_iam_role_policy" "ecs_s3_access" {
 # ECS Infrastructure Role for Express Mode
 resource "aws_iam_role" "ecs_infrastructure" {
   name = "ecsInfrastructureRoleForExpressServices-${var.environment}"
-  
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -110,7 +115,7 @@ resource "aws_iam_openid_connect_provider" "github" {
 # GitHub Actions Role
 resource "aws_iam_role" "github_actions" {
   name = "github-actions-ecs-role-${var.environment}"
-  
+
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -152,7 +157,7 @@ resource "aws_iam_role_policy_attachment" "github_ecs" {
 resource "aws_iam_role_policy" "github_pass_role" {
   name = "pass-role-to-ecs"
   role = aws_iam_role.github_actions.id
-  
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -160,6 +165,7 @@ resource "aws_iam_role_policy" "github_pass_role" {
       Action = "iam:PassRole"
       Resource = [
         aws_iam_role.ecs_task_execution.arn,
+        aws_iam_role.ecs_task.arn,
         aws_iam_role.ecs_infrastructure.arn,
         # Also allow passing the non-suffixed roles that AWS/workflow uses
         "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/ecsTaskExecutionRole",
@@ -173,7 +179,7 @@ resource "aws_iam_role_policy" "github_pass_role" {
 resource "aws_iam_role_policy" "github_secrets_access" {
   name = "secrets-access-for-migrations"
   role = aws_iam_role.github_actions.id
-  
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{

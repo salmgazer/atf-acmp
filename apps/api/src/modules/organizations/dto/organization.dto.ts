@@ -1,3 +1,4 @@
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
 import {
   IsString,
   IsEmail,
@@ -136,9 +137,15 @@ export class OrganizationQueryDto {
   cohortId?: string;
 
   @IsOptional()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number;
 
   @IsOptional()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number;
 }
 
@@ -165,7 +172,13 @@ export class OrganizationResponseDto {
 export class PaginatedOrganizationsDto {
   data: OrganizationResponseDto[];
   total: number;
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page: number;
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit: number;
   totalPages: number;
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { SafeHtml } from "@/components/ui/safe-html";
+
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { ParticipantLayout } from "@/components/layouts";
@@ -249,7 +251,7 @@ function BriefsContent() {
               <div>
                 <h3 className="font-medium">Ready to rank your favorites?</h3>
                 <p className="text-sm text-muted-foreground">
-                  Select up to 5 briefs you're interested in
+                  Select up to 5 briefs you&apos;re interested in
                 </p>
               </div>
               <Button asChild size="sm">
@@ -396,27 +398,27 @@ function BriefDetailModal({
           {/* Description */}
           <div>
             <h3 className="font-semibold mb-2">Description</h3>
-            <div
+            <SafeHtml
               className="prose prose-sm max-w-none dark:prose-invert"
-              dangerouslySetInnerHTML={{ __html: brief.description }}
+              html={brief.description}
             />
           </div>
 
           {/* Problem Statement */}
           <div>
             <h3 className="font-semibold mb-2">Problem Statement</h3>
-            <div
+            <SafeHtml
               className="prose prose-sm max-w-none dark:prose-invert"
-              dangerouslySetInnerHTML={{ __html: brief.problemStatement }}
+              html={brief.problemStatement}
             />
           </div>
 
           {/* Expected Outcomes */}
           <div>
             <h3 className="font-semibold mb-2">Expected Outcomes</h3>
-            <div
+            <SafeHtml
               className="prose prose-sm max-w-none dark:prose-invert"
-              dangerouslySetInnerHTML={{ __html: brief.expectedOutcomes }}
+              html={brief.expectedOutcomes}
             />
           </div>
 

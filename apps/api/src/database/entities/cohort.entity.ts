@@ -69,6 +69,9 @@ export class Cohort extends BaseEntity {
   @Column({ type: "jsonb", default: [] })
   verticals: string[];
 
+  @Column({ type: 'jsonb', default: [] })
+  groups: string[];
+
   @Column({ name: "brief_cap", default: 50 })
   briefCap: number;
 

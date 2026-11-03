@@ -1,3 +1,5 @@
+import { IsTimeZone } from "class-validator";
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
 import {
   IsString,
   IsOptional,
@@ -38,12 +40,18 @@ export class BrowseMentorsQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number = 1;
 
   @ApiPropertyOptional()
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number = 20;
 }
 
@@ -65,7 +73,13 @@ export class MentorBrowseItemDto {
 export class BrowseMentorsResponseDto {
   data: MentorBrowseItemDto[];
   total: number;
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page: number;
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit: number;
   totalPages: number;
 }
@@ -155,6 +169,7 @@ export class BookSessionDto {
   @ApiPropertyOptional({ description: "Timezone for the session (default Africa/Nairobi)" })
   @IsOptional()
   @IsString()
+  @IsTimeZone()
   timezone?: string = "Africa/Nairobi";
 }
 

@@ -85,7 +85,7 @@ export function JournalDetail({ id }: JournalDetailProps) {
         </div>
         {entry.canEdit && (
           <Button asChild variant="outline">
-            <Link href={`/app/journals/${id}/edit`}>
+            <Link href={`/participant/journals/${id}/edit`}>
               <Edit className="mr-2 h-4 w-4" />
               Edit
               <Badge variant="secondary" className="ml-2">

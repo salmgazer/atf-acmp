@@ -1,3 +1,5 @@
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
 import {
   IsString,
   IsOptional,
@@ -40,10 +42,12 @@ export class CreateAnnouncementDto {
   scheduledAt?: string;
 
   @IsBoolean()
+  @StrictBoolean()
   @IsOptional()
   isPinned?: boolean;
 
   @IsBoolean()
+  @StrictBoolean()
   @IsOptional()
   publishImmediately?: boolean;
 }
@@ -73,6 +77,7 @@ export class UpdateAnnouncementDto {
   scheduledAt?: string;
 
   @IsBoolean()
+  @StrictBoolean()
   @IsOptional()
   isPinned?: boolean;
 
@@ -95,10 +100,16 @@ export class AnnouncementQueryDto {
 
   @Type(() => Number)
   @IsOptional()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number;
 
   @Type(() => Number)
   @IsOptional()
+  @QueryIsInt()
+  @QueryMin(0)
+  @QueryMax(1000000)
   offset?: number;
 }
 
@@ -109,9 +120,15 @@ export class ParticipantAnnouncementQueryDto {
 
   @Type(() => Number)
   @IsOptional()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number;
 
   @Type(() => Number)
   @IsOptional()
+  @QueryIsInt()
+  @QueryMin(0)
+  @QueryMax(1000000)
   offset?: number;
 }

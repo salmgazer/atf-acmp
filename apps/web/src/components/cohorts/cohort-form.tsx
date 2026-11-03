@@ -47,6 +47,7 @@ const cohortFormSchema = z.object({
   maxTeamsPerBrief: z.coerce.number().min(1).max(100),
   sessionRate: z.coerce.number().min(0).optional(),
   countries: z.array(z.string()).min(1, "Select at least one country"),
+  groups: z.array(z.string().trim().min(1).max(100)).max(100).refine(names => new Set(names.map(name => name.toLowerCase())).size === names.length, "Group names must be unique"),
   deadlines: z.object({
     teamFormationEnd: z.string().optional(),
     briefSelectionEnd: z.string().optional(),
@@ -76,6 +77,7 @@ interface CohortFormProps {
 
 export function CohortForm({ cohort, onSubmit, onCancel, isLoading }: CohortFormProps) {
   const [countryInput, setCountryInput] = useState("");
+  const [groupInput, setGroupInput] = useState("");
 
   const {
     register,
@@ -95,6 +97,7 @@ export function CohortForm({ cohort, onSubmit, onCancel, isLoading }: CohortForm
       maxTeamsPerBrief: cohort?.maxTeamsPerBrief || 25,
       sessionRate: cohort?.sessionRate || 0,
       countries: cohort?.countries || [],
+      groups: cohort?.groups || [],
       deadlines: {
         teamFormationEnd: cohort?.deadlines?.teamFormationEnd?.split("T")[0] || "",
         briefSelectionEnd: cohort?.deadlines?.briefSelectionEnd?.split("T")[0] || "",
@@ -109,6 +112,11 @@ export function CohortForm({ cohort, onSubmit, onCancel, isLoading }: CohortForm
   });
 
   const selectedCountries = watch("countries");
+  const groups = watch("groups");
+  const addGroup = () => {
+    const name = groupInput.trim();
+    if (name && name.length <= 100 && groups.length < 100 && !groups.some(group => group.toLowerCase() === name.toLowerCase())) { setValue("groups", [...groups, name], { shouldValidate: true }); setGroupInput(""); }
+  };
 
   const handleAddCountry = (country: string) => {
     if (country && !selectedCountries.includes(country)) {
@@ -353,6 +361,17 @@ export function CohortForm({ cohort, onSubmit, onCancel, isLoading }: CohortForm
         <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
           💡 Stage deadlines (Stage 1, Stage 2, Stage 3, Demo Day) are managed in the Stages section after creating the cohort.
         </p>
+      </div>
+
+      <div className="space-y-4">
+        <div id="groups" className="scroll-mt-6"><h3 className="text-lg font-medium">Groups</h3><p className="text-sm text-muted-foreground">Tag participants within this cohort. Teams can only contain participants in the same group. A group will be required when importing participants if any groups are configured.</p></div>
+        <div className="flex gap-2">
+          <Input aria-label="New group name" placeholder="e.g., University A or Regional Hub" maxLength={100} value={groupInput} onChange={event => setGroupInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addGroup(); } }} />
+          <Button type="button" variant="outline" onClick={addGroup} disabled={!groupInput.trim() || groups.length >= 100}>Add group</Button>
+        </div>
+        <div className="flex flex-wrap gap-2">{groups.map(group => <Badge key={group} variant="secondary" className="gap-2">{group}<button type="button" aria-label={`Remove group ${group}`} onClick={() => setValue("groups", groups.filter(name => name !== group), { shouldValidate: true })}><X className="h-3 w-3" /></button></Badge>)}</div>
+        {errors.groups && <p className="text-sm text-destructive">{errors.groups.message}</p>}
+        <p className="text-xs text-muted-foreground">Groups assigned to participants or teams cannot be removed.</p>
       </div>
 
       {/* Rubric Criteria */}

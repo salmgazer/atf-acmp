@@ -1,3 +1,5 @@
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import {
   IsString,
   IsUUID,
@@ -72,10 +74,12 @@ export class CreateResourceDto {
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isPublished?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isFeatured?: boolean;
 
   @IsOptional()
@@ -145,10 +149,12 @@ export class UpdateResourceDto {
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isPublished?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isFeatured?: boolean;
 
   @IsOptional()
@@ -179,17 +185,23 @@ export class ResourceQueryDto {
 
   @IsOptional()
   @IsBoolean()
-  @Type(() => Boolean)
+  @StrictBoolean()
   featuredOnly?: boolean;
 
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number;
 
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number;
 }
 

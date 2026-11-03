@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { GroupFilter } from "@/components/cohorts/group-filter";
 import Link from "next/link";
+import { CreateTeamDialog } from "@/components/teams/create-team-dialog";
 import { StaffLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import {
@@ -90,6 +92,7 @@ function TeamRow({ team }: { team: Team }) {
           </p>
         </div>
       </td>
+      <td className="p-4 text-sm">{team.group || "Not assigned"}</td>
       <td className="p-4">
         <div className="flex items-center gap-1.5 text-muted-foreground">
           <Users className="h-4 w-4 text-muted-foreground" />
@@ -134,6 +137,7 @@ function TeamRow({ team }: { team: Team }) {
 function TeamsContent() {
   const [statusFilter, setStatusFilter] = useState<TeamStatus | "all">("all");
   const [search, setSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState("all");
   const [selectedCohortId, setSelectedCohortId] = useState<string | null>(null);
   const [hasInitialized, setHasInitialized] = useState(false);
   const [briefFilter, setBriefFilter] = useState<string>("all");
@@ -158,11 +162,15 @@ function TeamsContent() {
 
   // Use local cohort if explicitly set, otherwise fall back to global
   const effectiveCohortId = selectedCohortId ?? globalCohortId ?? undefined;
+  const groupOptions = Array.from(new Set(cohorts.filter(c => !effectiveCohortId || c.id === effectiveCohortId).flatMap(c => c.groups || [])));
+  useEffect(() => { setGroupFilter("all"); setPage(1); }, [effectiveCohortId]);
 
   const { data: teamsData, isLoading } = useTeams({
     status: statusFilter === "all" ? undefined : statusFilter,
     search: search || undefined,
     cohortId: effectiveCohortId,
+    group: groupFilter.startsWith("group:") ? groupFilter.slice(6) : undefined,
+    ungrouped: groupFilter === "ungrouped" || undefined,
     hasbrief: briefFilter === "all" ? undefined : briefFilter === "with",
     page,
     limit: 20,
@@ -201,6 +209,7 @@ function TeamsContent() {
   };
 
   const activeFilterCount = [
+    groupFilter !== "all",
     statusFilter !== "all",
     selectedCohortId !== null && selectedCohortId !== globalCohortId,
     briefFilter !== "all",
@@ -209,6 +218,7 @@ function TeamsContent() {
   const hasActiveFilters = activeFilterCount > 0;
 
   const clearFilters = () => {
+    setGroupFilter("all");
     setStatusFilter("all");
     setSelectedCohortId(null);
     setBriefFilter("all");
@@ -222,11 +232,20 @@ function TeamsContent() {
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (search) params.set("search", search);
       if (effectiveCohortId) params.set("cohortId", effectiveCohortId);
+      if (groupFilter.startsWith("group:")) params.set("group", groupFilter.slice(6));
+      if (groupFilter === "ungrouped") params.set("ungrouped", "true");
       if (briefFilter !== "all") params.set("hasbrief", briefFilter === "with" ? "true" : "false");
-      params.set("limit", "10000");
-
-      const response = await api.get<{ data: Team[] }>(`/teams?${params.toString()}`);
-      const allTeams = response.data;
+      params.set("limit", "500");
+      const allTeams: Team[] = [];
+      let exportPage = 1;
+      let exportPages = 1;
+      do {
+        params.set("page", String(exportPage));
+        const response = await api.get<{ data: Team[]; totalPages: number }>(`/teams?${params.toString()}`);
+        allTeams.push(...response.data);
+        exportPages = response.totalPages || 1;
+        exportPage++;
+      } while (exportPage <= exportPages);
 
       if (allTeams.length === 0) {
         toast.error("No teams to export");
@@ -236,6 +255,7 @@ function TeamsContent() {
       const headers = [
         "Team Name",
         "Invite Code",
+        "Group",
         "Member Count",
         "Brief",
         "Partner",
@@ -248,6 +268,7 @@ function TeamsContent() {
       const rows = allTeams.map((t) => [
         t.name,
         t.inviteCode,
+        t.group || "",
         String(t.members?.length || t.memberCount || 0),
         t.brief?.title || "",
         t.brief?.organization?.name || "",
@@ -298,6 +319,8 @@ function TeamsContent() {
           </p>
         </div>
 
+        <CreateTeamDialog key={effectiveCohortId || "none"} cohortId={effectiveCohortId} groups={groupOptions} />
+
         {/* Stats */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="rounded-xl border border-border bg-card p-4">
@@ -343,7 +366,7 @@ function TeamsContent() {
                   )}
                 </h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Automatically form teams from participants who haven't joined a team yet
+                  Automatically form teams from participants who haven&apos;t joined a team yet
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -434,7 +457,7 @@ function TeamsContent() {
 
             {!formationPreview && !formationLoading && (
               <p className="text-sm text-muted-foreground mt-3">
-                Click "Run Team Formation" to generate a preview of proposed teams based on participant preferences, 
+                Click &quot;Run Team Formation&quot; to generate a preview of proposed teams based on participant preferences,
                 skills, and interests. You can review before finalizing.
               </p>
             )}
@@ -567,6 +590,7 @@ function TeamsContent() {
                 <option value="without">Without Brief</option>
               </select>
             </div>
+            <GroupFilter groups={groupOptions} value={groupFilter} onChange={value => { setGroupFilter(value); setPage(1); }} />
             {hasActiveFilters && (
               <button
                 onClick={clearFilters}
@@ -603,6 +627,7 @@ function TeamsContent() {
                 <thead className="bg-muted">
                   <tr>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Team</th>
+                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Group</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Members</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Brief</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Status</th>

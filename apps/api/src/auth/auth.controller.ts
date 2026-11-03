@@ -1,6 +1,6 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Get, Req, Logger } from "@nestjs/common";
+import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Get, Req, Res, UnauthorizedException, Logger } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from "@nestjs/swagger";
-import { Request } from "express";
+import { Request, Response } from "express";
 import { AuthService } from "./auth.service";
 import { MagicLinkService } from "./magic-link.service";
 import { EmailService } from "../email/email.service";
@@ -32,6 +32,25 @@ export class AuthController {
     private readonly emailService: EmailService,
   ) {}
 
+  private setSession(res: Response, result: AuthResponseDto): AuthResponseDto {
+    res.cookie("acmp_refresh", result.refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging", sameSite: "lax", path: "/api/auth", maxAge: 7 * 24 * 60 * 60 * 1000 });
+    return { ...result, refreshToken: "" };
+  }
+
+  private checkOrigin(req: Request): void {
+    const origin = req.headers.origin;
+    const allowed = (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || "http://localhost:3000").split(",").map(x => x.trim());
+    if (origin && !allowed.includes(origin)) throw new UnauthorizedException("Invalid session request origin");
+  }
+
+  private refreshCredential(req: Request, dto: RefreshTokenDto, required = true): string {
+    const cookie = req.headers.cookie?.split(";").map(x => x.trim()).find(x => x.startsWith("acmp_refresh="));
+    let value = dto.refreshToken || "";
+    try { if (cookie) value = decodeURIComponent(cookie.slice("acmp_refresh=".length)); } catch { throw new UnauthorizedException("Invalid session cookie"); }
+    if (required && !value) throw new UnauthorizedException("Session credential is missing");
+    return value;
+  }
+
   @Post("firebase/verify")
   @Public()
   @AuthThrottle()
@@ -42,10 +61,11 @@ export class AuthController {
   async verifyFirebaseToken(
     @Body() dto: FirebaseVerifyDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
     const userAgent = req.headers["user-agent"];
     const ipAddress = req.ip || req.socket.remoteAddress;
-    return this.authService.verifyFirebaseToken(dto.idToken, dto.portal, userAgent, ipAddress);
+    return this.setSession(res, await this.authService.verifyFirebaseToken(dto.idToken, dto.portal, userAgent, ipAddress));
   }
 
   @Post("login")
@@ -55,10 +75,10 @@ export class AuthController {
   @ApiOperation({ summary: "Login with email and password" })
   @ApiResponse({ status: 200, description: "Login successful", type: AuthResponseDto })
   @ApiResponse({ status: 401, description: "Invalid credentials" })
-  async login(@Body() dto: LoginDto, @Req() req: Request): Promise<AuthResponseDto> {
+  async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<AuthResponseDto> {
     const userAgent = req.headers["user-agent"];
     const ipAddress = req.ip || req.socket.remoteAddress;
-    return this.authService.loginWithPassword(dto.email, dto.password, dto.portal, userAgent, ipAddress);
+    return this.setSession(res, await this.authService.loginWithPassword(dto.email, dto.password, dto.portal, userAgent, ipAddress));
   }
 
   @Post("refresh")
@@ -71,20 +91,25 @@ export class AuthController {
   async refreshToken(
     @Body() dto: RefreshTokenDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
     const userAgent = req.headers["user-agent"];
     const ipAddress = req.ip || req.socket.remoteAddress;
-    return this.authService.refreshAccessToken(dto.refreshToken, userAgent, ipAddress);
+    this.checkOrigin(req);
+    return this.setSession(res, await this.authService.refreshAccessToken(this.refreshCredential(req, dto), userAgent, ipAddress));
   }
 
   @Post("logout")
-  @UseGuards(JwtAuthGuard)
+  @Public()
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Logout and invalidate refresh token" })
   @ApiResponse({ status: 200, description: "Logged out successfully" })
-  async logout(@Body() dto: RefreshTokenDto): Promise<{ message: string }> {
-    await this.authService.logout(dto.refreshToken);
+  async logout(@Body() dto: RefreshTokenDto, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<{ message: string }> {
+    this.checkOrigin(req);
+    const credential = this.refreshCredential(req, dto, false);
+    if (credential) await this.authService.logout(credential);
+    res.clearCookie("acmp_refresh", { path: "/api/auth" });
     return { message: "Logged out successfully" };
   }
 
@@ -121,8 +146,8 @@ export class AuthController {
   @ApiOperation({ summary: "Verify magic link code" })
   @ApiResponse({ status: 200, description: "Code verified, token returned", type: AuthResponseDto })
   @ApiResponse({ status: 401, description: "Invalid or expired code" })
-  async verifyMagicCode(@Body() dto: VerifyMagicCodeDto): Promise<AuthResponseDto> {
-    return this.magicLinkService.verifyCode(dto.email, dto.code);
+  async verifyMagicCode(@Body() dto: VerifyMagicCodeDto, @Res({ passthrough: true }) res: Response): Promise<AuthResponseDto> {
+    return this.setSession(res, await this.magicLinkService.verifyCode(dto.email, dto.code));
   }
 
   @Post("change-password")

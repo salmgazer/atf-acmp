@@ -1,3 +1,4 @@
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
 import { IsUUID, IsOptional, IsEnum, IsArray, IsNumber, Min, Max } from "class-validator";
 import { Type } from "class-transformer";
 import { CertificateTier } from "@/database/entities/certificate.entity";
@@ -30,12 +31,18 @@ export class CertificateQueryDto {
   @IsNumber()
   @Min(1)
   @Max(100)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number = 50;
 
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   @Min(0)
+  @QueryIsInt()
+  @QueryMin(0)
+  @QueryMax(1000000)
   offset?: number = 0;
 }
 
@@ -48,7 +55,7 @@ export interface TierThresholds {
   winner: { maxRank: number }; // e.g., rank 1-3 are winners
   excellence: { minScore: number }; // e.g., score >= 80
   completion: { minScore: number }; // e.g., score >= 50, submitted all stages
-  participation: {}; // Everyone else who participated
+  participation: Record<string, never>; // Everyone else who participated
 }
 
 export const DEFAULT_TIER_THRESHOLDS: TierThresholds = {

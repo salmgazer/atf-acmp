@@ -60,6 +60,9 @@ export class EmailService {
         host: smtpHost,
         port: smtpPort,
         secure: smtpSecure,
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 20000,
         auth: this.configService.get<string>("SMTP_USER")
           ? {
               user: this.configService.get<string>("SMTP_USER"),
@@ -174,7 +177,11 @@ export class EmailService {
     await this.sendEmail(to, subject, html, text);
   }
 
-  private async sendEmail(to: string, subject: string, html: string, text?: string): Promise<void> {
+  async sendCalendarInvitation(to: string, subject: string, html: string, text: string, calendar: { method: "REQUEST" | "CANCEL"; content: string }): Promise<void> {
+    await this.sendEmail(to, subject, html, text, calendar);
+  }
+
+  private async sendEmail(to: string, subject: string, html: string, text?: string, calendar?: { method: "REQUEST" | "CANCEL"; content: string }): Promise<void> {
     // Try Resend first (primary email provider)
     if (this.resendClient) {
       try {
@@ -186,6 +193,7 @@ export class EmailService {
           subject,
           html,
           text,
+          ...(calendar ? { attachments: [{ filename: "invite.ics", content: Buffer.from(calendar.content).toString("base64"), contentType: `text/calendar; charset=utf-8; method=${calendar.method}` }] } : {}),
         });
 
         // Resend SDK returns errors in response, not as thrown exceptions
@@ -213,6 +221,7 @@ export class EmailService {
           subject,
           html,
           text,
+          ...(calendar ? { icalEvent: { filename: "invite.ics", method: calendar.method, content: calendar.content } } : {}),
         });
 
         this.logger.log(`Email sent via SMTP to ${to}`);
@@ -224,6 +233,7 @@ export class EmailService {
 
     // Fall back to Mailchimp
     if (!this.mailchimpApiKey) {
+      if (calendar) throw new Error("Calendar invitation email delivery is not configured");
       this.logger.warn(`Email not sent (no API key configured): ${to} - ${subject}`);
       this.logger.debug(`Email content: ${html}`);
       return;
@@ -233,6 +243,7 @@ export class EmailService {
       // Mailchimp Transactional API (Mandrill)
       const response = await fetch("https://mandrillapp.com/api/1.0/messages/send", {
         method: "POST",
+        signal: AbortSignal.timeout(20000),
         headers: {
           "Content-Type": "application/json",
         },
@@ -244,6 +255,8 @@ export class EmailService {
             to: [{ email: to, type: "to" }],
             subject,
             html,
+            text,
+            ...(calendar ? { attachments: [{ type: `text/calendar; method=${calendar.method}`, name: "invite.ics", content: Buffer.from(calendar.content).toString("base64") }] } : {}),
           },
         }),
       });
@@ -251,6 +264,13 @@ export class EmailService {
       if (!response.ok) {
         const error = await response.text();
         throw new Error(`Mailchimp API error: ${error}`);
+      }
+
+      if (calendar) {
+        const recipients = await response.json();
+        if (!Array.isArray(recipients) || recipients.some(result => !["sent", "queued", "scheduled"].includes(result.status))) {
+          throw new Error("Calendar invitation email was rejected by the provider");
+        }
       }
 
       this.logger.log(`Email sent via Mailchimp to ${to}`);
@@ -546,7 +566,7 @@ You have been invited to participate in the ATF AI Challenge. This is an excitin
 
 ${customMessage ? `Message from ATF Team: "${customMessage}"` : ""}
 
-Access your organization portal: ${portalUrl}/org/login
+Access your organization portal: ${portalUrl}/partners/login
 
 Use your email address ${email} to log in. You will receive a verification code to access your account.
 
@@ -572,7 +592,7 @@ The ATF Team
     briefId: string
   ): Promise<boolean> {
     const portalUrl = this.frontendUrl;
-    const briefUrl = `${portalUrl}/org/briefs/${briefId}`;
+    const briefUrl = `${portalUrl}/partners/briefs/${briefId}`;
 
     const html = this.getBriefRevisionTemplate(organizationName, briefTitle, feedback, briefUrl);
     const text = `
@@ -701,7 +721,7 @@ The ATF Team
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
                         <td align="center" style="padding: 8px 0;">
-                          <a href="${portalUrl}/org/login" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
+                          <a href="${portalUrl}/partners/login" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
                             Access Portal
                           </a>
                         </td>
@@ -920,7 +940,7 @@ The ATF Team
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
                         <td align="center" style="padding: 8px 0;">
-                          <a href="${portalUrl}/app/team" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
+                          <a href="${portalUrl}/participant/team" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
                             View Invitation
                           </a>
                         </td>
@@ -981,7 +1001,7 @@ The ATF Team
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
                         <td align="center" style="padding: 8px 0;">
-                          <a href="${portalUrl}/app/team" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
+                          <a href="${portalUrl}/participant/team" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
                             View Team
                           </a>
                         </td>
@@ -1062,7 +1082,7 @@ The ATF Team
                     <table width="100%" cellpadding="0" cellspacing="0">
                       <tr>
                         <td align="center" style="padding: 8px 0;">
-                          <a href="${portalUrl}/app/team" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
+                          <a href="${portalUrl}/participant/team" style="display: inline-block; padding: 14px 32px; background-color: #111827; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
                             Review Request
                           </a>
                         </td>

@@ -59,7 +59,7 @@ export function MyReviewsList() {
           <Users className="h-12 w-12 text-muted-foreground mb-4" />
           <h3 className="text-lg font-medium mb-1">No Peer Reviews Assigned</h3>
           <p className="text-muted-foreground text-center max-w-md">
-            You don't have any peer review assignments yet. Check back later when peer reviews are assigned for your cohort.
+            You don&apos;t have any peer review assignments yet. Check back later when peer reviews are assigned for your cohort.
           </p>
         </CardContent>
       </Card>
@@ -157,7 +157,7 @@ function AssignmentCard({ assignment }: { assignment: PeerReviewAssignment }) {
         {/* Action Button */}
         {canReview ? (
           <Button asChild className="w-full">
-            <Link href={`/app/peer-reviews/${assignment.id}`}>
+            <Link href={`/participant/peer-reviews/${assignment.id}`}>
               {assignment.status === "in_progress" ? "Continue Review" : "Start Review"}
               <ArrowRight className="ml-2 h-4 w-4" />
             </Link>

@@ -1,3 +1,5 @@
+import { resolveCohortGroup } from "@/common/services/cohort-groups";
+import { Transactional } from "@/common/decorators/transactional.decorator";
 import {
   Injectable,
   NotFoundException,
@@ -7,7 +9,7 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
-import { Repository, ILike, In } from "typeorm";
+import { Repository, ILike, In, IsNull } from "typeorm";
 import * as bcrypt from "bcrypt";
 import {
   Participant,
@@ -49,6 +51,7 @@ export class ParticipantsService {
     private readonly cohortsService: CohortsService,
   ) {}
 
+  @Transactional()
   async create(dto: CreateParticipantDto): Promise<Participant> {
     // Verify cohort exists
     const cohort = await this.cohortRepository.findOne({
@@ -57,6 +60,8 @@ export class ParticipantsService {
     if (!cohort) {
       throw new NotFoundException("Cohort not found");
     }
+
+    const group = resolveCohortGroup(cohort, dto.group);
 
     // Check for existing participant (including soft-deleted)
     const existingByEmail = await this.participantRepository.findOne({
@@ -79,7 +84,8 @@ export class ParticipantsService {
 
     // If there's a soft-deleted record with matching email, restore and update it
     if (existingByEmail && existingByEmail.deletedAt) {
-      existingByEmail.deletedAt = undefined;
+      await this.resetRestoredAccess(existingByEmail.id);
+      existingByEmail.deletedAt = null as any;
       existingByEmail.participantId = dto.participantId;
       existingByEmail.firstName = dto.firstName;
       existingByEmail.lastName = dto.lastName;
@@ -87,11 +93,14 @@ export class ParticipantsService {
       existingByEmail.institution = dto.institution;
       existingByEmail.phoneNumber = dto.phoneNumber;
       existingByEmail.cohortId = dto.cohortId;
+      existingByEmail.group = group;
       existingByEmail.status = ParticipantStatus.IMPORTED;
       existingByEmail.mustChangePassword = true;
       existingByEmail.onboardingComplete = false;
-      existingByEmail.firebaseUid = undefined;
-      existingByEmail.passwordHash = undefined;
+      existingByEmail.firebaseUid = null as any;
+      existingByEmail.passwordHash = await bcrypt.hash(dto.participantId, 10);
+      existingByEmail.passwordResetToken = null;
+      existingByEmail.passwordResetExpires = null;
       existingByEmail.skills = [];
       existingByEmail.interests = [];
       return this.participantRepository.save(existingByEmail);
@@ -99,7 +108,8 @@ export class ParticipantsService {
 
     // If there's a soft-deleted record with matching participantId (but different email), restore and update it
     if (existingById && existingById.deletedAt) {
-      existingById.deletedAt = undefined;
+      await this.resetRestoredAccess(existingById.id);
+      existingById.deletedAt = null as any;
       existingById.email = dto.email;
       existingById.firstName = dto.firstName;
       existingById.lastName = dto.lastName;
@@ -107,11 +117,14 @@ export class ParticipantsService {
       existingById.institution = dto.institution;
       existingById.phoneNumber = dto.phoneNumber;
       existingById.cohortId = dto.cohortId;
+      existingById.group = group;
       existingById.status = ParticipantStatus.IMPORTED;
       existingById.mustChangePassword = true;
       existingById.onboardingComplete = false;
-      existingById.firebaseUid = undefined;
-      existingById.passwordHash = undefined;
+      existingById.firebaseUid = null as any;
+      existingById.passwordHash = await bcrypt.hash(dto.participantId, 10);
+      existingById.passwordResetToken = null;
+      existingById.passwordResetExpires = null;
       existingById.skills = [];
       existingById.interests = [];
       return this.participantRepository.save(existingById);
@@ -119,6 +132,7 @@ export class ParticipantsService {
 
     const participant = this.participantRepository.create({
       ...dto,
+      group,
       status: ParticipantStatus.IMPORTED,
       mustChangePassword: true,
       onboardingComplete: false,
@@ -127,12 +141,23 @@ export class ParticipantsService {
     return this.participantRepository.save(participant);
   }
 
+  private async resetRestoredAccess(participantId: string): Promise<void> {
+    const manager = this.participantRepository.manager;
+    await manager.getRepository("RefreshToken").update({ participantId, isRevoked: false }, { isRevoked: true, revokedAt: new Date(), revokedReason: "Participant restored" });
+    await manager.getRepository("TeamMember").softDelete({ participantId });
+    await manager.getRepository("ChannelMember").update({ memberId: participantId, memberType: "participant" }, { leftAt: new Date() });
+    await manager.getRepository("ParticipantPreference").delete({ participantId });
+  }
+
   async findAll(query: ParticipantQueryDto): Promise<PaginatedParticipantsDto> {
     const page = query.page || 1;
     const limit = query.limit || 20;
     const skip = (page - 1) * limit;
 
     const where: any = {};
+    if (query.group && query.ungrouped) throw new BadRequestException("Choose a group or ungrouped participants");
+    if (query.group) where.group = query.group;
+    if (query.ungrouped) where.group = IsNull();
 
     if (query.cohortId) {
       where.cohortId = query.cohortId;
@@ -229,6 +254,20 @@ export class ParticipantsService {
     return this.participantRepository.save(participant);
   }
 
+  @Transactional()
+  async assignGroup(id: string, value?: string | null): Promise<Participant> {
+    const participant = await this.findOne(id);
+    const cohort = await this.cohortRepository.findOne({ where: { id: participant.cohortId } });
+    if (!cohort) throw new NotFoundException('Cohort not found');
+    const group = resolveCohortGroup(cohort, value);
+    if ((participant.group || null) !== group) {
+      const membership = await this.participantRepository.manager.getRepository('TeamMember').findOne({ where: { participantId: id } });
+      if (membership) throw new BadRequestException('Remove the participant from their team before changing group');
+    }
+    participant.group = group;
+    return this.participantRepository.save(participant);
+  }
+
   async updateStatus(id: string, status: ParticipantStatus): Promise<Participant> {
     const participant = await this.findOne(id);
     participant.status = status;
@@ -255,6 +294,7 @@ export class ParticipantsService {
    * Bulk import participants from CSV data
    * Creates Firebase users with participantId as initial password
    */
+  @Transactional()
   async bulkImport(dto: BulkImportParticipantsDto): Promise<BulkImportResultDto> {
     const results: ImportResultDto[] = [];
     let successCount = 0;
@@ -268,6 +308,8 @@ export class ParticipantsService {
     if (!cohort) {
       throw new NotFoundException("Cohort not found");
     }
+
+    const group = resolveCohortGroup(cohort, dto.group);
 
     // Get existing participants (including soft-deleted) to check for duplicates
     const existingByEmail = await this.participantRepository.find({
@@ -344,11 +386,12 @@ export class ParticipantsService {
 
         // If there's a soft-deleted record, restore and update it
         if (existingEmail && existingEmail.deletedAt) {
+          await this.resetRestoredAccess(existingEmail.id);
           await this.participantRepository
             .createQueryBuilder()
             .update(Participant)
             .set({
-              deletedAt: undefined,
+              deletedAt: null as any,
               participantId: row.participantId,
               firstName: row.firstName,
               lastName: row.lastName,
@@ -356,22 +399,25 @@ export class ParticipantsService {
               institution: row.institution,
               phoneNumber: row.phoneNumber,
               cohortId: dto.cohortId,
+              group,
               passwordHash,
               status: ParticipantStatus.ACTIVE,
               mustChangePassword: true,
               onboardingComplete: false,
-              firebaseUid: undefined,
+              firebaseUid: null as any,
+              passwordResetToken: null, passwordResetExpires: null,
               skills: [],
               interests: [],
             })
             .where("id = :id", { id: existingEmail.id })
             .execute();
         } else if (existingId && existingId.deletedAt) {
+          await this.resetRestoredAccess(existingId.id);
           await this.participantRepository
             .createQueryBuilder()
             .update(Participant)
             .set({
-              deletedAt: undefined,
+              deletedAt: null as any,
               email: row.email,
               firstName: row.firstName,
               lastName: row.lastName,
@@ -379,11 +425,13 @@ export class ParticipantsService {
               institution: row.institution,
               phoneNumber: row.phoneNumber,
               cohortId: dto.cohortId,
+              group,
               passwordHash,
               status: ParticipantStatus.ACTIVE,
               mustChangePassword: true,
               onboardingComplete: false,
-              firebaseUid: undefined,
+              firebaseUid: null as any,
+              passwordResetToken: null, passwordResetExpires: null,
               skills: [],
               interests: [],
             })
@@ -400,6 +448,7 @@ export class ParticipantsService {
             institution: row.institution,
             phoneNumber: row.phoneNumber,
             cohortId: dto.cohortId,
+            group,
             passwordHash,
             status: ParticipantStatus.ACTIVE,
             mustChangePassword: true,
@@ -443,7 +492,7 @@ export class ParticipantsService {
     // Send welcome emails if requested (don't block on email failures)
     if (dto.sendWelcomeEmail !== false && successfulImports.length > 0) {
       const frontendUrl = this.configService.get<string>("FRONTEND_URL", "https://challenge.atf.africa");
-      const portalUrl = `${frontendUrl}/app/login`;
+      const portalUrl = `${frontendUrl}/participant/login`;
 
       // Send emails asynchronously - don't wait for all to complete
       Promise.all(

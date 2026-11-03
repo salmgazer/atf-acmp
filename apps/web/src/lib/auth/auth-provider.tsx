@@ -103,9 +103,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const currentPortal = getCurrentPortal();
     const isLoginPage = pathname.includes("/login");
     const isSetupPage = pathname.includes("/setup");
-    const isPublicPage = pathname === "/" || isLoginPage || isSetupPage;
+    const isPublicPage = pathname === "/" || isLoginPage || isSetupPage || pathname.includes("/forgot-password") || pathname.includes("/reset-password") || pathname === "/partners/register";
 
-    if (!isAuthenticated && currentPortal && !isLoginPage && !isSetupPage) {
+    if (!isAuthenticated && currentPortal && !isPublicPage) {
       // Not authenticated, redirect to portal login
       router.replace(getLoginPath(currentPortal));
       return;

@@ -1,3 +1,5 @@
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
 import {
   IsString,
   IsUUID,
@@ -40,6 +42,7 @@ export class CreateCategoryDto {
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   staffOnly?: boolean;
 }
 
@@ -65,14 +68,17 @@ export class UpdateCategoryDto {
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   staffOnly?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isActive?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isLocked?: boolean;
 }
 
@@ -108,10 +114,16 @@ export class UpdateThreadDto {
 export class ThreadQueryDto {
   @IsOptional()
   @IsNumber()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number;
 
   @IsOptional()
   @IsNumber()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number;
 
   @IsOptional()
@@ -120,6 +132,7 @@ export class ThreadQueryDto {
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   pinnedFirst?: boolean;
 }
 
@@ -205,7 +218,13 @@ export class ThreadDetailResponseDto extends ThreadResponseDto {
 export class PaginatedThreadsDto {
   data: ThreadResponseDto[];
   total: number;
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page: number;
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit: number;
   totalPages: number;
 }

@@ -360,7 +360,7 @@ function PartnerDetailContent({ id }: { id: string }) {
                 </div>
                 <h3 className="mt-4 text-lg font-medium">No briefs submitted</h3>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  This partner hasn't submitted any briefs yet.
+                  This partner hasn&apos;t submitted any briefs yet.
                 </p>
               </div>
             ) : (
@@ -463,7 +463,7 @@ function PartnerDetailContent({ id }: { id: string }) {
           <DialogHeader>
             <DialogTitle>Reject Partner</DialogTitle>
             <DialogDescription>
-              Please provide a reason for rejecting "{organization.name}".
+              Please provide a reason for rejecting &quot;{organization.name}&quot;.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -499,7 +499,7 @@ function PartnerDetailContent({ id }: { id: string }) {
           <DialogHeader>
             <DialogTitle>Edit Partner</DialogTitle>
             <DialogDescription>
-              Update the organization's information.
+              Update the organization&apos;s information.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">

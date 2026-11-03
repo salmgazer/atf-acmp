@@ -65,6 +65,7 @@ export class OneSignalService {
     try {
       const response = await fetch(`${this.apiUrl}/notifications`, {
         method: "POST",
+        signal: AbortSignal.timeout(15000),
         headers: {
           "Content-Type": "application/json",
           Authorization: `Basic ${this.apiKey}`,
@@ -161,6 +162,7 @@ export class OneSignalService {
 
       const response = await fetch(`${this.apiUrl}/notifications`, {
         method: "POST",
+        signal: AbortSignal.timeout(15000),
         headers: {
           "Content-Type": "application/json",
           Authorization: `Basic ${this.apiKey}`,
@@ -211,6 +213,7 @@ export class OneSignalService {
     try {
       const response = await fetch(`${this.apiUrl}/notifications`, {
         method: "POST",
+        signal: AbortSignal.timeout(15000),
         headers: {
           "Content-Type": "application/json",
           Authorization: `Basic ${this.apiKey}`,
@@ -274,6 +277,7 @@ export class OneSignalService {
     try {
       const response = await fetch(`${this.apiUrl}/notifications`, {
         method: "POST",
+        signal: AbortSignal.timeout(15000),
         headers: {
           "Content-Type": "application/json",
           Authorization: `Basic ${this.apiKey}`,

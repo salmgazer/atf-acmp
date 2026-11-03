@@ -85,7 +85,7 @@ export class MatchingController {
   async clearPreview(
     @Param("cohortId", ParseUUIDPipe) cohortId: string,
   ): Promise<void> {
-    this.matchingService.clearPreviewCache(cohortId);
+    await this.matchingService.clearPreviewCache(cohortId);
   }
 
   @Post("finalize")
@@ -176,7 +176,7 @@ export class MatchingController {
   async clearFormationPreview(
     @Param("cohortId", ParseUUIDPipe) cohortId: string,
   ): Promise<void> {
-    this.teamFormationService.clearFormationPreviewCache(cohortId);
+    await this.teamFormationService.clearFormationPreviewCache(cohortId);
   }
 
   @Post("formation/finalize")

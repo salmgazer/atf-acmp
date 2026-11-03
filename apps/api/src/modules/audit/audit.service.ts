@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { redactSensitive } from "@/common/services/safe-content";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Between, Like, In } from "typeorm";
 import { AuditLog, AuditAction } from "@/database/entities/audit-log.entity";
@@ -22,6 +23,7 @@ export class AuditService {
    */
   async log(dto: CreateAuditLogDto): Promise<AuditLog> {
     try {
+      dto = redactSensitive(dto);
       // Calculate changes if before and after are provided
       let changes: Record<string, { from: any; to: any }> | undefined;
       if (dto.before && dto.after) {

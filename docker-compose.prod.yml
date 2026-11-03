@@ -14,10 +14,13 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
-    volumes: []  # No source mounting in production
+      RUN_MIGRATIONS: "true"
+    command: ["./docker-entrypoint.sh"]
+    volumes: !reset []
 
   # Web in production mode  
   web:
+    command: ["node", "apps/web/server.js"]
     build:
       context: .
       dockerfile: apps/web/Dockerfile
@@ -38,4 +41,4 @@ services:
       PORT: 3000
       # Server-side API calls need to use the Docker network
       API_INTERNAL_URL: http://api:3001/api
-    volumes: []  # No source mounting in production
+    volumes: !reset []

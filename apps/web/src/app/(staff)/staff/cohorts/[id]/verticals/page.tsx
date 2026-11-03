@@ -522,7 +522,7 @@ function VerticalsContent({ cohortId }: { cohortId: string }) {
           <DialogHeader>
             <DialogTitle>Delete Vertical</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{selectedVertical?.name}"? This action cannot be undone.
+              Are you sure you want to delete &quot;{selectedVertical?.name}&quot;? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

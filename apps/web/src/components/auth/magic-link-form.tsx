@@ -1,4 +1,5 @@
 "use client";
+import { safeReturnPath } from "@/lib/stores/auth-store";
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -53,7 +54,7 @@ export function MagicLinkForm({ portal }: MagicLinkFormProps) {
     try {
       await api.post("/auth/magic-link", {
         email: data.email,
-        portal,
+        portal: portal === "partner" ? "organization" : portal,
       });
       setEmail(data.email);
       setStep("code");
@@ -78,7 +79,7 @@ export function MagicLinkForm({ portal }: MagicLinkFormProps) {
       login(response.user, response.accessToken, portal);
       toast.success("Welcome!");
       
-      const redirectTo = returnTo || getDashboardPath(portal);
+      const redirectTo = safeReturnPath(returnTo, portal);
       router.push(redirectTo);
     } catch (error: any) {
       console.error("Verify code error:", error);
@@ -114,7 +115,7 @@ export function MagicLinkForm({ portal }: MagicLinkFormProps) {
     try {
       await api.post("/auth/magic-link", {
         email,
-        portal,
+        portal: portal === "partner" ? "organization" : portal,
       });
       toast.success("If this email is registered, a new code has been sent");
     } catch (error: any) {
@@ -217,7 +218,7 @@ export function MagicLinkForm({ portal }: MagicLinkFormProps) {
 
         <div className="text-center">
           <p className="text-sm text-muted-foreground">
-            Didn't receive the code?{" "}
+            Didn&apos;t receive the code?{" "}
             <button
               type="button"
               onClick={handleResend}
@@ -267,7 +268,7 @@ export function MagicLinkForm({ portal }: MagicLinkFormProps) {
       </Button>
 
       <p className="text-center text-sm text-muted-foreground">
-        We'll send you a 6-digit code to verify your email
+        We&apos;ll send you a 6-digit code to verify your email
       </p>
     </form>
   );

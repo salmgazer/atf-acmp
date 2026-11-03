@@ -1,4 +1,6 @@
-export default () => ({
+export default () => {
+  if (["production", "staging"].includes(process.env.NODE_ENV || "") && (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)) throw new Error("JWT_SECRET must contain at least 32 characters in deployed environments");
+  return ({
   port: parseInt(process.env.PORT || "3001", 10),
   nodeEnv: process.env.NODE_ENV || "development",
 
@@ -57,3 +59,4 @@ export default () => ({
     origin: process.env.CORS_ORIGIN || "http://localhost:3000",
   },
 });
+};

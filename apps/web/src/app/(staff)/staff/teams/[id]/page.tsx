@@ -565,6 +565,7 @@ function TeamDetailContent({ id }: { id: string }) {
             <div className="rounded-lg border bg-card p-6">
               <h2 className="font-semibold mb-4">Team Details</h2>
               <dl className="space-y-4">
+                <div><dt className="text-sm text-muted-foreground">Group</dt><dd className="mt-1">{team.group || "Not assigned"}</dd></div>
                 <div>
                   <dt className="text-sm text-muted-foreground">Invite Code</dt>
                   <dd className="flex items-center gap-2 mt-1">
@@ -624,7 +625,7 @@ function TeamDetailContent({ id }: { id: string }) {
           <DialogHeader>
             <DialogTitle>Assign Brief to Team</DialogTitle>
             <DialogDescription>
-              Select a brief to assign to "{team.name}"
+              Select a brief to assign to &quot;{team.name}&quot;
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -672,7 +673,7 @@ function TeamDetailContent({ id }: { id: string }) {
           <DialogHeader>
             <DialogTitle>Disqualify Team</DialogTitle>
             <DialogDescription>
-              This will disqualify "{team.name}" from the competition. This action cannot be easily undone.
+              This will disqualify &quot;{team.name}&quot; from the competition. This action cannot be easily undone.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -710,7 +711,7 @@ function TeamDetailContent({ id }: { id: string }) {
           <DialogHeader>
             <DialogTitle>Unassign Brief</DialogTitle>
             <DialogDescription>
-              Are you sure you want to unassign the brief from "{team.name}"? The team will need a new brief assigned.
+              Are you sure you want to unassign the brief from &quot;{team.name}&quot;? The team will need a new brief assigned.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

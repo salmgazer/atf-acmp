@@ -88,26 +88,10 @@ export class PublicService {
         where: { email: dto.org.email },
       });
 
-      if (organization) {
-        // Update existing organization with new submission data
-        organization.name = dto.org.orgName;
-        organization.country = dto.org.country;
-        organization.city = dto.org.city;
-        organization.sector = dto.org.sector;
-        organization.sectorOther = dto.org.sectorOther;
-        organization.submitterName = dto.org.contactName;
-        organization.submitterDesignation = dto.org.designation;
-        organization.submitterDepartment = dto.org.department;
-        organization.contactPerson = dto.org.contactName;
-        organization.contactPhone = dto.org.phone;
-        organization.publicSubmission = true;
-        organization.consentGiven = dto.consentGiven;
-        organization.consentTimestamp = new Date();
-        organization.cohortId = activeCohort.id;
-
-        organization = await queryRunner.manager.save(Organization, organization);
-        this.logger.log(`Updated existing organization ${organization.id} from public form`);
-      } else {
+      if (organization || user) {
+        throw new BadRequestException("An account with this email already exists. Sign in to the partner portal to submit additional briefs.");
+      }
+      {
         // Create new organization
         organization = queryRunner.manager.create(Organization, {
           name: dto.org.orgName,
@@ -240,6 +224,7 @@ export class PublicService {
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
+      if (error instanceof BadRequestException) throw error;
       this.logger.error("Failed to submit organization briefs", error);
       throw new InternalServerErrorException("Failed to submit form. Please try again.");
     } finally {
@@ -256,7 +241,7 @@ export class PublicService {
     orgName: string,
   ): Promise<void> {
     const frontendUrl = this.configService.get<string>("FRONTEND_URL", "http://localhost:3000");
-    const portalUrl = `${frontendUrl}/org/login`;
+    const portalUrl = `${frontendUrl}/partners/login`;
 
     const firstName = contactName.split(/\s+/)[0] || contactName;
 

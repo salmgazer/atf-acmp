@@ -1,3 +1,7 @@
+import { resolveCohortGroup } from "@/common/services/cohort-groups";
+import { Inject } from "@nestjs/common";
+import { CACHE_MANAGER, Cache } from "@nestjs/cache-manager";
+import { Transactional } from "@/common/decorators/transactional.decorator";
 import {
   Injectable,
   NotFoundException,
@@ -86,9 +90,9 @@ export class TeamFormationService {
   private readonly frontendUrl: string;
 
   // Cache for preview results
-  private formationPreviewCache: Map<string, TeamFormationPreviewDto> = new Map();
 
   constructor(
+    @Inject(CACHE_MANAGER) private readonly previewStore: Cache,
     @InjectRepository(Team)
     private readonly teamRepository: Repository<Team>,
     @InjectRepository(TeamMember)
@@ -133,7 +137,11 @@ export class TeamFormationService {
     const warnings: string[] = [];
 
     // Get eligible participants (active, in this cohort, without a team)
-    const participants = await this.getEligibleParticipants(cohortId, dto.participantIds);
+    const eligible = await this.getEligibleParticipants(cohortId, dto.participantIds);
+    const excluded = (cohort.groups || []).length ? eligible.filter(p => !p.group || !cohort.groups.includes(p.group)) : [];
+    const excludedIds = new Set(excluded.map(p => p.id));
+    const participants = eligible.filter(p => !excludedIds.has(p.id));
+    if (excluded.length) warnings.push(`${excluded.length} participant(s) need a group before team formation`);
     if (participants.length === 0) {
       warnings.push("No eligible participants found for team formation");
     }
@@ -141,13 +149,13 @@ export class TeamFormationService {
     // Prepare participant data with preferences
     const participantsWithPrefs = await this.prepareParticipantsWithPreferences(participants);
 
-    // Use brief-centric round-robin assignment if enabled
-    if (config.useBriefCentricAssignment) {
-      return this.runBriefCentricFormation(cohortId, cohort, participantsWithPrefs, config, warnings);
-    }
-
-    // Otherwise use legacy team-first formation
-    return this.runLegacyTeamFormation(cohortId, cohort, participantsWithPrefs, config, warnings);
+    const preview = config.useBriefCentricAssignment
+      ? await this.runBriefCentricFormation(cohortId, cohort, participantsWithPrefs, config, warnings)
+      : await this.runLegacyTeamFormation(cohortId, cohort, participantsWithPrefs, config, warnings);
+    preview.unassignedParticipantIds.push(...excludedIds);
+    preview.statistics.unassignedParticipantCount += excluded.length;
+    await this.previewStore.set("formation:" + cohortId, preview, 30 * 60 * 1000);
+    return preview;
   }
 
   /**
@@ -346,7 +354,7 @@ export class TeamFormationService {
     };
 
     // Cache the preview
-    this.formationPreviewCache.set(cohortId, preview);
+    await this.previewStore.set("formation:" + cohortId, preview, 30 * 60 * 1000);
 
     return preview;
   }
@@ -421,7 +429,7 @@ export class TeamFormationService {
     };
 
     // Cache the preview
-    this.formationPreviewCache.set(cohortId, preview);
+    await this.previewStore.set("formation:" + cohortId, preview, 30 * 60 * 1000);
 
     return preview;
   }
@@ -510,6 +518,7 @@ export class TeamFormationService {
   /**
    * Try to assign a brief to either an existing team or form a new team
    */
+  @Transactional()
   private async assignBriefToTeam(
     brief: Brief,
     vertical: Vertical,
@@ -616,7 +625,16 @@ export class TeamFormationService {
   /**
    * Form a new team specifically for a brief
    */
-  private formTeamForBrief(
+  private formTeamForBrief(brief: Brief, vertical: Vertical, available: ParticipantWithPreferences[], config: Required<TeamFormationConfigDto>, counter: number): ProposedTeamDto | null {
+    let best: ProposedTeamDto | null = null;
+    for (const pool of this.partitionByGroup(available).values()) {
+      const candidate = this.formTeamForBriefPool(brief, vertical, pool, config, counter);
+      if (candidate && (!best || candidate.compatibilityScore > best.compatibilityScore)) best = candidate;
+    }
+    return best;
+  }
+
+  private formTeamForBriefPool(
     brief: Brief,
     vertical: Vertical,
     availableParticipants: ParticipantWithPreferences[],
@@ -703,6 +721,7 @@ export class TeamFormationService {
     return {
       proposedTeamId: uuidv4(),
       suggestedName: `Team ${vertical.name} ${teamCounter}`,
+      group: leadParticipant.participant.group || null,
       participantIds: selectedParticipants.map((p) => p.participant.id),
       participants: selectedParticipants.map((p) => ({
         id: p.participant.id,
@@ -837,24 +856,25 @@ export class TeamFormationService {
    * Get the current team formation preview
    */
   async getTeamFormationPreview(cohortId: string): Promise<TeamFormationPreviewDto | null> {
-    return this.formationPreviewCache.get(cohortId) || null;
+    return await this.previewStore.get<TeamFormationPreviewDto>("formation:" + cohortId) || null;
   }
 
   /**
    * Clear the team formation preview cache
    */
-  clearFormationPreviewCache(cohortId: string): void {
-    this.formationPreviewCache.delete(cohortId);
+  async clearFormationPreviewCache(cohortId: string): Promise<void> {
+    await this.previewStore.del("formation:" + cohortId);
   }
 
   /**
    * Finalize team formation and create actual teams
    */
+  @Transactional("formation")
   async finalizeTeamFormation(
     cohortId: string,
     dto: FinalizeTeamFormationDto = {},
   ): Promise<{ createdTeamCount: number; backfilledTeamCount: number; briefsAssigned: number; errors: string[] }> {
-    const preview = this.formationPreviewCache.get(cohortId);
+    const preview = await this.previewStore.get<TeamFormationPreviewDto>("formation:" + cohortId);
     if (!preview) {
       throw new BadRequestException(
         "No team formation preview found. Run team formation first.",
@@ -989,7 +1009,7 @@ export class TeamFormationService {
     }
 
     // Clear cache after finalization
-    this.formationPreviewCache.delete(cohortId);
+    await this.previewStore.del("formation:" + cohortId);
 
     // ====== STEP 4: Send notifications to all affected participants ======
     await this.sendTeamFormationNotifications(
@@ -1115,7 +1135,7 @@ export class TeamFormationService {
         </ul>
         
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${this.frontendUrl}/app/team" style="display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">View Your Team</a>
+          <a href="${this.frontendUrl}/participant/team" style="display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">View Your Team</a>
         </div>
         
         <p>We're excited to see what you and your team will create!</p>
@@ -1278,7 +1298,28 @@ export class TeamFormationService {
   /**
    * Core team formation algorithm
    */
-  private executeTeamFormation(
+  private partitionByGroup(participants: ParticipantWithPreferences[]): Map<string | null, ParticipantWithPreferences[]> {
+    const pools = new Map<string | null, ParticipantWithPreferences[]>();
+    for (const participant of participants) {
+      const group = participant.participant.group || null;
+      if (!pools.has(group)) pools.set(group, []);
+      pools.get(group)!.push(participant);
+    }
+    return pools;
+  }
+
+  private executeTeamFormation(cross: ParticipantWithPreferences[], same: ParticipantWithPreferences[], config: Required<TeamFormationConfigDto>, cohort: Cohort) {
+    const proposedTeams: ProposedTeamDto[] = [];
+    const unassignedParticipantIds: string[] = [];
+    for (const [group] of this.partitionByGroup([...cross, ...same])) {
+      const result = this.executeTeamFormationPool(cross.filter(p => (p.participant.group || null) === group), same.filter(p => (p.participant.group || null) === group), config, cohort);
+      proposedTeams.push(...result.proposedTeams);
+      unassignedParticipantIds.push(...result.unassignedParticipantIds);
+    }
+    return { proposedTeams, unassignedParticipantIds };
+  }
+
+  private executeTeamFormationPool(
     crossCountryWilling: ParticipantWithPreferences[],
     sameCountryPreferred: ParticipantWithPreferences[],
     config: Required<TeamFormationConfigDto>,
@@ -1412,6 +1453,7 @@ export class TeamFormationService {
       const proposedTeam: ProposedTeamDto = {
         proposedTeamId: uuidv4(),
         suggestedName: `${teamNamePrefix} ${counter}`,
+        group: leadParticipant.participant.group || null,
         participantIds: team.map((p) => p.participant.id),
         participants: team.map((p) => ({
           id: p.participant.id,
@@ -1869,6 +1911,7 @@ export class TeamFormationService {
   /**
    * Create a team with members in the database
    */
+  @Transactional()
   private async createTeamWithMembers(
     cohortId: string,
     teamName: string,
@@ -1877,6 +1920,13 @@ export class TeamFormationService {
     coLeadParticipantId: string,
     briefId?: string,
   ): Promise<Team> {
+    const cohort = await this.cohortRepository.findOne({ where: { id: cohortId } });
+    if (!cohort) throw new BadRequestException("Cohort not found");
+    const participants = await this.participantRepository.find({ where: { id: In(participantIds), cohortId } });
+    const lead = participants.find(participant => participant.id === leadParticipantId);
+    if (!lead || participants.length !== new Set(participantIds).size) throw new BadRequestException("Every member and the team lead must belong to this cohort");
+    const group = resolveCohortGroup(cohort, lead.group);
+    if (participants.some(participant => (participant.group || null) !== group)) throw new BadRequestException("Every team member must belong to the team lead's group");
     // Generate invite code
     const inviteCode = this.generateInviteCode();
 
@@ -1884,6 +1934,7 @@ export class TeamFormationService {
     const teamData: Partial<Team> = {
       name: teamName,
       cohortId,
+      group,
       status: TeamStatus.ACTIVE,
       inviteCode,
     };
@@ -2023,6 +2074,7 @@ export class TeamFormationService {
         const backfill: ProposedBackfillDto = {
           teamId: teamInfo.team.id,
           teamName: teamInfo.team.name,
+          group: teamInfo.team.group || null,
           currentMemberCount: teamInfo.currentSize,
           targetSize: config.teamSizeMax,
           participantIdsToAdd: participantsToAdd.map((p) => p.participant.id),
@@ -2176,6 +2228,7 @@ export class TeamFormationService {
     );
 
     for (const p of availableParticipants) {
+      if ((p.participant.group || null) !== (teamInfo.team.group || null)) continue;
       let score = 0;
 
       // 1. Brief preference match (highest priority)

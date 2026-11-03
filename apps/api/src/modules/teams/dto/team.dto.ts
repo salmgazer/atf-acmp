@@ -1,3 +1,5 @@
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import {
   IsString,
   IsOptional,
@@ -26,16 +28,25 @@ import {
 // ============ Query DTOs ============
 
 export class TeamQueryDto {
+  @IsOptional() @IsString() group?: string;
+  @IsOptional() @IsBoolean() @StrictBoolean() ungrouped?: boolean;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number = 1;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number = 20;
 
   @ApiPropertyOptional()
@@ -66,7 +77,7 @@ export class TeamQueryDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  @Type(() => Boolean)
+  @StrictBoolean()
   hasbrief?: boolean;
 }
 
@@ -78,9 +89,15 @@ export class PaginatedTeamsDto {
   total: number;
 
   @ApiProperty()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page: number;
 
   @ApiProperty()
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit: number;
 
   @ApiProperty()
@@ -217,6 +234,8 @@ export class InvitationQueryDto {
 // ============ Search DTOs ============
 
 export class SearchParticipantsDto {
+  @IsOptional() @IsString() group?: string;
+  @IsOptional() @IsBoolean() @StrictBoolean() ungrouped?: boolean;
   @ApiProperty()
   @IsString()
   query: string;
@@ -229,6 +248,9 @@ export class SearchParticipantsDto {
   @IsOptional()
   @IsNumber()
   @Type(() => Number)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number = 10;
 }
 
