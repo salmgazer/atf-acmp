@@ -24,12 +24,14 @@ if [ "$ENVIRONMENT" = "production" ]; then
   CLUSTER="acmp-production"
   API_DOMAIN="api.atfchallenge.org"
   APP_DOMAIN="app.atfchallenge.org"
+  BUILT_DOMAIN="built.atfchallenge.org"  # Alternative production web domain
   API_SERVICE="acmp-api-production"
   WEB_SERVICE="acmp-web-production"
 else
   CLUSTER="acmp-staging"
   API_DOMAIN="api-staging.atfchallenge.org"
   APP_DOMAIN="app-staging.atfchallenge.org"
+  BUILT_DOMAIN=""  # No alternative domain for staging
   API_SERVICE="acmp-api-staging"
   WEB_SERVICE="acmp-web-staging"
 fi
@@ -38,6 +40,9 @@ echo ""
 echo "Cluster: $CLUSTER"
 echo "API Domain: $API_DOMAIN"
 echo "App Domain: $APP_DOMAIN"
+if [ -n "$BUILT_DOMAIN" ]; then
+  echo "Built Domain: $BUILT_DOMAIN"
+fi
 
 # Function to get task IP for a service
 get_task_ip() {
@@ -192,6 +197,24 @@ if [ -n "$APP_RULE_ARN" ] && [ "$APP_RULE_ARN" != "null" ]; then
   fi
 else
   echo "  WARNING: No rule found for $APP_DOMAIN"
+fi
+
+# Update Built domain rule (production only)
+if [ -n "$BUILT_DOMAIN" ]; then
+  BUILT_RULE_ARN=$(echo "$RULES" | jq -r ".Rules[] | select(.Conditions[0].Values[0]==\"$BUILT_DOMAIN\") | .RuleArn" 2>/dev/null || echo "")
+  if [ -n "$BUILT_RULE_ARN" ] && [ "$BUILT_RULE_ARN" != "null" ]; then
+    echo "  Updating $BUILT_DOMAIN -> $WEB_TG_ARN"
+    aws elbv2 modify-rule --rule-arn "$BUILT_RULE_ARN" \
+      --actions "[{\"Type\":\"forward\",\"TargetGroupArn\":\"$WEB_TG_ARN\"}]" \
+      --region "$AWS_REGION" --output text > /dev/null 2>&1
+    if [ $? -eq 0 ]; then
+      echo "    ✓ Updated successfully"
+    else
+      echo "    ✗ Failed to update"
+    fi
+  else
+    echo "  WARNING: No rule found for $BUILT_DOMAIN"
+  fi
 fi
 
 echo ""
