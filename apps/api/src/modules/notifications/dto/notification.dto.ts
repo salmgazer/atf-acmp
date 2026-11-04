@@ -1,3 +1,5 @@
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
 import {
   IsString,
   IsUUID,
@@ -64,10 +66,12 @@ export class CreateNotificationDto {
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   sendEmail?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   sendPush?: boolean;
 }
 
@@ -112,16 +116,23 @@ export class NotificationQueryDto {
   @IsOptional()
   @IsNumber()
   @Min(1)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number;
 
   @IsOptional()
   @IsNumber()
   @Min(1)
   @Max(100)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number;
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   unreadOnly?: boolean;
 
   @IsOptional()
@@ -134,14 +145,17 @@ export class NotificationQueryDto {
 export class UpdatePreferencesDto {
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   inAppEnabled?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   emailEnabled?: boolean;
 
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   pushEnabled?: boolean;
 
   @IsOptional()
@@ -197,7 +211,13 @@ export class PaginatedNotificationsDto {
   data: NotificationResponseDto[];
   total: number;
   unreadCount: number;
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page: number;
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit: number;
   totalPages: number;
 }

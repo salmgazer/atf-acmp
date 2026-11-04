@@ -49,6 +49,7 @@ const notificationIcons: Record<string, typeof Bell> = {
   mentor_session_reminder: Clock,
   brief_status_changed: FileText,
   brief_selected: FileText,
+  brief_event: Calendar,
   submission_received: FileText,
   submission_deadline: Clock,
   evaluation_complete: Check,
@@ -64,12 +65,12 @@ const notificationIcons: Record<string, typeof Bell> = {
 
 interface NotificationBellProps {
   token: string;
-  notificationsPath?: string; // e.g., "/app/notifications"
+  notificationsPath?: string; // e.g., "/participant/notifications"
 }
 
 export function NotificationBell({
   token,
-  notificationsPath = "/app/notifications",
+  notificationsPath = "/participant/notifications",
 }: NotificationBellProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);

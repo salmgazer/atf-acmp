@@ -149,6 +149,17 @@ export class SubmissionsController {
     return this.submissionsService.getSubmissionHistory(id);
   }
 
+  @Post("upload-document")
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 25 * 1024 * 1024 } }))
+  @ApiConsumes("multipart/form-data")
+  async uploadDocument(@UploadedFile() file: Express.Multer.File, @Request() req: any) {
+    if (!file) throw new BadRequestException("No file uploaded");
+    const team = await this.submissionsService.getTeamForParticipant(req.user.participantId);
+    if (!team) throw new BadRequestException("Join a confirmed team before uploading documents");
+    const result = await this.uploadService.uploadDocument(file, `submissions/${team.id}/documents`);
+    return { name: file.originalname, url: result.url, type: result.contentType, size: result.size, uploadedAt: new Date().toISOString() };
+  }
+
   @Post("upload-video")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 100 * 1024 * 1024 } }))
   @ApiOperation({ summary: "Upload a video for a submission" })
@@ -157,15 +168,18 @@ export class SubmissionsController {
   @ApiResponse({ status: 400, description: "Invalid file" })
   async uploadVideo(
     @UploadedFile() file: Express.Multer.File,
+    @Request() req: any,
   ) {
     if (!file) {
       throw new BadRequestException("No file uploaded");
     }
 
+    const team = await this.submissionsService.getTeamForParticipant(req.user.participantId);
+    if (!team) throw new BadRequestException("Join a confirmed team before uploading videos");
     // Upload the video to S3 (with thumbnail generation)
     const result = await this.uploadService.uploadVideo(
       file,
-      "submissions/videos",
+      `submissions/${team.id}/videos`,
       true, // Generate thumbnail
     );
 

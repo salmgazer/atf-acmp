@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUIStore, useStaffCohortStore } from "@/lib/stores";
+import { signOut } from "@/lib/auth";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useChatContext } from "@/lib/contexts/chat-context";
 import { useCohorts } from "@/lib/api/hooks/use-cohorts";
@@ -57,24 +58,24 @@ import {
 } from "@/components/ui/select";
 
 const overviewItems = [
-  { icon: LayoutDashboard, label: "Dashboard", href: "/portal/dashboard" },
-  { icon: Layers, label: "Cohorts", href: "/portal/cohorts" },
-  { icon: Users, label: "Teams", href: "/portal/teams" },
-  { icon: ClipboardCheck, label: "Submissions Review", href: "/portal/submissions/review" },
-  { icon: Bot, label: "AI Evaluations", href: "/portal/evaluations" },
-  { icon: FileText, label: "Briefs", href: "/portal/briefs" },
-  { icon: MessageSquare, label: "Chat", href: "/portal/chat" },
+  { icon: LayoutDashboard, label: "Dashboard", href: "/staff/dashboard" },
+  { icon: Layers, label: "Cohorts", href: "/staff/cohorts" },
+  { icon: Users, label: "Teams", href: "/staff/teams" },
+  { icon: ClipboardCheck, label: "Submissions Review", href: "/staff/submissions/review" },
+  { icon: Bot, label: "Evaluations", href: "/staff/evaluations" },
+  { icon: FileText, label: "Briefs", href: "/staff/briefs" },
+  { icon: MessageSquare, label: "Chat", href: "/staff/chat" },
 ];
 
 const managementItems = [
-  { icon: UserCog, label: "Participants", href: "/portal/participants" },
-  { icon: GraduationCap, label: "Mentors", href: "/portal/mentors" },
-  { icon: Building2, label: "Organizations", href: "/portal/organizations" },
-  { icon: Shield, label: "Staff", href: "/portal/staff" },
+  { icon: UserCog, label: "Participants", href: "/staff/participants" },
+  { icon: GraduationCap, label: "Mentors", href: "/staff/mentors" },
+  { icon: Building2, label: "Partners", href: "/staff/partners" },
+  { icon: Shield, label: "Staff", href: "/staff/staff" },
 ];
 
 const settingsItems = [
-  { icon: ScrollText, label: "Audit Logs", href: "/portal/audit-logs" },
+  { icon: ScrollText, label: "Audit Logs", href: "/staff/audit-logs" },
 ];
 
 interface StaffLayoutProps {
@@ -113,11 +114,11 @@ export function StaffLayout({ children }: StaffLayoutProps) {
     }
   }, [cohortsData, setCohorts, initializeGlobalCohort]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     // Clear all cached queries to prevent stale data on next login
     queryClient.clear();
-    logout();
-    router.push("/portal/login");
+    await signOut();
+    router.push("/staff/login");
   };
 
   const NavSection = ({
@@ -135,7 +136,7 @@ export function StaffLayout({ children }: StaffLayoutProps) {
       )}
       {items.map((item) => {
         const isActive = pathname.startsWith(item.href);
-        const isChatItem = item.href === "/portal/chat";
+        const isChatItem = item.href === "/staff/chat";
         const showBadge = isChatItem && totalUnreadCount > 0;
         
         return (
@@ -197,7 +198,7 @@ export function StaffLayout({ children }: StaffLayoutProps) {
         {/* Logo */}
         <div className="flex h-20 items-center justify-between px-5">
           {!sidebarCollapsed && (
-            <Link href="/portal/dashboard" className="flex items-center gap-3">
+            <Link href="/staff/dashboard" className="flex items-center gap-3">
               <Image
                 src="/logos/image_only/Brand-Mark_Red.png"
                 alt="ATF Logo"
@@ -209,7 +210,7 @@ export function StaffLayout({ children }: StaffLayoutProps) {
             </Link>
           )}
           {sidebarCollapsed && (
-            <Link href="/portal/dashboard" className="mx-auto">
+            <Link href="/staff/dashboard" className="mx-auto">
               <Image
                 src="/logos/image_only/Brand-Mark_Red.png"
                 alt="ATF Logo"
@@ -301,10 +302,20 @@ export function StaffLayout({ children }: StaffLayoutProps) {
           <NavSection title="Management" items={managementItems} />
           <NavSection title="Settings" items={settingsItems} />
         </nav>
+        
+        {/* Version number */}
+        <div className={cn(
+          "border-t border-border/50 py-3",
+          sidebarCollapsed ? "px-2 text-center" : "px-5"
+        )}>
+          <p className="text-xs text-muted-foreground">
+            {sidebarCollapsed ? `v${process.env.APP_VERSION}` : `Version ${process.env.APP_VERSION}`}
+          </p>
+        </div>
       </aside>
 
       {/* Main content */}
-      <div className="flex flex-1 flex-col min-h-screen overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
         <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-4 bg-background px-4 lg:px-8">
           <button
@@ -360,7 +371,7 @@ export function StaffLayout({ children }: StaffLayoutProps) {
                   <p className="text-xs text-muted-foreground">{user?.email}</p>
                 </div>
                 <DropdownMenuItem asChild>
-                  <Link href="/portal/profile" className="flex items-center gap-2 cursor-pointer">
+                  <Link href="/staff/profile" className="flex items-center gap-2 cursor-pointer">
                     <User className="h-4 w-4" />
                     Profile
                   </Link>

@@ -197,7 +197,7 @@ export function useParticipantAnnouncements(cohortId?: string, limit = 20, offse
   });
 }
 
-export function useOrganizationAnnouncements(cohortId?: string, limit = 20, offset = 0) {
+export function usePartnerAnnouncements(cohortId?: string, limit = 20, offset = 0) {
   return useQuery({
     queryKey: announcementKeys.organization(cohortId),
     queryFn: async () => {

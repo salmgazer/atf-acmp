@@ -5,6 +5,9 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 import { ScheduleModule } from "@nestjs/schedule";
 import { AuthModule } from "./auth/auth.module";
+import { JwtAuthGuard } from "./auth/guards/jwt-auth.guard";
+import { ResourceAccessGuard } from "./common/guards/resource-access.guard";
+import { RolesGuard } from "./auth/guards/roles.guard";
 import { EmailModule } from "./email/email.module";
 import { HealthModule } from "./health/health.module";
 import { UsersModule } from "./modules/users/users.module";
@@ -12,6 +15,7 @@ import { CohortsModule } from "./modules/cohorts/cohorts.module";
 import { VerticalsModule } from "./modules/verticals/verticals.module";
 import { TeamsModule } from "./modules/teams/teams.module";
 import { BriefsModule } from "./modules/briefs/briefs.module";
+import { BriefEventsModule } from "./modules/brief-events/brief-events.module";
 import { ParticipantsModule } from "./modules/participants/participants.module";
 import { MentorsModule } from "./modules/mentors/mentors.module";
 import { OrganizationsModule } from "./modules/organizations/organizations.module";
@@ -38,6 +42,7 @@ import { UploadModule } from "./common/services/upload.module";
 import { CacheModule } from "./common/cache/cache.module";
 import { GlobalExceptionFilter } from "./common/filters/http-exception.filter";
 import { ActivityInterceptor } from "./common/interceptors/activity.interceptor";
+import { SafeContentInterceptor } from "./common/interceptors/safe-content.interceptor";
 import configuration from "./config/configuration";
 import { dataSourceOptions } from "./database/data-source";
 
@@ -92,6 +97,7 @@ import { dataSourceOptions } from "./database/data-source";
     VerticalsModule,
     TeamsModule,
     BriefsModule,
+    BriefEventsModule,
     ParticipantsModule,
     MentorsModule,
     OrganizationsModule,
@@ -117,6 +123,10 @@ import { dataSourceOptions } from "./database/data-source";
     UploadModule,
   ],
   providers: [
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: ResourceAccessGuard },
+    { provide: APP_INTERCEPTOR, useClass: SafeContentInterceptor },
     // Global exception filter
     {
       provide: APP_FILTER,

@@ -1,3 +1,4 @@
+import { CACHE_MANAGER } from "@nestjs/cache-manager";
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { NotFoundException, BadRequestException } from "@nestjs/common";
@@ -59,6 +60,7 @@ describe("MatchingService", () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: CACHE_MANAGER, useFactory: () => { const data = new Map(); return { get: jest.fn(async key => data.get(key)), set: jest.fn(async (key, value) => { data.set(key,value); }), del: jest.fn(async key => { data.delete(key); }) }; } },
         MatchingService,
         { provide: getRepositoryToken(Team), useValue: teamRepository },
         { provide: getRepositoryToken(Brief), useValue: briefRepository },
@@ -70,9 +72,9 @@ describe("MatchingService", () => {
     service = module.get<MatchingService>(MatchingService);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     jest.clearAllMocks();
-    service.clearPreviewCache("cohort-123");
+    await service.clearPreviewCache("cohort-123");
   });
 
   describe("runMatching", () => {

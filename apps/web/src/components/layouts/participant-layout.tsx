@@ -31,6 +31,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useNotificationCount } from "@/lib/api/hooks/use-notifications";
 import { useChatContext } from "@/lib/contexts/chat-context";
+import { signOut } from "@/lib/auth";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useCurrentParticipant } from "@/lib/api/hooks/use-participants";
 import { Button } from "@/components/ui/button";
@@ -54,22 +55,22 @@ interface ParticipantLayoutProps {
 
 // Main navigation items (shown in both mobile bottom nav and desktop sidebar)
 const mainNavItems = [
-  { icon: Home, label: "Home", href: "/app/dashboard" },
-  { icon: FileText, label: "Briefs", href: "/app/briefs" },
-  { icon: Users, label: "Team", href: "/app/team" },
-  { icon: UserCheck, label: "Mentor", href: "/app/mentors" },
-  { icon: MessageSquare, label: "Chat", href: "/app/chat", hasBadge: true },
+  { icon: Home, label: "Home", href: "/participant/dashboard" },
+  { icon: FileText, label: "Briefs", href: "/participant/briefs" },
+  { icon: Users, label: "Team", href: "/participant/team" },
+  { icon: UserCheck, label: "Mentor", href: "/participant/mentors" },
+  { icon: MessageSquare, label: "Chat", href: "/participant/chat", hasBadge: true },
 ];
 
 // Additional navigation items (desktop sidebar only)
 const secondaryNavItems = [
-  { icon: Send, label: "Submissions", href: "/app/submissions" },
-  { icon: Trophy, label: "Leaderboard", href: "/app/leaderboard" },
-  { icon: BookOpen, label: "Journals", href: "/app/journals" },
-  { icon: FolderOpen, label: "Resources", href: "/app/resources" },
-  { icon: Award, label: "Certificates", href: "/app/certificates" },
-  { icon: Megaphone, label: "Announcements", href: "/app/announcements" },
-  { icon: HelpCircle, label: "Help", href: "/app/help" },
+  { icon: Send, label: "Submissions", href: "/participant/submissions" },
+  { icon: Trophy, label: "Leaderboard", href: "/participant/leaderboard" },
+  { icon: BookOpen, label: "Journals", href: "/participant/journals" },
+  { icon: FolderOpen, label: "Resources", href: "/participant/resources" },
+  { icon: Award, label: "Certificates", href: "/participant/certificates" },
+  { icon: Megaphone, label: "Announcements", href: "/participant/announcements" },
+  { icon: HelpCircle, label: "Help", href: "/participant/help" },
 ];
 
 export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProps) {
@@ -85,10 +86,10 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
 
   const unreadCount = (countData as any)?.data?.unread || countData?.unread || 0;
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     queryClient.clear();
-    logout();
-    router.push("/app/login");
+    await signOut();
+    router.push("/participant/login");
   };
 
   // Mobile bottom navigation items with badges
@@ -98,7 +99,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
   }));
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex h-screen bg-background overflow-hidden">
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
@@ -116,7 +117,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
       >
         {/* Logo */}
         <div className="flex h-16 items-center justify-between px-4 border-b border-border/50">
-          <Link href="/app/dashboard" className="flex items-center gap-3">
+          <Link href="/participant/dashboard" className="flex items-center gap-3">
             <Image
               src="/logos/image_only/Brand-Mark_Red.png"
               alt="ATF Logo"
@@ -228,13 +229,13 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuItem asChild>
-                <Link href="/app/profile" className="flex items-center gap-2 cursor-pointer">
+                <Link href="/participant/profile" className="flex items-center gap-2 cursor-pointer">
                   <User className="h-4 w-4" />
                   Profile
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/app/notifications" className="flex items-center gap-2 cursor-pointer">
+                <Link href="/participant/notifications" className="flex items-center gap-2 cursor-pointer">
                   <Bell className="h-4 w-4" />
                   Notifications
                   {unreadCount > 0 && (
@@ -295,10 +296,17 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        
+        {/* Version number */}
+        <div className="border-t border-border/50 py-2 px-4">
+          <p className="text-xs text-muted-foreground text-center">
+            Version {process.env.APP_VERSION}
+          </p>
+        </div>
       </aside>
 
       {/* Main Content Area */}
-      <div className="flex flex-1 flex-col min-h-screen">
+      <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top Header - Desktop: minimal, Mobile: full */}
         <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-4 border-b bg-background px-4 md:h-16 md:px-6">
           {/* Mobile menu button */}
@@ -310,7 +318,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
           </button>
 
           {/* Mobile logo */}
-          <Link href="/app/dashboard" className="flex items-center gap-2 md:hidden">
+          <Link href="/participant/dashboard" className="flex items-center gap-2 md:hidden">
             <Image
               src="/logos/image_only/Brand-Mark_Red.png"
               alt="ATF Logo"
@@ -343,7 +351,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
                   <p className="font-semibold">Notifications</p>
                 </div>
                 <DropdownMenuItem asChild>
-                  <Link href="/app/notifications" className="flex items-center justify-center p-4 text-sm text-muted-foreground cursor-pointer">
+                  <Link href="/participant/notifications" className="flex items-center justify-center p-4 text-sm text-muted-foreground cursor-pointer">
                     {unreadCount > 0 ? `View ${unreadCount} notification${unreadCount > 1 ? 's' : ''}` : 'No new notifications'}
                   </Link>
                 </DropdownMenuItem>
@@ -374,13 +382,13 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
                   <p className="text-xs text-muted-foreground">{participant?.email}</p>
                 </div>
                 <DropdownMenuItem asChild>
-                  <Link href="/app/profile" className="flex items-center gap-2 cursor-pointer">
+                  <Link href="/participant/profile" className="flex items-center gap-2 cursor-pointer">
                     <User className="h-4 w-4" />
                     Profile
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/app/notifications" className="flex items-center gap-2 cursor-pointer">
+                  <Link href="/participant/notifications" className="flex items-center gap-2 cursor-pointer">
                     <Bell className="h-4 w-4" />
                     Notifications
                     {unreadCount > 0 && (
@@ -443,10 +451,10 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
           </div>
 
           {/* Mobile header actions */}
-          <div className="flex md:hidden items-center gap-1">
+          <div className="flex md:hidden items-center gap-2 shrink-0 mr-0.5">
             <Link
-              href="/app/notifications"
-              className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-muted transition-colors"
+              href="/participant/notifications"
+              className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-muted transition-colors shrink-0"
             >
               <Bell className="h-5 w-5 text-muted-foreground" />
               {unreadCount > 0 && (
@@ -456,10 +464,10 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
               )}
             </Link>
             <Link
-              href="/app/profile"
+              href="/participant/profile"
               className={cn(
-                "flex h-8 w-8 items-center justify-center rounded-full border-2 transition-colors",
-                pathname.startsWith("/app/profile")
+                "flex h-9 w-9 items-center justify-center rounded-full border-2 transition-colors shrink-0",
+                pathname.startsWith("/participant/profile")
                   ? "border-primary bg-primary/10"
                   : "border-muted-foreground/30 hover:border-muted-foreground/50 hover:bg-muted"
               )}
@@ -467,7 +475,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
               <User
                 className={cn(
                   "h-4 w-4",
-                  pathname.startsWith("/app/profile") ? "text-primary" : "text-muted-foreground"
+                  pathname.startsWith("/participant/profile") ? "text-primary" : "text-muted-foreground"
                 )}
               />
             </Link>
@@ -477,7 +485,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
         {/* Main content - with padding for mobile bottom nav */}
         <main
           className={cn(
-            "flex-1 pb-20 md:pb-0",
+            "flex-1 pb-20 md:pb-0 overflow-y-auto",
             noPadding ? "overflow-hidden" : "px-4 pt-4 md:px-6 md:pt-6"
           )}
         >

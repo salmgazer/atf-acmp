@@ -26,19 +26,16 @@ fi
 
 echo "Using dist path: $DIST_PATH"
 
-# Run migrations if not in development mode (dev uses synchronize)
-if [ "$NODE_ENV" != "development" ]; then
+# Run only in an explicitly designated migration task. Replica startup never
+# competes for schema changes, and a failed migration must stop deployment.
+if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
   echo "Running database migrations..."
   echo "Looking for migrations in: $DIST_PATH/database/migrations/"
   ls -la "$DIST_PATH/database/migrations/" 2>/dev/null || echo "Migration directory not found or empty"
   
   # Run migrations using TypeORM CLI
-  if npx typeorm migration:run -d "$DIST_PATH/database/data-source.js"; then
-    echo "Migrations completed successfully."
-  else
-    echo "WARNING: Migration failed with exit code $?. Continuing to start the application..."
-    echo "This may cause issues if tables don't exist."
-  fi
+  npx --no-install typeorm migration:run -d "$DIST_PATH/database/data-source.js"
+  echo "Migrations completed successfully."
 fi
 
 # Start the application

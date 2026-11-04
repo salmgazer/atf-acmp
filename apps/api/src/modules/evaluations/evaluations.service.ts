@@ -1,3 +1,8 @@
+import { Interval } from "@nestjs/schedule";
+import { randomUUID } from "crypto";
+import { Transactional } from "@/common/decorators/transactional.decorator";
+import { Stage } from "@/database/entities/stage.entity";
+import { scoreAgainstRubric, DEFAULT_EVALUATION_CRITERIA } from "@/common/services/rubric-scoring";
 import {
   Injectable,
   NotFoundException,
@@ -47,6 +52,7 @@ export class EvaluationsService {
     private teamRepo: Repository<Team>,
     @InjectRepository(TeamMember)
     private teamMemberRepo: Repository<TeamMember>,
+    @InjectRepository(Stage) private stageRepo: Repository<Stage>,
     @InjectQueue(EVALUATION_QUEUE_NAME)
     private evaluationQueue: Queue<EvaluationJobData>,
     private oneSignalService: OneSignalService,
@@ -54,153 +60,60 @@ export class EvaluationsService {
 
   // ============ Trigger Methods ============
 
-  async triggerBatchEvaluation(dto: TriggerEvaluationDto): Promise<{
-    queued: number;
-    skipped: number;
-    jobs: EvaluationJob[];
-  }> {
-    const { cohortId, stageId, teamIds } = dto;
-
-    // CODE EVALUATION MODE: Get all teams with GitHub repos in this cohort
-    let teams = await this.teamRepo.find({
-      where: {
-        cohortId,
-        githubRepoUrl: Not(IsNull()),
-      },
-    });
-
-    // Filter by specific team IDs if provided
-    if (teamIds && teamIds.length > 0) {
-      teams = teams.filter((t) => teamIds.includes(t.id));
-    }
-
-    // Filter out teams that already have completed evaluations for this stage
-    const existingEvaluations = await this.evaluationRepo.find({
-      where: { stageId },
-      select: ["teamId", "aiEvaluatedAt"],
-    });
-
-    const evaluatedTeamIds = new Set(
-      existingEvaluations
-        .filter((e) => e.aiEvaluatedAt != null)
-        .map((e) => e.teamId),
-    );
-
-    const toEvaluate = teams.filter(
-      (t) => !evaluatedTeamIds.has(t.id),
-    );
-
+  async triggerBatchEvaluation(dto: TriggerEvaluationDto): Promise<{ queued: number; skipped: number; jobs: EvaluationJob[] }> {
+    const stage = await this.stageRepo.findOne({ where: { id: dto.stageId, cohortId: dto.cohortId } });
+    if (!stage?.isActive || !stage.requiresAiEvaluation) throw new BadRequestException("Stage is not eligible for AI evaluation");
+    const submissions = await this.submissionRepo.find({ where: { stageId: stage.id, status: In(stage.requiresManualApproval ? [SubmissionStatus.APPROVED, SubmissionStatus.EVALUATED] : [SubmissionStatus.SUBMITTED, SubmissionStatus.APPROVED, SubmissionStatus.LATE, SubmissionStatus.EVALUATED]) } });
     const jobs: EvaluationJob[] = [];
     let skipped = 0;
-
-    for (const team of toEvaluate) {
-      // Check for existing pending/processing job
-      const existingJob = await this.evaluationJobRepo.findOne({
-        where: {
-          teamId: team.id,
-          stageId,
-          status: In([EvaluationJobStatus.PENDING, EvaluationJobStatus.PROCESSING]),
-        },
-      });
-
-      if (existingJob) {
-        skipped++;
-        continue;
-      }
-
-      // Create job record
-      const evaluationJob = this.evaluationJobRepo.create({
-        teamId: team.id,
-        stageId,
-        cohortId,
-        status: EvaluationJobStatus.PENDING,
-      });
-      await this.evaluationJobRepo.save(evaluationJob);
-
-      // Add to BullMQ queue
-      await this.evaluationQueue.add(
-        EVALUATION_JOB_TYPES.EVALUATE_SUBMISSION,
-        {
-          teamId: team.id,
-          stageId,
-          cohortId,
-          evaluationJobId: evaluationJob.id,
-        },
-        DEFAULT_JOB_OPTIONS,
-      );
-
-      jobs.push(evaluationJob);
+    for (const submission of submissions) {
+      if (dto.teamIds?.length && !dto.teamIds.includes(submission.teamId)) continue;
+      const existing = await this.evaluationRepo.findOne({ where: { teamId: submission.teamId, stageId: stage.id } });
+      if (existing?.aiEvaluatedAt) { skipped++; continue; }
+      const pending = await this.evaluationJobRepo.findOne({ where: { teamId: submission.teamId, stageId: stage.id, status: In([EvaluationJobStatus.PENDING, EvaluationJobStatus.PROCESSING]) } });
+      if (pending) { skipped++; continue; }
+      jobs.push(await this.triggerSingleEvaluation({ teamId: submission.teamId, stageId: stage.id }));
     }
-
-    this.logger.log(
-      `Queued ${jobs.length} evaluation jobs for stage ${stageId}, skipped ${skipped}`,
-    );
-
-    return {
-      queued: jobs.length,
-      skipped: skipped + (teams.length - toEvaluate.length),
-      jobs,
-    };
+    return { queued: jobs.length, skipped, jobs };
   }
-
 
   async triggerSingleEvaluation(dto: TriggerSingleEvaluationDto): Promise<EvaluationJob> {
     const { teamId, stageId } = dto;
-
-    // Verify submission exists
-    const submission = await this.submissionRepo.findOne({
-      where: { teamId, stageId },
-    });
-
-    if (!submission) {
-      throw new NotFoundException("No submission found for this team and stage");
-    }
-
-    if (submission.status === SubmissionStatus.DRAFT) {
-      throw new BadRequestException("Cannot evaluate draft submissions");
-    }
-
-    // Check for existing pending/processing job
-    const existingJob = await this.evaluationJobRepo.findOne({
-      where: {
-        teamId,
-        stageId,
-        status: In([EvaluationJobStatus.PENDING, EvaluationJobStatus.PROCESSING]),
-      },
-    });
-
-    if (existingJob) {
-      throw new BadRequestException("Evaluation already in progress for this team");
-    }
-
-    // Get team to find cohortId
     const team = await this.teamRepo.findOne({ where: { id: teamId } });
-    if (!team) {
-      throw new NotFoundException("Team not found");
+    if (!team || team.status === "disqualified") throw new NotFoundException("Eligible team not found");
+    const stage = await this.stageRepo.findOne({ where: { id: stageId, cohortId: team.cohortId } });
+    if (!stage?.isActive || !stage.requiresAiEvaluation) throw new BadRequestException("Stage is not eligible for AI evaluation");
+    const submission = await this.submissionRepo.findOne({ where: { teamId, stageId } });
+    const allowed = stage.requiresManualApproval ? [SubmissionStatus.APPROVED, SubmissionStatus.EVALUATED] : [SubmissionStatus.SUBMITTED, SubmissionStatus.APPROVED, SubmissionStatus.LATE, SubmissionStatus.EVALUATED];
+    if (!submission || !allowed.includes(submission.status)) throw new BadRequestException("An eligible submitted or approved submission is required");
+    const existing = await this.evaluationJobRepo.findOne({ where: { teamId, stageId, status: In([EvaluationJobStatus.PENDING, EvaluationJobStatus.PROCESSING]) } });
+    if (existing) throw new BadRequestException("Evaluation already in progress for this team");
+    const id = randomUUID();
+    const record = this.evaluationJobRepo.create({ id, bullJobId: id, teamId, stageId, cohortId: team.cohortId, status: EvaluationJobStatus.PENDING });
+    await this.evaluationJobRepo.save(record);
+    return this.enqueue(record);
+  }
+
+  private async enqueue(record: EvaluationJob): Promise<EvaluationJob> {
+    record.bullJobId = record.id;
+    await this.evaluationJobRepo.save(record);
+    try {
+      await this.evaluationQueue.add(EVALUATION_JOB_TYPES.EVALUATE_SUBMISSION,
+        { teamId: record.teamId, stageId: record.stageId, cohortId: record.cohortId, evaluationJobId: record.id },
+        { ...DEFAULT_JOB_OPTIONS, jobId: record.id });
+      return record;
+    } catch (error) {
+      await this.evaluationJobRepo.update(record.id, { status: EvaluationJobStatus.FAILED, error: "Queue enqueue failed: " + (error as Error).message });
+      throw error;
     }
+  }
 
-    // Create job record
-    const evaluationJob = this.evaluationJobRepo.create({
-      teamId,
-      stageId,
-      cohortId: team.cohortId,
-      status: EvaluationJobStatus.PENDING,
-    });
-    await this.evaluationJobRepo.save(evaluationJob);
-
-    // Add to queue
-    await this.evaluationQueue.add(
-      EVALUATION_JOB_TYPES.EVALUATE_SUBMISSION,
-      {
-        teamId,
-        stageId,
-        cohortId: team.cohortId,
-        evaluationJobId: evaluationJob.id,
-      },
-      DEFAULT_JOB_OPTIONS,
-    );
-
-    return evaluationJob;
+  @Interval(30000)
+  async reconcilePendingJobs(): Promise<void> {
+    try {
+      const records = await this.evaluationJobRepo.find({ where: { status: EvaluationJobStatus.PENDING }, take: 100 });
+      for (const record of records) if (!await this.evaluationQueue.getJob(record.bullJobId || record.id)) await this.enqueue(record);
+    } catch (error) { this.logger.error("Queue reconciliation failed: " + (error as Error).message); }
   }
 
   async retryFailedJob(jobId: string): Promise<EvaluationJob> {
@@ -215,25 +128,16 @@ export class EvaluationsService {
 
     // Reset job status
     job.status = EvaluationJobStatus.PENDING;
-    job.error = undefined;
-    job.errorStack = undefined;
+    job.error = null as any;
+    job.errorStack = null as any;
     await this.evaluationJobRepo.save(job);
 
-    // Re-add to queue
-    await this.evaluationQueue.add(
-      EVALUATION_JOB_TYPES.EVALUATE_SUBMISSION,
-      {
-        teamId: job.teamId,
-        stageId: job.stageId,
-        cohortId: job.cohortId,
-        evaluationJobId: job.id,
-      },
-      DEFAULT_JOB_OPTIONS,
-    );
-
-    return job;
+    const queued = await this.evaluationQueue.getJob(job.bullJobId || job.id);
+    if (queued) await queued.remove();
+    return this.enqueue(job);
   }
 
+  @Transactional("evaluation-result")
   async cancelJob(jobId: string): Promise<EvaluationJob> {
     const job = await this.evaluationJobRepo.findOne({ where: { id: jobId } });
     if (!job) {
@@ -245,11 +149,9 @@ export class EvaluationsService {
     }
 
     // Try to remove from BullMQ queue
-    if (job.bullJobId) {
-      const bullJob = await this.evaluationQueue.getJob(job.bullJobId);
-      if (bullJob) {
-        await bullJob.remove();
-      }
+    const bullJob = await this.evaluationQueue.getJob(job.bullJobId || job.id);
+    if (bullJob) {
+      try { await bullJob.remove(); } catch { /* A running worker observes the persisted cancellation before commit. */ }
     }
 
     job.status = EvaluationJobStatus.CANCELLED;
@@ -404,7 +306,8 @@ export class EvaluationsService {
   }
 
   async clearQueue(): Promise<number> {
-    await this.evaluationQueue.drain();
+    await this.evaluationQueue.drain(true);
+    await this.evaluationJobRepo.update({ status: EvaluationJobStatus.PENDING }, { status: EvaluationJobStatus.CANCELLED });
     return 0;
   }
 
@@ -462,20 +365,15 @@ export class EvaluationsService {
   ): Promise<Evaluation> {
     const evaluation = await this.evaluationRepo.findOne({
       where: { id: evaluationId },
+      relations: ["stage"],
     });
 
     if (!evaluation) {
       throw new NotFoundException("Evaluation not found");
     }
 
-    // Calculate weighted human score
-    let totalScore = 0;
-    let totalMaxScore = 0;
-    for (const score of dto.scores) {
-      totalScore += score.score;
-      totalMaxScore += score.maxScore;
-    }
-    const humanOverallScore = totalMaxScore > 0 ? (totalScore / totalMaxScore) * 100 : 0;
+    if (!evaluation.stage) throw new BadRequestException("Evaluation stage is missing");
+    const humanOverallScore = scoreAgainstRubric(evaluation.stage.evaluationCriteria || DEFAULT_EVALUATION_CRITERIA, dto.scores);
 
     evaluation.humanScores = dto.scores;
     evaluation.humanOverallScore = humanOverallScore;
@@ -549,7 +447,7 @@ export class EvaluationsService {
             stageId: evaluation.stageId,
             stageName,
           },
-          url: "/app/evaluations",
+          url: "/participant/submissions",
         });
       }
     } catch (error) {

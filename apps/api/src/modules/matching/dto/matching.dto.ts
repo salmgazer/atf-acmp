@@ -1,3 +1,4 @@
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import { IsUUID, IsOptional, IsNumber, Min, Max, IsBoolean, IsArray, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
@@ -82,6 +83,7 @@ export class MatchingConfigDto {
   })
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   balanceDistribution?: boolean = true;
 
   @ApiPropertyOptional({

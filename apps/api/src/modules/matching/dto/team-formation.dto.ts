@@ -1,3 +1,4 @@
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import {
   IsUUID,
   IsOptional,
@@ -81,6 +82,7 @@ export class TeamFormationConfigDto {
   })
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   prioritizeSkillDiversity?: boolean = true;
 
   @ApiPropertyOptional({
@@ -134,6 +136,7 @@ export class TeamFormationConfigDto {
   })
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   forceCrossCountry?: boolean = false;
 
   @ApiPropertyOptional({
@@ -142,6 +145,7 @@ export class TeamFormationConfigDto {
   })
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   useBriefCentricAssignment?: boolean = true;
 }
 
@@ -208,6 +212,8 @@ export class FinalizeTeamFormationDto {
  * Proposed team in the preview
  */
 export class ProposedTeamDto {
+  @ApiPropertyOptional() group?: string | null;
+
   @ApiProperty({ description: "Temporary ID for the proposed team" })
   proposedTeamId: string;
 
@@ -284,6 +290,8 @@ export class ProposedTeamDto {
  * Proposed backfill assignment for an existing undersized team
  */
 export class ProposedBackfillDto {
+  @ApiPropertyOptional() group?: string | null;
+
   @ApiProperty({ description: "Existing team ID to backfill" })
   teamId: string;
 

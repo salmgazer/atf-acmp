@@ -1,3 +1,5 @@
+import { JwtStrategy } from "@/auth/strategies/jwt.strategy";
+import { SocketSessionsService } from "@/auth/socket-sessions.service";
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -18,7 +20,7 @@ interface AuthenticatedSocket extends Socket {
 @WebSocketGateway({
   namespace: "/notifications",
   cors: {
-    origin: "*",
+    origin: (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || "http://localhost:3000").split(","),
     credentials: true,
   },
 })
@@ -31,7 +33,9 @@ export class NotificationsGateway
   private readonly logger = new Logger(NotificationsGateway.name);
   private connectedUsers: Map<string, Set<string>> = new Map(); // recipientKey -> socketIds
 
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(private readonly jwtService: JwtService, private readonly principalStrategy: JwtStrategy, private readonly sessions: SocketSessionsService) {}
+
+  afterInit(server: Server) { this.sessions.register(server); }
 
   async handleConnection(client: AuthenticatedSocket) {
     try {
@@ -45,8 +49,18 @@ export class NotificationsGateway
         return;
       }
 
-      const payload = this.jwtService.verify(token);
-      client.userId = payload.sub || payload.id;
+      const claims = this.jwtService.verify(token);
+      const payload = await this.principalStrategy.validate(claims);
+      client.userId = payload.id;
+      client.join(`principal:${payload.id}`);
+      client.join(`session:${payload.sessionId}`);
+      const expiry = setTimeout(() => client.disconnect(true), Math.max(0, claims.exp * 1000 - Date.now()));
+      expiry.unref();
+      client.once("disconnect", () => clearTimeout(expiry));
+      client.use(async (_packet, next) => {
+        try { await this.principalStrategy.validate(this.jwtService.verify(token)); next(); }
+        catch { next(new Error("Session has ended")); client.disconnect(true); }
+      });
       
       // Determine user type from JWT payload
       if (payload.role === "participant") {

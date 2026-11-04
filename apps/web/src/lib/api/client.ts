@@ -1,3 +1,4 @@
+import { useAuthStore } from "@/lib/stores/auth-store";
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import { toast } from "sonner";
 
@@ -10,6 +11,15 @@ let isRedirecting = false;
 let redirectTimeout: NodeJS.Timeout | null = null;
 let isRefreshing = false;
 let refreshPromise: Promise<string | null> | null = null;
+let pendingSessionRenewal: Promise<unknown> | null = null;
+
+/** Keep requests using the previous token from logging out during session rotation. */
+export async function withSessionRenewal<T>(operation: () => Promise<T>): Promise<T> {
+  const request = Promise.resolve().then(operation);
+  pendingSessionRenewal = request;
+  try { return await request; }
+  finally { if (pendingSessionRenewal === request) pendingSessionRenewal = null; }
+}
 
 /**
  * Generic API response type
@@ -37,31 +47,19 @@ export interface PaginatedResponse<T> {
  * This is a local implementation to avoid circular imports
  */
 async function tryRefreshToken(): Promise<string | null> {
-  const refreshToken = typeof window !== "undefined" 
-    ? localStorage.getItem("refresh_token") 
-    : null;
-
-  console.log("[tryRefreshToken] Attempting refresh, has refresh token:", !!refreshToken);
-
-  if (!refreshToken) {
-    console.log("[tryRefreshToken] No refresh token found in localStorage");
-    return null;
-  }
-
   try {
     // Use a fresh axios instance to avoid interceptors
-    const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-      refreshToken,
-    });
+    const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true });
 
     const { accessToken, user } = response.data;
     console.log("[tryRefreshToken] Refresh successful, got new access token");
 
     // Update localStorage
     if (typeof window !== "undefined" && accessToken) {
-      localStorage.setItem("auth_token", accessToken);
+      useAuthStore.getState().setToken(accessToken);
+      useAuthStore.getState().setUser(user);
       // Also update cookie for middleware
-      document.cookie = `auth_token=${accessToken}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
+      document.cookie = `auth_token=present; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
     }
 
     return accessToken;
@@ -121,9 +119,19 @@ const createApiClient = (): AxiosInstance => {
         originalRequest.url?.includes("/auth/register") ||
         originalRequest.url?.includes("/auth/magic-link") ||
         originalRequest.url?.includes("/auth/verify") ||
-        originalRequest.url?.includes("/auth/refresh");
+        originalRequest.url?.includes("/auth/change-password") ||
+        originalRequest.url?.includes("/auth/refresh") || originalRequest.url?.includes("/auth/logout");
 
       if (error.response?.status === 401 && !isPublicEndpoint && !originalRequest._retry) {
+        if (pendingSessionRenewal) {
+          try { await pendingSessionRenewal; } catch { /* A failed password change leaves the current session intact. */ }
+        }
+        const currentToken = useAuthStore.getState().token;
+        if (currentToken && originalRequest.headers.Authorization !== `Bearer ${currentToken}`) {
+          originalRequest._retry = true;
+          originalRequest.headers.Authorization = `Bearer ${currentToken}`;
+          return client(originalRequest);
+        }
         // Mark request as retried to prevent infinite loops
         originalRequest._retry = true;
         
@@ -171,6 +179,7 @@ const createApiClient = (): AxiosInstance => {
           
           // Clear auth data and redirect to login
           if (typeof window !== "undefined") {
+            useAuthStore.getState().logout();
             localStorage.removeItem("auth_token");
             localStorage.removeItem("refresh_token");
             localStorage.removeItem("acmp-auth-store");
@@ -180,12 +189,12 @@ const createApiClient = (): AxiosInstance => {
             const path = window.location.pathname;
             let loginPath = "/";
             
-            if (path.startsWith("/portal")) {
-              loginPath = "/portal/login";
-            } else if (path.startsWith("/org")) {
-              loginPath = "/org/login";
-            } else if (path.startsWith("/app")) {
-              loginPath = "/app/login";
+            if (path.startsWith("/staff")) {
+              loginPath = "/staff/login";
+            } else if (path.startsWith("/partners")) {
+              loginPath = "/partners/login";
+            } else if (path.startsWith("/participant")) {
+              loginPath = "/participant/login";
             } else if (path.startsWith("/mentor")) {
               loginPath = "/mentor/login";
             }

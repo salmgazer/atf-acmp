@@ -1,3 +1,4 @@
+jest.mock("@nestjs/schedule", () => ({ Interval: () => () => undefined }));
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { getQueueToken } from "@nestjs/bullmq";
@@ -8,7 +9,7 @@ import {
   EvaluationJob,
   EvaluationJobStatus,
 } from "@/database/entities/evaluation.entity";
-import { Submission, SubmissionStatus } from "@/database/entities/stage.entity";
+import { Submission, SubmissionStatus, Stage } from "@/database/entities/stage.entity";
 import { Team, TeamMember } from "@/database/entities/team.entity";
 import { EVALUATION_QUEUE_NAME } from "./evaluation.constants";
 import {
@@ -24,6 +25,7 @@ describe("EvaluationsService", () => {
   let submissionRepo: ReturnType<typeof createMockRepository>;
   let teamRepo: ReturnType<typeof createMockRepository>;
   let teamMemberRepo: ReturnType<typeof createMockRepository>;
+  let stageRepo: ReturnType<typeof createMockRepository>;
   let mockQueue: any;
   let mockOneSignalService: any;
 
@@ -58,6 +60,7 @@ describe("EvaluationsService", () => {
     aiScores: [{ criteriaId: "c1", score: 8, maxScore: 10 }],
     aiOverallScore: 80,
     aiEvaluatedAt: new Date(),
+    stage: { evaluationCriteria: [{ id: "c1", name: "Criterion 1", maxScore: 10, weight: 100 }] },
     humanScores: null,
     humanOverallScore: null,
     humanEvaluatedAt: null,
@@ -68,10 +71,16 @@ describe("EvaluationsService", () => {
   };
 
   beforeEach(async () => {
+    mockEvaluation.stage = { evaluationCriteria: [{ id: "c1", name: "Criterion 1", maxScore: 10, weight: 100 }] };
     evaluationRepo = createMockRepository();
+    stageRepo = createMockRepository();
+    stageRepo.findOne.mockResolvedValue({ id: "stage-1", cohortId: "cohort-1", isActive: true, requiresAiEvaluation: true, approvalMode: "auto", evaluationCriteria: [{ id: "c1", maxScore: 10, weight: 100 }] });
     evaluationJobRepo = createMockRepository();
     submissionRepo = createMockRepository();
     teamRepo = createMockRepository();
+    teamRepo.findOne.mockResolvedValue(mockTeam);
+    submissionRepo.find.mockResolvedValue([mockSubmission]);
+    submissionRepo.findOne.mockResolvedValue(mockSubmission);
     teamMemberRepo = createMockRepository();
 
     mockQueue = {
@@ -96,6 +105,7 @@ describe("EvaluationsService", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EvaluationsService,
+        { provide: getRepositoryToken(Stage), useValue: stageRepo },
         { provide: getRepositoryToken(Evaluation), useValue: evaluationRepo },
         { provide: getRepositoryToken(EvaluationJob), useValue: evaluationJobRepo },
         { provide: getRepositoryToken(Submission), useValue: submissionRepo },
@@ -133,9 +143,7 @@ describe("EvaluationsService", () => {
 
     it("should skip teams with completed evaluations", async () => {
       teamRepo.find.mockResolvedValue([mockTeam]);
-      evaluationRepo.find.mockResolvedValue([
-        { teamId: "team-1", aiEvaluatedAt: new Date() },
-      ]);
+      evaluationRepo.findOne.mockResolvedValue({ teamId: "team-1", aiEvaluatedAt: new Date() });
 
       const result = await service.triggerBatchEvaluation({
         cohortId: "cohort-1",
@@ -183,6 +191,23 @@ describe("EvaluationsService", () => {
   });
 
   describe("triggerSingleEvaluation", () => {
+    it("persists deterministic queue identity and marks enqueue failures recoverably", async () => {
+      evaluationJobRepo.findOne.mockResolvedValue(null);
+      evaluationJobRepo.create.mockImplementation(value => value);
+      evaluationJobRepo.save.mockImplementation(async value => value);
+      mockQueue.add.mockRejectedValue(new Error("Redis unavailable"));
+      await expect(service.triggerSingleEvaluation({ teamId: "team-1", stageId: "stage-1" })).rejects.toThrow("Redis unavailable");
+      const saved = evaluationJobRepo.save.mock.calls[0][0] as any;
+      expect(saved.bullJobId).toBe(saved.id);
+      expect(evaluationJobRepo.update).toHaveBeenCalledWith(saved.id, expect.objectContaining({ status: EvaluationJobStatus.FAILED }));
+    });
+    it("recovers a pending database job missing from Redis", async () => {
+      evaluationJobRepo.find.mockResolvedValue([{ ...mockEvaluationJob }]);
+      evaluationJobRepo.save.mockImplementation(async value => value);
+      mockQueue.getJob.mockResolvedValue(null);
+      await service.reconcilePendingJobs();
+      expect(mockQueue.add).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ evaluationJobId: "job-1" }), expect.objectContaining({ jobId: "job-1" }));
+    });
     it("should queue evaluation for a single team", async () => {
       submissionRepo.findOne.mockResolvedValue(mockSubmission);
       evaluationJobRepo.findOne.mockResolvedValue(null);
@@ -199,12 +224,12 @@ describe("EvaluationsService", () => {
       expect(mockQueue.add).toHaveBeenCalled();
     });
 
-    it("should throw NotFoundException if no submission found", async () => {
+    it("should reject when no eligible submission exists", async () => {
       submissionRepo.findOne.mockResolvedValue(null);
 
       await expect(
         service.triggerSingleEvaluation({ teamId: "team-1", stageId: "stage-1" })
-      ).rejects.toThrow(NotFoundException);
+      ).rejects.toThrow(BadRequestException);
     });
 
     it("should throw BadRequestException for draft submissions", async () => {
@@ -533,6 +558,7 @@ describe("EvaluationsService", () => {
     it("should calculate weighted human score correctly", async () => {
       const evalWithCalc = {
         ...mockEvaluation,
+        stage: { evaluationCriteria: [{ id: "c1", name: "Criterion 1", maxScore: 10, weight: 50 }, { id: "c2", name: "Criterion 2", maxScore: 10, weight: 50 }] },
         calculateFinalScore: jest.fn().mockReturnValue(85),
       };
       evaluationRepo.findOne.mockResolvedValue(evalWithCalc);

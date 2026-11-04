@@ -17,6 +17,7 @@ export type NotificationType =
   | "mentor_session_reminder"
   | "brief_status_changed"
   | "brief_selected"
+  | "brief_event"
   | "submission_received"
   | "submission_deadline"
   | "evaluation_complete"
@@ -198,7 +199,7 @@ export function useNotificationSocket(options: UseNotificationSocketOptions) {
   useEffect(() => {
     if (!options.token) return;
 
-    const socketUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+    const socketUrl = process.env.NEXT_PUBLIC_WS_URL || process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || "http://localhost:3001";
 
     socketRef.current = io(`${socketUrl}/notifications`, {
       auth: { token: options.token },

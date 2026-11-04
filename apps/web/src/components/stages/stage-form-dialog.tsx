@@ -615,7 +615,7 @@ export function StageFormDialog({
                       {...register("urlLabel")}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Label shown to participants (e.g., "Demo URL", "Figma Link")
+                      Label shown to participants (e.g., &quot;Demo URL&quot;, &quot;Figma Link&quot;)
                     </p>
                   </div>
                 </div>
@@ -633,7 +633,7 @@ export function StageFormDialog({
                       {...register("textLabel")}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Label shown above the text area (e.g., "Problem Statement")
+                      Label shown above the text area (e.g., &quot;Problem Statement&quot;)
                     </p>
                   </div>
                   <div className="grid grid-cols-2 gap-4">

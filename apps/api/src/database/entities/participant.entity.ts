@@ -73,6 +73,7 @@ export class ParticipantPreference extends BaseEntity {
 }
 
 @Entity("participants")
+@Index('participant_cohort_group', ['cohortId', 'group'])
 @Index(["cohortId", "country"])
 @Index(["cohortId", "status"])
 export class Participant extends BaseEntity {
@@ -108,7 +109,7 @@ export class Participant extends BaseEntity {
   @Column({ name: "firebase_uid", nullable: true })
   firebaseUid?: string;
 
-  @Column({ name: "password_hash", nullable: true })
+  @Column({ name: "password_hash", nullable: true, select: false })
   passwordHash?: string;
 
   @Column({ name: "must_change_password", default: true })
@@ -130,6 +131,9 @@ export class Participant extends BaseEntity {
   @Column({ name: "cohort_id" })
   cohortId: string;
 
+  @Column({ name: 'group_name', type: 'varchar', length: 100, nullable: true })
+  group: string | null;
+
   @ManyToOne(() => Cohort)
   @JoinColumn({ name: "cohort_id" })
   cohort: Cohort;
@@ -140,6 +144,12 @@ export class Participant extends BaseEntity {
     { cascade: true },
   )
   preference?: ParticipantPreference;
+
+  @Column({ name: "password_reset_token", type: "varchar", nullable: true, select: false })
+  passwordResetToken?: string | null;
+
+  @Column({ name: "password_reset_expires", type: "timestamp", nullable: true, select: false })
+  passwordResetExpires?: Date | null;
 
   /**
    * Get full name

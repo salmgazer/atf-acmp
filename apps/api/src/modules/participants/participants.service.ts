@@ -1,3 +1,5 @@
+import { resolveCohortGroup } from "@/common/services/cohort-groups";
+import { Transactional } from "@/common/decorators/transactional.decorator";
 import {
   Injectable,
   NotFoundException,
@@ -7,7 +9,7 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
-import { Repository, ILike, In } from "typeorm";
+import { Repository, ILike, In, IsNull } from "typeorm";
 import * as bcrypt from "bcrypt";
 import {
   Participant,
@@ -49,6 +51,7 @@ export class ParticipantsService {
     private readonly cohortsService: CohortsService,
   ) {}
 
+  @Transactional()
   async create(dto: CreateParticipantDto): Promise<Participant> {
     // Verify cohort exists
     const cohort = await this.cohortRepository.findOne({
@@ -58,20 +61,78 @@ export class ParticipantsService {
       throw new NotFoundException("Cohort not found");
     }
 
-    // Check for duplicate participant ID or email
-    const existing = await this.participantRepository.findOne({
-      where: [{ participantId: dto.participantId }, { email: dto.email }],
+    const group = resolveCohortGroup(cohort, dto.group);
+
+    // Check for existing participant (including soft-deleted)
+    const existingByEmail = await this.participantRepository.findOne({
+      where: { email: dto.email },
+      withDeleted: true,
     });
 
-    if (existing) {
-      if (existing.participantId === dto.participantId) {
-        throw new ConflictException("Participant ID already exists");
-      }
+    const existingById = await this.participantRepository.findOne({
+      where: { participantId: dto.participantId },
+      withDeleted: true,
+    });
+
+    // Check if there's an active (non-deleted) duplicate
+    if (existingByEmail && !existingByEmail.deletedAt) {
       throw new ConflictException("Email already registered");
+    }
+    if (existingById && !existingById.deletedAt && existingById.id !== existingByEmail?.id) {
+      throw new ConflictException("Participant ID already exists");
+    }
+
+    // If there's a soft-deleted record with matching email, restore and update it
+    if (existingByEmail && existingByEmail.deletedAt) {
+      await this.resetRestoredAccess(existingByEmail.id);
+      existingByEmail.deletedAt = null as any;
+      existingByEmail.participantId = dto.participantId;
+      existingByEmail.firstName = dto.firstName;
+      existingByEmail.lastName = dto.lastName;
+      existingByEmail.country = dto.country;
+      existingByEmail.institution = dto.institution;
+      existingByEmail.phoneNumber = dto.phoneNumber;
+      existingByEmail.cohortId = dto.cohortId;
+      existingByEmail.group = group;
+      existingByEmail.status = ParticipantStatus.IMPORTED;
+      existingByEmail.mustChangePassword = true;
+      existingByEmail.onboardingComplete = false;
+      existingByEmail.firebaseUid = null as any;
+      existingByEmail.passwordHash = await bcrypt.hash(dto.participantId, 10);
+      existingByEmail.passwordResetToken = null;
+      existingByEmail.passwordResetExpires = null;
+      existingByEmail.skills = [];
+      existingByEmail.interests = [];
+      return this.participantRepository.save(existingByEmail);
+    }
+
+    // If there's a soft-deleted record with matching participantId (but different email), restore and update it
+    if (existingById && existingById.deletedAt) {
+      await this.resetRestoredAccess(existingById.id);
+      existingById.deletedAt = null as any;
+      existingById.email = dto.email;
+      existingById.firstName = dto.firstName;
+      existingById.lastName = dto.lastName;
+      existingById.country = dto.country;
+      existingById.institution = dto.institution;
+      existingById.phoneNumber = dto.phoneNumber;
+      existingById.cohortId = dto.cohortId;
+      existingById.group = group;
+      existingById.status = ParticipantStatus.IMPORTED;
+      existingById.mustChangePassword = true;
+      existingById.onboardingComplete = false;
+      existingById.firebaseUid = null as any;
+      existingById.passwordHash = await bcrypt.hash(dto.participantId, 10);
+      existingById.passwordResetToken = null;
+      existingById.passwordResetExpires = null;
+      existingById.skills = [];
+      existingById.interests = [];
+      return this.participantRepository.save(existingById);
     }
 
     const participant = this.participantRepository.create({
       ...dto,
+      group,
       status: ParticipantStatus.IMPORTED,
       mustChangePassword: true,
       onboardingComplete: false,
@@ -80,12 +141,23 @@ export class ParticipantsService {
     return this.participantRepository.save(participant);
   }
 
+  private async resetRestoredAccess(participantId: string): Promise<void> {
+    const manager = this.participantRepository.manager;
+    await manager.getRepository("RefreshToken").update({ participantId, isRevoked: false }, { isRevoked: true, revokedAt: new Date(), revokedReason: "Participant restored" });
+    await manager.getRepository("TeamMember").softDelete({ participantId });
+    await manager.getRepository("ChannelMember").update({ memberId: participantId, memberType: "participant" }, { leftAt: new Date() });
+    await manager.getRepository("ParticipantPreference").delete({ participantId });
+  }
+
   async findAll(query: ParticipantQueryDto): Promise<PaginatedParticipantsDto> {
     const page = query.page || 1;
     const limit = query.limit || 20;
     const skip = (page - 1) * limit;
 
     const where: any = {};
+    if (query.group && query.ungrouped) throw new BadRequestException("Choose a group or ungrouped participants");
+    if (query.group) where.group = query.group;
+    if (query.ungrouped) where.group = IsNull();
 
     if (query.cohortId) {
       where.cohortId = query.cohortId;
@@ -104,12 +176,12 @@ export class ParticipantsService {
     }
 
     if (query.search) {
-      // Search by name, email, or participant ID
+      // Search by name, email, or participant ID (all case-insensitive)
       const searchResults = await this.participantRepository
         .createQueryBuilder("p")
         .where(where)
         .andWhere(
-          "(LOWER(p.firstName) LIKE :search OR LOWER(p.lastName) LIKE :search OR LOWER(p.email) LIKE :search OR p.participantId LIKE :search)",
+          "(LOWER(p.firstName) LIKE :search OR LOWER(p.lastName) LIKE :search OR LOWER(p.email) LIKE :search OR LOWER(p.participantId) LIKE :search)",
           { search: `%${query.search.toLowerCase()}%` }
         )
         .orderBy("p.createdAt", "DESC")
@@ -182,6 +254,20 @@ export class ParticipantsService {
     return this.participantRepository.save(participant);
   }
 
+  @Transactional()
+  async assignGroup(id: string, value?: string | null): Promise<Participant> {
+    const participant = await this.findOne(id);
+    const cohort = await this.cohortRepository.findOne({ where: { id: participant.cohortId } });
+    if (!cohort) throw new NotFoundException('Cohort not found');
+    const group = resolveCohortGroup(cohort, value);
+    if ((participant.group || null) !== group) {
+      const membership = await this.participantRepository.manager.getRepository('TeamMember').findOne({ where: { participantId: id } });
+      if (membership) throw new BadRequestException('Remove the participant from their team before changing group');
+    }
+    participant.group = group;
+    return this.participantRepository.save(participant);
+  }
+
   async updateStatus(id: string, status: ParticipantStatus): Promise<Participant> {
     const participant = await this.findOne(id);
     participant.status = status;
@@ -208,6 +294,7 @@ export class ParticipantsService {
    * Bulk import participants from CSV data
    * Creates Firebase users with participantId as initial password
    */
+  @Transactional()
   async bulkImport(dto: BulkImportParticipantsDto): Promise<BulkImportResultDto> {
     const results: ImportResultDto[] = [];
     let successCount = 0;
@@ -222,23 +309,57 @@ export class ParticipantsService {
       throw new NotFoundException("Cohort not found");
     }
 
-    // Get existing participants to check for duplicates
-    const existingEmails = await this.participantRepository.find({
-      where: { email: In(dto.participants.map((p) => p.email)) },
-      select: ["email"],
-    });
-    const existingEmailSet = new Set(existingEmails.map((p) => p.email));
+    const group = resolveCohortGroup(cohort, dto.group);
 
-    const existingIds = await this.participantRepository.find({
-      where: { participantId: In(dto.participants.map((p) => p.participantId)) },
-      select: ["participantId"],
+    // Get existing participants (including soft-deleted) to check for duplicates
+    const existingByEmail = await this.participantRepository.find({
+      where: { email: In(dto.participants.map((p) => p.email)) },
+      select: ["id", "email", "deletedAt"],
+      withDeleted: true,
     });
-    const existingIdSet = new Set(existingIds.map((p) => p.participantId));
+    const existingEmailMap = new Map(existingByEmail.map((p) => [p.email, p]));
+
+    const existingByIds = await this.participantRepository.find({
+      where: { participantId: In(dto.participants.map((p) => p.participantId)) },
+      select: ["id", "participantId", "deletedAt"],
+      withDeleted: true,
+    });
+    const existingIdMap = new Map(existingByIds.map((p) => [p.participantId, p]));
+
+    // Track which emails/IDs have been processed in this batch
+    const processedEmails = new Set<string>();
+    const processedIds = new Set<string>();
 
     for (const row of dto.participants) {
       try {
-        // Check for duplicates
-        if (existingEmailSet.has(row.email)) {
+        const existingEmail = existingEmailMap.get(row.email);
+        const existingId = existingIdMap.get(row.participantId);
+
+        // Check for duplicates within this batch
+        if (processedEmails.has(row.email)) {
+          results.push({
+            success: false,
+            participantId: row.participantId,
+            email: row.email,
+            error: "Duplicate email in import batch",
+          });
+          failureCount++;
+          continue;
+        }
+
+        if (processedIds.has(row.participantId)) {
+          results.push({
+            success: false,
+            participantId: row.participantId,
+            email: row.email,
+            error: "Duplicate participant ID in import batch",
+          });
+          failureCount++;
+          continue;
+        }
+
+        // Check for active (non-deleted) duplicates in database
+        if (existingEmail && !existingEmail.deletedAt) {
           results.push({
             success: false,
             participantId: row.participantId,
@@ -249,7 +370,7 @@ export class ParticipantsService {
           continue;
         }
 
-        if (existingIdSet.has(row.participantId)) {
+        if (existingId && !existingId.deletedAt) {
           results.push({
             success: false,
             participantId: row.participantId,
@@ -263,27 +384,83 @@ export class ParticipantsService {
         // Hash the initial password (participantId)
         const passwordHash = await bcrypt.hash(row.participantId, 10);
 
-        // Create participant record
-        const participant = this.participantRepository.create({
-          participantId: row.participantId,
-          email: row.email,
-          firstName: row.firstName,
-          lastName: row.lastName,
-          country: row.country,
-          institution: row.institution,
-          phoneNumber: row.phoneNumber,
-          cohortId: dto.cohortId,
-          passwordHash,
-          status: ParticipantStatus.ACTIVE,
-          mustChangePassword: true,
-          onboardingComplete: false,
-        });
+        // If there's a soft-deleted record, restore and update it
+        if (existingEmail && existingEmail.deletedAt) {
+          await this.resetRestoredAccess(existingEmail.id);
+          await this.participantRepository
+            .createQueryBuilder()
+            .update(Participant)
+            .set({
+              deletedAt: null as any,
+              participantId: row.participantId,
+              firstName: row.firstName,
+              lastName: row.lastName,
+              country: row.country,
+              institution: row.institution,
+              phoneNumber: row.phoneNumber,
+              cohortId: dto.cohortId,
+              group,
+              passwordHash,
+              status: ParticipantStatus.ACTIVE,
+              mustChangePassword: true,
+              onboardingComplete: false,
+              firebaseUid: null as any,
+              passwordResetToken: null, passwordResetExpires: null,
+              skills: [],
+              interests: [],
+            })
+            .where("id = :id", { id: existingEmail.id })
+            .execute();
+        } else if (existingId && existingId.deletedAt) {
+          await this.resetRestoredAccess(existingId.id);
+          await this.participantRepository
+            .createQueryBuilder()
+            .update(Participant)
+            .set({
+              deletedAt: null as any,
+              email: row.email,
+              firstName: row.firstName,
+              lastName: row.lastName,
+              country: row.country,
+              institution: row.institution,
+              phoneNumber: row.phoneNumber,
+              cohortId: dto.cohortId,
+              group,
+              passwordHash,
+              status: ParticipantStatus.ACTIVE,
+              mustChangePassword: true,
+              onboardingComplete: false,
+              firebaseUid: null as any,
+              passwordResetToken: null, passwordResetExpires: null,
+              skills: [],
+              interests: [],
+            })
+            .where("id = :id", { id: existingId.id })
+            .execute();
+        } else {
+          // Create new participant record
+          const participant = this.participantRepository.create({
+            participantId: row.participantId,
+            email: row.email,
+            firstName: row.firstName,
+            lastName: row.lastName,
+            country: row.country,
+            institution: row.institution,
+            phoneNumber: row.phoneNumber,
+            cohortId: dto.cohortId,
+            group,
+            passwordHash,
+            status: ParticipantStatus.ACTIVE,
+            mustChangePassword: true,
+            onboardingComplete: false,
+          });
 
-        await this.participantRepository.save(participant);
+          await this.participantRepository.save(participant);
+        }
 
-        // Add to existing sets to prevent duplicates within same batch
-        existingEmailSet.add(row.email);
-        existingIdSet.add(row.participantId);
+        // Mark as processed to prevent duplicates within same batch
+        processedEmails.add(row.email);
+        processedIds.add(row.participantId);
 
         // Track successful imports for welcome emails
         successfulImports.push({
@@ -315,7 +492,7 @@ export class ParticipantsService {
     // Send welcome emails if requested (don't block on email failures)
     if (dto.sendWelcomeEmail !== false && successfulImports.length > 0) {
       const frontendUrl = this.configService.get<string>("FRONTEND_URL", "https://challenge.atf.africa");
-      const portalUrl = `${frontendUrl}/app/login`;
+      const portalUrl = `${frontendUrl}/participant/login`;
 
       // Send emails asynchronously - don't wait for all to complete
       Promise.all(
@@ -382,7 +559,7 @@ export class ParticipantsService {
         type: NotificationType.ANNOUNCEMENT,
         title: "Welcome to the AI Challenge! 🎉",
         body: `Hi ${participant.firstName}! Your profile is set up and you're ready to go. Start by exploring challenge briefs and finding a team to join.`,
-        actionUrl: "/app/dashboard",
+        actionUrl: "/participant/dashboard",
         priority: NotificationPriority.NORMAL,
       });
     } catch (error) {

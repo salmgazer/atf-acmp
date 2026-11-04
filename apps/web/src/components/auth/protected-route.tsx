@@ -1,4 +1,5 @@
 "use client";
+import { safeReturnPath } from "@/lib/stores/auth-store";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -100,15 +101,15 @@ export function GuestRoute({
       const returnTo = searchParams.get("returnTo");
       
       const dashboardPath =
-        returnTo ||
+        safeReturnPath(returnTo || redirectTo, portal) ||
         redirectTo ||
         `/${
           portal === "staff"
-            ? "portal"
-            : portal === "organization"
-            ? "org"
+            ? "staff"
+            : portal === "partner"
+            ? "partners"
             : portal === "participant"
-            ? "app"
+            ? "participant"
             : "mentor"
         }/dashboard`;
       router.push(dashboardPath);

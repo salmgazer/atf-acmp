@@ -39,7 +39,7 @@ export class NotificationTriggersService {
         teamName: params.teamName,
         inviterName: params.inviterName,
       },
-      actionUrl: `/app/team`,
+      actionUrl: `/participant/team`,
       iconName: "user-plus",
       priority: NotificationPriority.HIGH,
     });
@@ -58,7 +58,7 @@ export class NotificationTriggersService {
       title: "Invitation Accepted",
       body: `${params.memberName} has joined your team "${params.teamName}"`,
       data: { teamId: params.teamId, memberName: params.memberName },
-      actionUrl: `/app/team`,
+      actionUrl: `/participant/team`,
       iconName: "users",
     });
   }
@@ -76,7 +76,7 @@ export class NotificationTriggersService {
       title: "Invitation Declined",
       body: `${params.memberName} declined to join "${params.teamName}"`,
       data: { teamId: params.teamId, memberName: params.memberName },
-      actionUrl: `/app/team`,
+      actionUrl: `/participant/team`,
       iconName: "users",
     });
   }
@@ -94,7 +94,7 @@ export class NotificationTriggersService {
       title: "Team Member Left",
       body: `${params.memberName} has left "${params.teamName}"`,
       data: { teamId: params.teamId, memberName: params.memberName },
-      actionUrl: `/app/team`,
+      actionUrl: `/participant/team`,
     });
   }
 
@@ -123,7 +123,7 @@ export class NotificationTriggersService {
         requesterId: params.requesterId,
         requesterName: params.requesterName,
       },
-      actionUrl: `/app/team`,
+      actionUrl: `/participant/team`,
       iconName: "user-plus",
       priority: NotificationPriority.HIGH,
     });
@@ -144,7 +144,7 @@ export class NotificationTriggersService {
       title: "You're In! 🎉",
       body: `Your request to join "${params.teamName}" has been approved!`,
       data: { teamId: params.teamId, teamName: params.teamName },
-      actionUrl: `/app/team`,
+      actionUrl: `/participant/team`,
       iconName: "users",
       priority: NotificationPriority.HIGH,
     });
@@ -165,7 +165,7 @@ export class NotificationTriggersService {
       title: "Join Request Declined",
       body: `Your request to join "${params.teamName}" was not accepted.`,
       data: { teamId: params.teamId, teamName: params.teamName },
-      actionUrl: `/app/team`,
+      actionUrl: `/participant/team`,
       iconName: "users",
     });
   }
@@ -199,7 +199,7 @@ export class NotificationTriggersService {
         requestId: params.requestId,
         reason: params.reason,
       },
-      actionUrl: `/portal/teams/removal-requests`,
+      actionUrl: `/staff/teams/removal-requests`,
       iconName: "user-minus",
       priority: NotificationPriority.HIGH,
     });
@@ -221,7 +221,7 @@ export class NotificationTriggersService {
       title: "Removal Request Approved",
       body: `${params.memberName} has been removed from "${params.teamName}"`,
       data: { teamId: params.teamId, memberName: params.memberName },
-      actionUrl: `/app/team`,
+      actionUrl: `/participant/team`,
       iconName: "users",
     });
   }
@@ -243,7 +243,7 @@ export class NotificationTriggersService {
       title: "Removal Request Rejected",
       body: `Your request to remove ${params.memberName} from "${params.teamName}" was not approved.${params.reason ? ` Reason: ${params.reason}` : ""}`,
       data: { teamId: params.teamId, memberName: params.memberName, reason: params.reason },
-      actionUrl: `/app/team`,
+      actionUrl: `/participant/team`,
       iconName: "users",
     });
   }
@@ -265,7 +265,7 @@ export class NotificationTriggersService {
       title: "Mentor Assigned",
       body: `${params.mentorName} has been assigned as your team's mentor`,
       data: { teamId: params.teamId, mentorId: params.mentorId, mentorName: params.mentorName },
-      actionUrl: `/app/team`,
+      actionUrl: `/participant/team`,
       priority: NotificationPriority.HIGH,
     });
 
@@ -308,7 +308,7 @@ export class NotificationTriggersService {
         teamId: params.teamId,
         sessionDate: params.sessionDate.toISOString(),
       },
-      actionUrl: `/app/team`,
+      actionUrl: `/participant/team`,
       priority: NotificationPriority.HIGH,
     });
 
@@ -405,7 +405,7 @@ export class NotificationTriggersService {
         mentorName: params.mentorName,
         googleMeetLink: params.googleMeetLink,
       },
-      actionUrl: `/app/team`,
+      actionUrl: `/participant/team`,
       iconName: "calendar-check",
       priority: NotificationPriority.HIGH,
     });
@@ -450,7 +450,7 @@ export class NotificationTriggersService {
         mentorName: params.mentorName,
         declineReason: params.declineReason,
       },
-      actionUrl: `/app/team`,
+      actionUrl: `/participant/team`,
       iconName: "calendar-x",
       priority: NotificationPriority.HIGH,
     });
@@ -508,7 +508,7 @@ export class NotificationTriggersService {
         newStatus: params.newStatus,
         feedback: params.feedback,
       },
-      actionUrl: `/org/briefs/${params.briefId}`,
+      actionUrl: `/partners/briefs/${params.briefId}`,
       priority,
     });
   }
@@ -531,7 +531,7 @@ export class NotificationTriggersService {
         briefId: params.briefId,
         briefTitle: params.briefTitle,
       },
-      actionUrl: `/app/briefs/${params.briefId}`,
+      actionUrl: `/participant/briefs/${params.briefId}`,
       priority: NotificationPriority.HIGH,
     });
   }
@@ -555,7 +555,7 @@ export class NotificationTriggersService {
         organizationName: params.organizationName,
         verticalName: params.verticalName,
       },
-      actionUrl: `/portal/briefs/${params.briefId}`,
+      actionUrl: `/staff/briefs/${params.briefId}`,
       priority: NotificationPriority.HIGH,
     });
   }
@@ -585,7 +585,7 @@ export class NotificationTriggersService {
         stageName: params.stageName,
         cohortName: params.cohortName,
       },
-      actionUrl: `/portal/submissions/review?stageId=${params.stageId}`,
+      actionUrl: `/staff/submissions/review?stageId=${params.stageId}`,
       priority: NotificationPriority.HIGH,
     });
   }
@@ -603,7 +603,7 @@ export class NotificationTriggersService {
       title: "Submission Approved! 🎉",
       body: `Your ${params.stageName} submission has been approved${params.approvalNotes ? ". Note: " + params.approvalNotes : ""}`,
       data: { teamId: params.teamId, stageName: params.stageName },
-      actionUrl: `/app/submissions`,
+      actionUrl: `/participant/submissions`,
       priority: NotificationPriority.HIGH,
     });
   }
@@ -621,7 +621,7 @@ export class NotificationTriggersService {
       title: "Submission Not Approved",
       body: `Your ${params.stageName} submission was not approved. Reason: ${params.rejectionReason}`,
       data: { teamId: params.teamId, stageName: params.stageName, rejectionReason: params.rejectionReason },
-      actionUrl: `/app/submissions`,
+      actionUrl: `/participant/submissions`,
       priority: NotificationPriority.HIGH,
     });
   }
@@ -645,7 +645,7 @@ export class NotificationTriggersService {
         briefId: params.briefId,
         stageName: params.stageName,
       },
-      actionUrl: `/org/briefs/${params.briefId}/submissions`,
+      actionUrl: `/partners/briefs/${params.briefId}/submissions`,
     });
   }
 
@@ -675,7 +675,7 @@ export class NotificationTriggersService {
         deadline: params.deadline.toISOString(),
         hoursRemaining: params.hoursRemaining,
       },
-      actionUrl: `/app/submissions`,
+      actionUrl: `/participant/submissions`,
       priority: params.hoursRemaining <= 24 ? NotificationPriority.URGENT : NotificationPriority.HIGH,
     });
   }
@@ -692,10 +692,10 @@ export class NotificationTriggersService {
   }) {
     const actionUrl =
       params.recipientType === NotificationRecipientType.PARTICIPANT
-        ? `/app/chat?channel=${params.channelId}`
+        ? `/participant/chat?channel=${params.channelId}`
         : params.recipientType === NotificationRecipientType.MENTOR
         ? `/mentor/chat?channel=${params.channelId}`
-        : `/portal/chat?channel=${params.channelId}`;
+        : `/staff/chat?channel=${params.channelId}`;
 
     return this.notificationsService.create({
       recipientId: params.recipientId,
@@ -727,7 +727,7 @@ export class NotificationTriggersService {
   }) {
     const actionUrl =
       params.threadAuthorType === NotificationRecipientType.PARTICIPANT
-        ? `/app/forum/thread/${params.threadId}`
+        ? `/participant/forum/thread/${params.threadId}`
         : `/mentor/forum/thread/${params.threadId}`;
 
     return this.notificationsService.create({
@@ -805,7 +805,7 @@ export class NotificationTriggersService {
       title: "Evaluation Results Available",
       body: `Your ${params.stageName} submission has been evaluated${params.score ? ` - Score: ${params.score}` : ""}`,
       data: { teamId: params.teamId, stageName: params.stageName, score: params.score },
-      actionUrl: `/app/submissions`,
+      actionUrl: `/participant/submissions`,
       priority: NotificationPriority.HIGH,
     });
   }

@@ -1,3 +1,4 @@
+import { Public } from "@/common/decorators/public.decorator";
 import {
   Controller,
   Get,
@@ -23,6 +24,7 @@ import { LeaderboardQueryDto, UpdateLeaderboardConfigDto } from "./dto/leaderboa
  */
 @ApiTags("Leaderboard")
 @Controller("leaderboard")
+@Public()
 export class LeaderboardController {
   constructor(private readonly leaderboardService: LeaderboardService) {}
 

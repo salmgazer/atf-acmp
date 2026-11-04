@@ -43,7 +43,11 @@ export class NotificationsService {
 
   // ============ Notification CRUD ============
 
-  async create(dto: CreateNotificationDto): Promise<Notification> {
+  async create(dto: CreateNotificationDto, options: { sendPush?: boolean; id?: string } = {}): Promise<Notification> {
+    if (options.id) {
+      const existing = await this.notificationRepository.findOne({ where: { id: options.id } });
+      if (existing) return existing;
+    }
     // Check user preferences
     const preferences = await this.getOrCreatePreferences(
       dto.recipientId,
@@ -64,6 +68,7 @@ export class NotificationsService {
     }
 
     const notification = this.notificationRepository.create({
+      ...(options.id ? { id: options.id } : {}),
       recipientId: dto.recipientId,
       recipientType: dto.recipientType,
       type: dto.type,
@@ -95,7 +100,7 @@ export class NotificationsService {
     });
 
     // Send push notification if enabled
-    await this.sendPushNotification(saved, preferences);
+    if (options.sendPush !== false) await this.sendPushNotification(saved, preferences);
 
     return saved;
   }
@@ -289,7 +294,7 @@ export class NotificationsService {
     return this.preferenceRepository.save(preferences);
   }
 
-  private async getOrCreatePreferences(
+  async getOrCreatePreferences(
     userId: string,
     userType: NotificationRecipientType
   ): Promise<NotificationPreference> {
@@ -451,7 +456,7 @@ export class NotificationsService {
   /**
    * Check if current time is within user's quiet hours
    */
-  private isInQuietHours(preferences: NotificationPreference): boolean {
+  isInQuietHours(preferences: NotificationPreference): boolean {
     if (!preferences.quietHoursStart || !preferences.quietHoursEnd) {
       return false;
     }

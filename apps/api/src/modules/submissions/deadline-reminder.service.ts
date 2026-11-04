@@ -132,7 +132,7 @@ export class DeadlineReminderService {
         stageName: stage.name,
         deadline: stage.deadline.toISOString(),
       },
-      url: "/app/submissions",
+      url: "/participant/submissions",
     });
 
     if (result.success) {

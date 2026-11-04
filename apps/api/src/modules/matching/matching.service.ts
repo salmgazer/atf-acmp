@@ -1,3 +1,6 @@
+import { Inject } from "@nestjs/common";
+import { CACHE_MANAGER, Cache } from "@nestjs/cache-manager";
+import { Transactional } from "@/common/decorators/transactional.decorator";
 import {
   Injectable,
   NotFoundException,
@@ -59,9 +62,9 @@ export class MatchingService {
   private readonly logger = new Logger(MatchingService.name);
 
   // Cache for preview results
-  private previewCache: Map<string, MatchingPreviewDto> = new Map();
 
   constructor(
+    @Inject(CACHE_MANAGER) private readonly previewStore: Cache,
     @InjectRepository(Team)
     private readonly teamRepository: Repository<Team>,
     @InjectRepository(Brief)
@@ -158,7 +161,7 @@ export class MatchingService {
     };
 
     // Cache the preview
-    this.previewCache.set(cohortId, preview);
+    await this.previewStore.set("matching:" + cohortId, preview, 30 * 60 * 1000);
 
     return preview;
   }
@@ -167,24 +170,25 @@ export class MatchingService {
    * Get the current matching preview
    */
   async getMatchingPreview(cohortId: string): Promise<MatchingPreviewDto | null> {
-    return this.previewCache.get(cohortId) || null;
+    return await this.previewStore.get<MatchingPreviewDto>("matching:" + cohortId) || null;
   }
 
   /**
    * Clear the matching preview cache
    */
-  clearPreviewCache(cohortId: string): void {
-    this.previewCache.delete(cohortId);
+  async clearPreviewCache(cohortId: string): Promise<void> {
+    await this.previewStore.del("matching:" + cohortId);
   }
 
   /**
    * Finalize matching and apply assignments
    */
+  @Transactional("matching")
   async finalizeMatching(
     cohortId: string,
     dto: FinalizeMatchingDto = {}
   ): Promise<{ assignedCount: number; errors: string[] }> {
-    const preview = this.previewCache.get(cohortId);
+    const preview = await this.previewStore.get<MatchingPreviewDto>("matching:" + cohortId);
     if (!preview) {
       throw new BadRequestException(
         "No matching preview found. Run matching first."
@@ -222,7 +226,7 @@ export class MatchingService {
     }
 
     // Clear cache after finalization
-    this.previewCache.delete(cohortId);
+    await this.previewStore.del("matching:" + cohortId);
 
     return { assignedCount, errors };
   }
@@ -236,7 +240,7 @@ export class MatchingService {
       relations: ["organization", "vertical"],
     });
 
-    const preview = this.previewCache.get(cohortId);
+    const preview = await this.previewStore.get<MatchingPreviewDto>("matching:" + cohortId);
     const previewAssignments = new Map<string, number>();
 
     if (preview) {
@@ -278,7 +282,7 @@ export class MatchingService {
       relations: ["members", "members.participant"],
     });
 
-    const preview = this.previewCache.get(cohortId);
+    const preview = await this.previewStore.get<MatchingPreviewDto>("matching:" + cohortId);
     const previewAssignments = new Map<string, { briefId: string; score: number }>();
 
     if (preview) {
@@ -681,6 +685,7 @@ export class MatchingService {
     });
   }
 
+  @Transactional()
   private async assignBriefToTeam(
     teamId: string,
     briefId: string

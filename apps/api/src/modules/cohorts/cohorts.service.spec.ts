@@ -1,3 +1,4 @@
+import { CacheService } from "@/common/cache/cache.service";
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { NotFoundException, BadRequestException, ConflictException } from "@nestjs/common";
@@ -28,6 +29,8 @@ describe("CohortsService", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CohortsService,
+        ...["Stage", "Participant", "Team", "TeamMember", "Brief", "Organization", "ForumCategory", "ChatChannel", "ChannelMember", "User"].map(name => ({ provide: name + "Repository", useValue: { ...createMockRepository(), create: jest.fn(value => value), save: jest.fn(async value => value), createQueryBuilder: jest.fn(() => ({ ...createMockQueryBuilder(), getRawMany: jest.fn().mockResolvedValue([]) })), count: jest.fn().mockResolvedValue(0), find: jest.fn().mockResolvedValue([]) } })),
+        { provide: CacheService, useValue: { buildKey: (...parts: string[]) => parts.join(":"), get: jest.fn().mockResolvedValue(null), set: jest.fn(), del: jest.fn(), invalidateCohort: jest.fn(), invalidateCohorts: jest.fn() } },
         { provide: getRepositoryToken(Cohort), useValue: cohortRepository },
       ],
     }).compile();
@@ -122,7 +125,7 @@ describe("CohortsService", () => {
 
       const result = await service.findOne("cohort-123");
 
-      expect(result).toEqual(mockCohort);
+      expect(result).toEqual({ ...mockCohort, stageCount: 0 });
     });
 
     it("should throw NotFoundException if cohort not found", async () => {
@@ -185,6 +188,7 @@ describe("CohortsService", () => {
     it("should transition from DRAFT to ACTIVE", async () => {
       cohortRepository.findOne
         .mockResolvedValueOnce({ ...mockCohort, status: CohortStatus.DRAFT })
+        .mockResolvedValueOnce({ ...mockCohort, status: CohortStatus.DRAFT })
         .mockResolvedValueOnce(null); // No other active cohort
       cohortRepository.save.mockResolvedValue({ ...mockCohort, status: CohortStatus.ACTIVE });
 
@@ -212,6 +216,7 @@ describe("CohortsService", () => {
 
     it("should throw ConflictException if another cohort is already active", async () => {
       cohortRepository.findOne
+        .mockResolvedValueOnce({ ...mockCohort, status: CohortStatus.DRAFT })
         .mockResolvedValueOnce({ ...mockCohort, status: CohortStatus.DRAFT })
         .mockResolvedValueOnce({ id: "other-cohort", name: "Other Active" }); // Another active cohort exists
 

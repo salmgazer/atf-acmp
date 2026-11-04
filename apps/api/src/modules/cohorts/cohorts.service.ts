@@ -1,3 +1,4 @@
+import { normalizeGroups } from "@/common/services/cohort-groups";
 import {
   Injectable,
   NotFoundException,
@@ -105,6 +106,44 @@ export class CohortsService {
     private readonly cacheService: CacheService,
   ) {}
 
+  /**
+   * Validate that cohort deadlines are in chronological order
+   */
+  private validateDeadlineOrder(deadlines: Record<string, any>): void {
+    if (!deadlines) return;
+
+    const deadlineOrder = [
+      { key: 'registrationEnd', label: 'Registration End' },
+      { key: 'teamFormationEnd', label: 'Team Formation End' },
+      { key: 'briefSelectionEnd', label: 'Brief Selection End' },
+      { key: 'stage1End', label: 'Stage 1 End' },
+      { key: 'stage2End', label: 'Stage 2 End' },
+      { key: 'stage3End', label: 'Stage 3 End' },
+      { key: 'demoDay', label: 'Demo Day' },
+    ];
+
+    let lastDate: Date | null = null;
+    let lastLabel: string = '';
+
+    for (const { key, label } of deadlineOrder) {
+      if (deadlines[key]) {
+        const currentDate = new Date(deadlines[key]);
+        if (isNaN(currentDate.getTime())) {
+          throw new BadRequestException(`Invalid date format for ${label}`);
+        }
+        
+        if (lastDate && currentDate < lastDate) {
+          throw new BadRequestException(
+            `${label} (${currentDate.toISOString().split('T')[0]}) cannot be before ${lastLabel} (${lastDate.toISOString().split('T')[0]})`
+          );
+        }
+        
+        lastDate = currentDate;
+        lastLabel = label;
+      }
+    }
+  }
+
   async create(createCohortDto: CreateCohortDto): Promise<CohortWithStageCount> {
     // Validate team size
     if (
@@ -115,12 +154,18 @@ export class CohortsService {
       throw new BadRequestException("Minimum team size cannot exceed maximum team size");
     }
 
+    // Validate deadline order
+    if (createCohortDto.deadlines) {
+      this.validateDeadlineOrder(createCohortDto.deadlines);
+    }
+
     const cohort = this.cohortRepository.create({
       ...createCohortDto,
       status: CohortStatus.DRAFT,
       deadlines: createCohortDto.deadlines || {},
       countries: createCohortDto.countries || [],
       verticals: createCohortDto.verticals || [],
+      groups: normalizeGroups(createCohortDto.groups || []),
     });
 
     const savedCohort = await this.cohortRepository.save(cohort);
@@ -481,6 +526,7 @@ export class CohortsService {
   }
 
   async update(id: string, updateCohortDto: UpdateCohortDto): Promise<CohortWithStageCount> {
+    if (updateCohortDto.groups !== undefined) updateCohortDto.groups = normalizeGroups(updateCohortDto.groups);
     const cohortWithCount = await this.findOne(id);
     const cohort = await this.cohortRepository.findOne({ where: { id } });
     if (!cohort) {
@@ -492,6 +538,13 @@ export class CohortsService {
     const teamSizeMax = updateCohortDto.teamSizeMax ?? cohort.teamSizeMax;
     if (teamSizeMin > teamSizeMax) {
       throw new BadRequestException("Minimum team size cannot exceed maximum team size");
+    }
+
+    // Validate deadline order if deadlines are being updated
+    if (updateCohortDto.deadlines) {
+      // Merge existing deadlines with updates for validation
+      const mergedDeadlines = { ...cohort.deadlines, ...updateCohortDto.deadlines };
+      this.validateDeadlineOrder(mergedDeadlines);
     }
 
     // Merge updates
@@ -584,6 +637,7 @@ export class CohortsService {
       rubric: source.rubric,
       countries: [...source.countries],
       verticals: [...source.verticals],
+      groups: [...(source.groups || [])],
       briefCap: source.briefCap,
       maxTeamsPerBrief: source.maxTeamsPerBrief,
       status: CohortStatus.DRAFT,

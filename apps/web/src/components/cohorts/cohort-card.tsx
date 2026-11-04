@@ -57,7 +57,7 @@ export function CohortCard({ cohort, onDuplicate, onDelete }: CohortCardProps) {
             </div>
             <div>
               <Link
-                href={`/portal/cohorts/${cohort.id}`}
+                href={`/staff/cohorts/${cohort.id}`}
                 className="font-medium text-foreground hover:underline"
               >
                 {cohort.name}
@@ -77,18 +77,18 @@ export function CohortCard({ cohort, onDuplicate, onDelete }: CohortCardProps) {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="rounded-lg">
                 <DropdownMenuItem asChild>
-                  <Link href={`/portal/cohorts/${cohort.id}`}>
+                  <Link href={`/staff/cohorts/${cohort.id}`}>
                     View Details
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href={`/portal/cohorts/${cohort.id}/edit`}>
+                  <Link href={`/staff/cohorts/${cohort.id}/edit`}>
                     Edit
                   </Link>
                 </DropdownMenuItem>
                 {hasNoStages && (
                   <DropdownMenuItem asChild>
-                    <Link href={`/portal/cohorts/${cohort.id}/stages`}>
+                    <Link href={`/staff/cohorts/${cohort.id}/stages`}>
                       Configure Stages
                     </Link>
                   </DropdownMenuItem>
@@ -118,7 +118,7 @@ export function CohortCard({ cohort, onDuplicate, onDelete }: CohortCardProps) {
         {hasNoStages && (
           <div className="mt-3 flex items-center gap-2 rounded-lg bg-amber-100/50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
             <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-            <span>No stages configured - <Link href={`/portal/cohorts/${cohort.id}/stages`} className="font-medium underline">add stages</Link></span>
+            <span>No stages configured - <Link href={`/staff/cohorts/${cohort.id}/stages`} className="font-medium underline">add stages</Link></span>
           </div>
         )}
 
@@ -150,7 +150,7 @@ export function CohortCard({ cohort, onDuplicate, onDelete }: CohortCardProps) {
 
       <div className="border-t border-border/50 px-5 py-3">
         <Link
-          href={`/portal/cohorts/${cohort.id}`}
+          href={`/staff/cohorts/${cohort.id}`}
           className="flex items-center justify-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"
         >
           View Cohort

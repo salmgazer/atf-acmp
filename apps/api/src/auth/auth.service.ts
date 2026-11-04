@@ -1,8 +1,10 @@
-import { Injectable, UnauthorizedException, Logger } from "@nestjs/common";
+import { SocketSessionsService } from "./socket-sessions.service";
+import { afterCommit, Transactional } from "@/common/decorators/transactional.decorator";
+import { Injectable, UnauthorizedException, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, LessThan } from "typeorm";
+import { Repository, LessThan, MoreThan } from "typeorm";
 import * as bcrypt from "bcrypt";
 import * as crypto from "crypto";
 import * as admin from "firebase-admin";
@@ -37,6 +39,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly firebaseService: FirebaseService,
     private readonly configService: ConfigService,
+    @Optional() private readonly socketSessions?: SocketSessionsService,
   ) {}
 
   /**
@@ -51,7 +54,7 @@ export class AuthService {
     ipAddress?: string,
   ): Promise<AuthResponseDto> {
     const decodedToken = await this.firebaseService.verifyIdToken(idToken);
-    if (!decodedToken) {
+    if (!decodedToken?.uid || !decodedToken.email) {
       throw new UnauthorizedException("Invalid Firebase token");
     }
 
@@ -60,11 +63,13 @@ export class AuthService {
     });
 
     if (!user) {
+      if (decodedToken.email_verified !== true) throw new UnauthorizedException("Verify your email before linking an account");
       user = await this.userRepository.findOne({
-        where: { email: decodedToken.email },
+        where: { email: decodedToken.email.toLowerCase() },
       });
 
       if (user) {
+        if (user.firebaseUid && user.firebaseUid !== decodedToken.uid) throw new UnauthorizedException("Account is already linked to a different identity");
         user.firebaseUid = decodedToken.uid;
         await this.userRepository.save(user);
       }
@@ -108,6 +113,7 @@ export class AuthService {
     // For other portals, use the users table
     const user = await this.userRepository.findOne({
       where: { email: email.toLowerCase() },
+      select: { id: true, email: true, role: true, firstName: true, lastName: true, avatarUrl: true, isActive: true, mustChangePassword: true, passwordChangedAt: true, passwordHash: true },
     });
 
     if (!user || !user.passwordHash) {
@@ -151,6 +157,7 @@ export class AuthService {
     const participant = await this.participantRepository.findOne({
       where: { email: email.toLowerCase() },
       relations: ["cohort"],
+      select: { id: true, email: true, participantId: true, firstName: true, lastName: true, cohortId: true, status: true, mustChangePassword: true, passwordHash: true },
     });
 
     if (!participant) {
@@ -190,11 +197,10 @@ export class AuthService {
     userAgent?: string,
     ipAddress?: string,
   ): Promise<AuthResponseDto> {
-    const accessToken = this.generateParticipantAccessToken(participant);
-    
     // Create a pseudo-user for refresh token storage
     // We'll use participant.id as the userId reference
     const refreshToken = await this.createParticipantRefreshToken(participant, userAgent, ipAddress);
+    const accessToken = this.generateParticipantAccessToken(participant, refreshToken.id);
 
     return {
       accessToken,
@@ -217,9 +223,10 @@ export class AuthService {
     };
   }
 
-  private generateParticipantAccessToken(participant: Participant): string {
+  private generateParticipantAccessToken(participant: Participant, sessionId?: string): string {
     const payload = {
       sub: participant.id,
+      sid: sessionId,
       email: participant.email,
       role: Role.PARTICIPANT,
       participantId: participant.participantId,
@@ -240,6 +247,7 @@ export class AuthService {
     const refreshToken = this.refreshTokenRepository.create({
       token,
       participantId: participant.id, // Store participant ID in dedicated field
+      createdAt: new Date(),
       expiresAt,
       userAgent,
       ipAddress,
@@ -293,7 +301,7 @@ export class AuthService {
     await this.refreshTokenRepository.save(refreshToken);
 
     // Generate new access token (keep same refresh token)
-    const accessToken = this.generateAccessToken(user);
+    const accessToken = this.generateAccessToken(user, refreshToken.id);
 
     return {
       accessToken,
@@ -333,7 +341,7 @@ export class AuthService {
     await this.refreshTokenRepository.save(refreshToken);
 
     // Generate new access token
-    const accessToken = this.generateParticipantAccessToken(participant);
+    const accessToken = this.generateParticipantAccessToken(participant, refreshToken.id);
 
     return {
       accessToken,
@@ -362,13 +370,15 @@ export class AuthService {
     });
 
     if (refreshToken) {
+      this.socketSessions?.revokeSession(refreshToken.id);
       await this.revokeRefreshToken(refreshToken.id, "User logout");
     }
   }
 
   async logoutAllSessions(userId: string): Promise<number> {
+    this.socketSessions?.revokePrincipal(userId);
     const result = await this.refreshTokenRepository.update(
-      { userId, isRevoked: false },
+      [{ userId, isRevoked: false }, { participantId: userId, isRevoked: false }],
       { isRevoked: true, revokedAt: new Date(), revokedReason: "Logout all sessions" },
     );
     return result.affected || 0;
@@ -383,6 +393,7 @@ export class AuthService {
   }
 
   async markPasswordChanged(userId: string): Promise<void> {
+    this.socketSessions?.revokePrincipal(userId);
     const now = new Date();
     await this.userRepository.update(userId, {
       mustChangePassword: false,
@@ -401,7 +412,7 @@ export class AuthService {
     currentPassword: string,
     newPassword: string,
   ): Promise<void> {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const user = await this.userRepository.findOne({ where: { id: userId }, select: { id: true, passwordHash: true } });
 
     if (!user || !user.passwordHash) {
       throw new UnauthorizedException("User not found");
@@ -421,6 +432,7 @@ export class AuthService {
       passwordChangedAt: now,
     });
 
+    afterCommit(this, () => this.socketSessions?.revokePrincipal(userId));
     // Revoke all refresh tokens (invalidate all sessions)
     await this.refreshTokenRepository.update(
       { userId, isRevoked: false },
@@ -438,6 +450,7 @@ export class AuthService {
   ): Promise<void> {
     const participant = await this.participantRepository.findOne({
       where: { id: participantId },
+      select: { id: true, passwordHash: true },
     });
 
     if (!participant) {
@@ -462,6 +475,7 @@ export class AuthService {
     participant.mustChangePassword = false;
     await this.participantRepository.save(participant);
 
+    afterCommit(this, () => this.socketSessions?.revokePrincipal(participantId));
     // Revoke all refresh tokens for this participant
     const now = new Date();
     await this.refreshTokenRepository.update(
@@ -477,9 +491,113 @@ export class AuthService {
     return result.affected || 0;
   }
 
+  @Transactional("password-change")
+  async changePasswordAndRenewSession(
+    userId: string,
+    role: string,
+    currentPassword: string,
+    newPassword: string,
+    userAgent?: string,
+    ipAddress?: string,
+  ): Promise<AuthResponseDto> {
+    if (role === Role.PARTICIPANT) {
+      await this.participantRepository.findOneOrFail({ where: { id: userId }, lock: { mode: "pessimistic_write" } });
+      await this.changeParticipantPassword(userId, currentPassword, newPassword);
+      const participant = await this.participantRepository.findOne({ where: { id: userId }, relations: ["cohort"] });
+      if (!participant || participant.status === "inactive" || (participant.cohort && this.blockedCohortStatuses.includes(participant.cohort.status))) {
+        throw new UnauthorizedException("Participant account is not accessible");
+      }
+      return this.generateParticipantTokens(participant, userAgent, ipAddress);
+    }
+    await this.userRepository.findOneOrFail({ where: { id: userId }, lock: { mode: "pessimistic_write" } });
+    await this.changePassword(userId, currentPassword, newPassword);
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user?.isActive) throw new UnauthorizedException("Account is deactivated");
+    return this.generateTokens(user, userAgent, ipAddress);
+  }
+
+  /**
+   * Request password reset - generates a token and returns it
+   * The calling code is responsible for sending the email
+   */
+  async requestPasswordReset(
+    email: string,
+    portal: PortalType,
+  ): Promise<{ token: string; firstName: string; expiresAt: Date } | null> {
+    // Generate reset token
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1); // Token valid for 1 hour
+
+    if (portal === PortalType.PARTICIPANT) {
+      const participant = await this.participantRepository.findOne({
+        where: { email: email.toLowerCase() },
+      });
+
+      if (!participant) {
+        // Don't reveal if user exists
+        return null;
+      }
+
+      participant.passwordResetToken = crypto.createHash("sha256").update(token).digest("hex");
+      participant.passwordResetExpires = expiresAt;
+      await this.participantRepository.save(participant);
+
+      return { token, firstName: participant.firstName, expiresAt };
+    } else {
+      // Staff users
+      const user = await this.userRepository.findOne({
+        where: { email: email.toLowerCase() },
+      });
+
+      if (!user) {
+        return null;
+      }
+
+      // Check if user can access the requested portal
+      if (!this.canAccessPortal(user.role, portal)) {
+        return null;
+      }
+
+      user.passwordResetToken = crypto.createHash("sha256").update(token).digest("hex");
+      user.passwordResetExpires = expiresAt;
+      await this.userRepository.save(user);
+
+      return { token, firstName: user.firstName || 'User', expiresAt };
+    }
+  }
+
+  /**
+   * Reset password using a reset token
+   */
+  async resetPassword(token: string, newPassword: string): Promise<{ portal: PortalType }> {
+    const digest = crypto.createHash("sha256").update(token).digest("hex");
+    const passwordHash = await this.hashPassword(newPassword);
+    return this.userRepository.manager.transaction(async (manager) => {
+      for (const [entity, portal, identity] of [[Participant, PortalType.PARTICIPANT, "participantId"], [User, PortalType.STAFF, "userId"]] as const) {
+        const repository = manager.getRepository(entity as typeof User);
+        const account = await repository.findOne({ where: { passwordResetToken: digest, passwordResetExpires: MoreThan(new Date()) } });
+        if (!account) continue;
+        const now = new Date();
+        const result = await repository.update(
+          { id: account.id, passwordResetToken: digest, passwordResetExpires: MoreThan(now) },
+          { passwordHash, passwordResetToken: null, passwordResetExpires: null, mustChangePassword: false, ...(portal === PortalType.STAFF ? { passwordChangedAt: now } : {}) },
+        );
+        if (result.affected !== 1) throw new UnauthorizedException("Invalid or expired password reset token");
+        await manager.getRepository(RefreshToken).update(
+          { [identity]: account.id, isRevoked: false },
+          { isRevoked: true, revokedAt: now, revokedReason: "Password reset" },
+        );
+        this.socketSessions?.revokePrincipal(account.id);
+        return { portal };
+      }
+      throw new UnauthorizedException("Invalid or expired password reset token");
+    });
+  }
+
   async getActiveSessions(userId: string): Promise<RefreshToken[]> {
     return this.refreshTokenRepository.find({
-      where: { userId, isRevoked: false },
+      where: [{ userId, isRevoked: false, expiresAt: MoreThan(new Date()) }, { participantId: userId, isRevoked: false, expiresAt: MoreThan(new Date()) }],
       order: { lastUsedAt: "DESC" },
     });
   }
@@ -488,13 +606,14 @@ export class AuthService {
     return bcrypt.hash(password, 10);
   }
 
-  private async generateTokens(
+  async generateTokens(
     user: User,
     userAgent?: string,
     ipAddress?: string,
   ): Promise<AuthResponseDto> {
-    const accessToken = this.generateAccessToken(user);
+    if (user.role === Role.MENTOR) await this.activateMentorOnLogin(user.email);
     const refreshToken = await this.createRefreshToken(user, userAgent, ipAddress);
+    const accessToken = this.generateAccessToken(user, refreshToken.id);
 
     return {
       accessToken,
@@ -504,9 +623,10 @@ export class AuthService {
     };
   }
 
-  private generateAccessToken(user: User): string {
+  private generateAccessToken(user: User, sessionId?: string): string {
     const payload = {
       sub: user.id,
+      sid: sessionId,
       email: user.email,
       role: user.role,
     };
@@ -525,6 +645,7 @@ export class AuthService {
     const refreshToken = this.refreshTokenRepository.create({
       token,
       userId: user.id,
+      createdAt: new Date(),
       expiresAt,
       userAgent,
       ipAddress,
@@ -558,19 +679,14 @@ export class AuthService {
    * This method updates their status to 'active' when they first log in.
    */
   private async activateMentorOnLogin(email: string): Promise<void> {
-    try {
-      const mentor = await this.mentorRepository.findOne({
-        where: { email: email.toLowerCase() },
-      });
-
-      if (mentor && mentor.status !== MentorStatus.ACTIVE) {
-        mentor.status = MentorStatus.ACTIVE;
-        await this.mentorRepository.save(mentor);
-        this.logger.log(`Mentor ${mentor.id} (${email}) activated on login`);
-      }
-    } catch (error) {
-      // Don't fail the login if mentor activation fails
-      this.logger.warn(`Failed to activate mentor ${email} on login: ${error.message}`);
+    const mentor = await this.mentorRepository.findOne({
+      where: { email: email.toLowerCase() }, relations: ["cohort"],
+    });
+    if (!mentor || mentor.status === MentorStatus.INACTIVE) throw new UnauthorizedException("Mentor account is inactive");
+    if (mentor.cohort && this.blockedCohortStatuses.includes(mentor.cohort.status)) throw new UnauthorizedException("COHORT_NOT_ACCESSIBLE: Your cohort is no longer accessible");
+    if (mentor.status === MentorStatus.IMPORTED) {
+      mentor.status = MentorStatus.ACTIVE;
+      await this.mentorRepository.save(mentor);
     }
   }
 

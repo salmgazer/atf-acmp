@@ -474,13 +474,13 @@ function EvaluationsTable({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem asChild>
-                      <Link href={`/portal/evaluations/${evaluation.id}`}>
+                      <Link href={`/staff/evaluations/${evaluation.id}`}>
                         <Eye className="mr-2 h-4 w-4" />
                         View Details
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
-                      <Link href={`/portal/evaluations/${evaluation.id}/score`}>
+                      <Link href={`/staff/evaluations/${evaluation.id}/score`}>
                         <Edit className="mr-2 h-4 w-4" />
                         Human Score
                       </Link>

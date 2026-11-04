@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, HttpCode, HttpStatus } from "@nestjs/commo
 import { ApiTags, ApiOperation, ApiResponse } from "@nestjs/swagger";
 import { SkipThrottle } from "@nestjs/throttler";
 import { SetupService } from "./setup.service";
+import { Public } from "../../common/decorators/public.decorator";
 import {
   SetupStatusDto,
   CreateInitialAdminDto,
@@ -10,6 +11,7 @@ import {
 
 @ApiTags("Setup")
 @Controller("setup")
+@Public()
 export class SetupController {
   constructor(private readonly setupService: SetupService) {}
 

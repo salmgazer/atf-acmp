@@ -7,15 +7,19 @@ const nextConfig: NextConfig = {
   // Enable standalone output for Docker deployment
   output: "standalone",
   
-  // Ignore ESLint and TypeScript errors during production build
-  // These should be caught in CI/pre-commit hooks instead
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    ignoreBuildErrors: true,
+  // Expose app version from package.json
+  env: {
+    APP_VERSION: process.env.npm_package_version || "0.1.3",
   },
   
+  async redirects() {
+    return [
+      { source: "/app/:path*", destination: "/participant/:path*", permanent: true },
+      { source: "/org/:path*", destination: "/partners/:path*", permanent: true },
+      { source: "/portal/:path*", destination: "/staff/:path*", permanent: true },
+    ];
+  },
+
   images: {
     remotePatterns: [
       {

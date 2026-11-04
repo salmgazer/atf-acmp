@@ -152,7 +152,7 @@ export class UsersService {
 
     // Send welcome email with temporary password
     const frontendUrl = this.configService.get<string>("FRONTEND_URL", "http://localhost:3000");
-    const portalUrl = `${frontendUrl}/portal/login`;
+    const portalUrl = `${frontendUrl}/staff/login`;
 
     try {
       await this.emailService.sendWelcomeEmail({
@@ -264,7 +264,7 @@ export class UsersService {
 
     // Send welcome email with new temporary password
     const frontendUrl = this.configService.get<string>("FRONTEND_URL", "http://localhost:3000");
-    const portalUrl = `${frontendUrl}/portal/login`;
+    const portalUrl = `${frontendUrl}/staff/login`;
 
     await this.emailService.sendWelcomeEmail({
       to: user.email,

@@ -118,27 +118,22 @@ export class GitHubService {
     });
   }
 
-  parseGitHubUrl(url: string): { owner: string; repo: string } | null {
+  parseGitHubUrl(value: string): { owner: string; repo: string } | null {
     try {
-      // Handle various GitHub URL formats
-      const patterns = [
-        /github\.com\/([^\/]+)\/([^\/\?#]+)/,
-        /github\.com:([^\/]+)\/([^\/\?#]+)/,
-      ];
+      const url = new URL(value.replace(/^git@github\.com:/, "https://github.com/"));
+      const parts = url.pathname.replace(/\.git$/, "").split("/").filter(Boolean);
+      if (url.hostname !== "github.com" || url.protocol !== "https:" || parts.length !== 2 || parts.some(part => !/^[a-zA-Z0-9_.-]+$/.test(part))) return null;
+      return { owner: parts[0], repo: parts[1] };
+    } catch { return null; }
+  }
 
-      for (const pattern of patterns) {
-        const match = url.match(pattern);
-        if (match) {
-          return {
-            owner: match[1],
-            repo: match[2].replace(/\.git$/, ""),
-          };
-        }
-      }
-      return null;
-    } catch {
-      return null;
-    }
+  async getSourceSamples(owner: string, repo: string, tree: GitHubTreeItem[]): Promise<string[]> {
+    const files = tree.filter(file => file.type === "blob" && /\.(ts|tsx|js|jsx|py|go|rs|java|rb|cs|cpp|c)$/.test(file.path) && !/(node_modules|vendor|dist|build|package-lock)/.test(file.path) && (file.size || 0) < 50000).slice(0, 3);
+    return Promise.all(files.map(async file => {
+      const item = await this.fetchGitHub<{ encoding: string; content: string }>("/repos/" + encodeURIComponent(owner) + "/" + encodeURIComponent(repo) + "/contents/" + file.path.split("/").map(encodeURIComponent).join("/"));
+      if (item.encoding !== "base64") throw new Error("Unsupported repository content encoding");
+      return file.path + "\n" + Buffer.from(item.content, "base64").toString("utf8").slice(0, 8000);
+    }));
   }
 
   private async fetchGitHub<T>(endpoint: string): Promise<T> {

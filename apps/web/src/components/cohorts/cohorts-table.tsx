@@ -70,7 +70,7 @@ export function CohortsTable({ cohorts, onDuplicate, onDelete }: CohortsTablePro
                         <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0" />
                       )}
                       <Link
-                        href={`/portal/cohorts/${cohort.id}`}
+                        href={`/staff/cohorts/${cohort.id}`}
                         className="font-medium hover:underline"
                       >
                         {cohort.name}
@@ -108,20 +108,20 @@ export function CohortsTable({ cohorts, onDuplicate, onDelete }: CohortsTablePro
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem asChild>
-                        <Link href={`/portal/cohorts/${cohort.id}`}>
+                        <Link href={`/staff/cohorts/${cohort.id}`}>
                           <Eye className="mr-2 h-4 w-4" />
                           View
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Link href={`/portal/cohorts/${cohort.id}/edit`}>
+                        <Link href={`/staff/cohorts/${cohort.id}/edit`}>
                           <Pencil className="mr-2 h-4 w-4" />
                           Edit
                         </Link>
                       </DropdownMenuItem>
                       {hasNoStages && (
                         <DropdownMenuItem asChild>
-                          <Link href={`/portal/cohorts/${cohort.id}/stages`}>
+                          <Link href={`/staff/cohorts/${cohort.id}/stages`}>
                             <Settings className="mr-2 h-4 w-4" />
                             Configure Stages
                           </Link>

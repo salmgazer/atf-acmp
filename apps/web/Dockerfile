@@ -22,7 +22,7 @@ COPY packages/shared/package*.json ./packages/shared/
 COPY packages/validators/package*.json ./packages/validators/
 
 # Install dependencies
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
 # ------------------------------------------------------------------------------
 # Builder stage
@@ -41,6 +41,7 @@ COPY package*.json ./
 # Set build-time environment variables
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_WS_URL
+ARG NEXT_PUBLIC_ONESIGNAL_APP_ID
 ARG NEXT_PUBLIC_FIREBASE_API_KEY
 ARG NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
 ARG NEXT_PUBLIC_FIREBASE_PROJECT_ID
@@ -50,6 +51,7 @@ ARG NEXT_PUBLIC_FIREBASE_APP_ID
 
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
+ENV NEXT_PUBLIC_ONESIGNAL_APP_ID=$NEXT_PUBLIC_ONESIGNAL_APP_ID
 ENV NEXT_PUBLIC_FIREBASE_API_KEY=$NEXT_PUBLIC_FIREBASE_API_KEY
 ENV NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=$NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
 ENV NEXT_PUBLIC_FIREBASE_PROJECT_ID=$NEXT_PUBLIC_FIREBASE_PROJECT_ID
@@ -106,7 +108,7 @@ COPY apps/web/package*.json ./apps/web/
 COPY packages/shared/package*.json ./packages/shared/
 COPY packages/validators/package*.json ./packages/validators/
 
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
 COPY apps/web ./apps/web
 COPY packages ./packages

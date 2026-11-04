@@ -1,3 +1,5 @@
+import { IsTimeZone } from "class-validator";
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import {
   IsString,
   IsOptional,
@@ -54,6 +56,7 @@ export class CreateAvailabilitySlotDto {
   @ApiPropertyOptional({ description: "Timezone for this slot", default: "Africa/Nairobi" })
   @IsOptional()
   @IsString()
+  @IsTimeZone()
   timezone?: string;
 }
 
@@ -95,11 +98,13 @@ export class UpdateAvailabilitySlotDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isActive?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @IsTimeZone()
   timezone?: string;
 }
 
@@ -116,6 +121,7 @@ export class SetWeeklyAvailabilityDto {
   @ApiPropertyOptional({ description: "Default timezone for all slots", default: "Africa/Nairobi" })
   @IsOptional()
   @IsString()
+  @IsTimeZone()
   defaultTimezone?: string;
 }
 
@@ -154,6 +160,7 @@ export class CreateAvailabilityExceptionDto {
   @ApiPropertyOptional({ description: "If true, mentor is unavailable the entire day" })
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isUnavailable?: boolean;
 
   @ApiPropertyOptional({ type: [CustomTimeSlotDto], description: "Custom time slots for this day (overrides weekly schedule)" })
@@ -176,6 +183,7 @@ export class UpdateAvailabilityExceptionDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
+  @StrictBoolean()
   isUnavailable?: boolean;
 
   @ApiPropertyOptional({ type: [CustomTimeSlotDto] })
@@ -226,6 +234,7 @@ export class GetAvailableSlotsQueryDto {
   @ApiPropertyOptional({ description: "Timezone for returned slots", default: "Africa/Nairobi" })
   @IsOptional()
   @IsString()
+  @IsTimeZone()
   timezone?: string;
 }
 
@@ -325,6 +334,7 @@ export class BookSessionDto {
   @ApiPropertyOptional({ description: "Timezone for the session", default: "Africa/Nairobi" })
   @IsOptional()
   @IsString()
+  @IsTimeZone()
   timezone?: string;
 }
 

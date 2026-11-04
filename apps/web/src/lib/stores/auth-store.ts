@@ -10,7 +10,7 @@ export type Role =
   | "participant"
   | "mentor";
 
-export type Portal = "staff" | "organization" | "participant" | "mentor";
+export type Portal = "staff" | "partner" | "participant" | "mentor";
 
 export interface AuthUser {
   id: string;
@@ -67,7 +67,7 @@ export const useAuthStore = create<AuthStore>()(
           if (token) {
             localStorage.setItem("auth_token", token);
             // Also set cookie for middleware
-            document.cookie = `auth_token=${token}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
+            document.cookie = `auth_token=present; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
           } else {
             localStorage.removeItem("auth_token");
             document.cookie = "auth_token=; path=/; max-age=0";
@@ -88,8 +88,10 @@ export const useAuthStore = create<AuthStore>()(
           isLoading: false,
         });
         if (typeof window !== "undefined") {
+          localStorage.removeItem("refresh_token");
           localStorage.setItem("auth_token", token);
-          document.cookie = `auth_token=${token}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
+          document.cookie = `auth_token=present; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
+          document.cookie = `auth_portal=${portal}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
         }
       },
 
@@ -103,7 +105,9 @@ export const useAuthStore = create<AuthStore>()(
         });
         if (typeof window !== "undefined") {
           localStorage.removeItem("auth_token");
+          localStorage.removeItem("refresh_token");
           document.cookie = "auth_token=; path=/; max-age=0";
+          document.cookie = "auth_portal=; path=/; max-age=0";
         }
       },
 
@@ -127,6 +131,10 @@ export const useAuthStore = create<AuthStore>()(
         // Set loading to false after hydration completes
         if (state) {
           state.setLoading(false);
+          // Ensure portal cookie is set after hydration (for existing sessions)
+          if (typeof window !== "undefined" && state.portal && state.token) {
+            document.cookie = `auth_portal=${state.portal}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
+          }
         }
       },
     }
@@ -142,7 +150,7 @@ export function getPortalFromRole(role: Role): Portal {
     case "viewer":
       return "staff";
     case "organization":
-      return "organization";
+      return "partner";
     case "participant":
       return "participant";
     case "mentor":
@@ -162,11 +170,11 @@ export function canAccessPortal(role: Role, portal: Portal): boolean {
 export function getLoginPath(portal: Portal): string {
   switch (portal) {
     case "staff":
-      return "/portal/login";
-    case "organization":
-      return "/org/login";
+      return "/staff/login";
+    case "partner":
+      return "/partners/login";
     case "participant":
-      return "/app/login";
+      return "/participant/login";
     case "mentor":
       return "/mentor/login";
     default:
@@ -174,15 +182,23 @@ export function getLoginPath(portal: Portal): string {
   }
 }
 
+/** Allow local return paths within the authenticated portal only. */
+export function safeReturnPath(value: string | null | undefined, portal: Portal): string {
+  const fallback = getDashboardPath(portal);
+  const base = fallback.slice(0, fallback.lastIndexOf("/"));
+  if (!value || /[\\\s]/.test(value)) return fallback;
+  try { const url = new URL(value, "https://local.invalid"); return url.origin === "https://local.invalid" && (url.pathname === base || url.pathname.startsWith(base + "/")) ? url.pathname + url.search + url.hash : fallback; } catch { return fallback; }
+}
+
 // Helper to get dashboard path for portal
 export function getDashboardPath(portal: Portal): string {
   switch (portal) {
     case "staff":
-      return "/portal/dashboard";
-    case "organization":
-      return "/org/dashboard";
+      return "/staff/dashboard";
+    case "partner":
+      return "/partners/dashboard";
     case "participant":
-      return "/app/dashboard";
+      return "/participant/dashboard";
     case "mentor":
       return "/mentor/dashboard";
     default:

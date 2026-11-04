@@ -111,7 +111,7 @@ function TeamsContent() {
     },
     {
       key: "organization",
-      header: "Organization",
+      header: "Partner",
       render: (_: unknown, row: TeamTableRow) =>
         row.brief?.organization ? (
           <div className="flex items-center gap-1.5">

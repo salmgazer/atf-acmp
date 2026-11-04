@@ -24,8 +24,8 @@ export class VerificationCode extends BaseEntity {
   @Column({ name: "expires_at" })
   expiresAt: Date;
 
-  @Column({ name: "used_at", nullable: true })
-  usedAt?: Date;
+  @Column({ name: "used_at", type: "timestamp", nullable: true })
+  usedAt?: Date | null;
 
   @Column({ name: "attempts", default: 0 })
   attempts: number;
@@ -52,7 +52,7 @@ export class VerificationCode extends BaseEntity {
   }
 
   isUsed(): boolean {
-    return this.usedAt !== null;
+    return this.usedAt != null;
   }
 
   isValid(): boolean {

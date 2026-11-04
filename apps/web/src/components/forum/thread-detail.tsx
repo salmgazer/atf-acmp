@@ -1,5 +1,7 @@
 "use client";
 
+import { SafeHtml } from "@/components/ui/safe-html";
+
 import { useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -48,7 +50,7 @@ interface ThreadDetailProps {
 
 export function ThreadDetail({
   threadId,
-  basePath = "/app/forum",
+  basePath = "/participant/forum",
   currentUserId,
   currentUserType,
   isStaff = false,
@@ -187,7 +189,7 @@ export function ThreadDetail({
 
           {/* Thread Content */}
           <div className="mt-6 prose prose-sm max-w-none">
-            <div dangerouslySetInnerHTML={{ __html: thread.content }} />
+            <SafeHtml html={thread.content} />
           </div>
         </div>
       </div>
@@ -325,7 +327,7 @@ function ReplyCard({
           </div>
 
           <div className="mt-2 prose prose-sm max-w-none">
-            <div dangerouslySetInnerHTML={{ __html: reply.content }} />
+            <SafeHtml html={reply.content} />
           </div>
 
           <div className="mt-3 flex items-center gap-2">

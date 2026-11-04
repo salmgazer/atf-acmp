@@ -6,7 +6,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, In, MoreThan, LessThan } from "typeorm";
+import { Repository, IsNull, In, MoreThan, LessThan } from "typeorm";
 import {
   ChatChannel,
   ChatMessage,
@@ -116,7 +116,7 @@ export class ChatService {
         where: {
           memberId: userId,
           memberType: userType,
-          leftAt: null as any,
+          leftAt: IsNull(),
         },
         relations: ["channel"],
       });
@@ -162,7 +162,7 @@ export class ChatService {
       where: {
         memberId: userId,
         memberType: userType,
-        leftAt: null as any,
+        leftAt: IsNull(),
       },
       relations: ["channel"],
     });
@@ -195,6 +195,12 @@ export class ChatService {
       latestMessage,
       unreadCount: 0, // Will be calculated per user
     };
+  }
+
+  async updateChannel(id: string, dto: { name?: string; description?: string }): Promise<ChatChannel> {
+    const channel = await this.findChannel(id);
+    Object.assign(channel, dto);
+    return this.channelRepository.save(channel);
   }
 
   async archiveChannel(id: string): Promise<ChatChannel> {
@@ -259,7 +265,7 @@ export class ChatService {
 
   async getChannelMembers(channelId: string): Promise<ChannelMember[]> {
     return this.memberRepository.find({
-      where: { channelId, leftAt: null as any },
+      where: { channelId, leftAt: IsNull() },
       order: { joinedAt: "ASC" },
     });
   }
@@ -275,7 +281,7 @@ export class ChatService {
     }
     
     const member = await this.memberRepository.findOne({
-      where: { channelId, memberId, memberType, leftAt: null as any },
+      where: { channelId, memberId, memberType, leftAt: IsNull() },
     });
     return !!member;
   }
@@ -406,7 +412,7 @@ export class ChatService {
       const members = await this.memberRepository.find({
         where: {
           channelId: message.channelId,
-          leftAt: null as any,
+          leftAt: IsNull(),
         },
       });
 
@@ -438,7 +444,7 @@ export class ChatService {
           messageId: message.id,
           channelType: channel.type,
         },
-        url: `/app/chat?channel=${encodeURIComponent(channel.name.toLowerCase().replace(/\s+/g, "-"))}`,
+        url: `/participant/chat?channel=${encodeURIComponent(channel.name.toLowerCase().replace(/\s+/g, "-"))}`,
       });
 
       this.logger.debug(
@@ -681,7 +687,7 @@ export class ChatService {
       const teamChannel = await this.findChannelByTeam(teamId, ChannelType.TEAM);
       if (teamChannel) {
         const teamMembers = await this.memberRepository.find({
-          where: { channelId: teamChannel.id, leftAt: null as any },
+          where: { channelId: teamChannel.id, leftAt: IsNull() },
         });
         for (const member of teamMembers) {
           await this.addMember(mentorChannel.id, {

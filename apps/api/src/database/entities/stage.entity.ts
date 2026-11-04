@@ -113,6 +113,9 @@ export class Stage extends BaseEntity {
   @Column({ name: "evaluation_prompt", type: "text", nullable: true })
   evaluationPrompt?: string; // Custom AI prompt for evaluating submissions in this stage
 
+  @Column({ name: "evaluation_criteria", type: "jsonb", nullable: true })
+  evaluationCriteria?: Array<{ id: string; name: string; description: string; maxScore: number; weight: number }>;
+
   @OneToMany(() => Submission, (submission) => submission.stage)
   submissions: Submission[];
 

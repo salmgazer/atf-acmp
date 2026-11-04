@@ -1,6 +1,7 @@
+import { DateTime } from "luxon";
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from "typeorm";
+import { Repository, In, Between, LessThanOrEqual, MoreThanOrEqual } from "typeorm";
 import {
   MentorAvailability,
   MentorAvailabilityException,
@@ -97,8 +98,8 @@ export class MentorAvailabilityService {
     const slot = this.availabilityRepository.create({
       mentorId,
       dayOfWeek: dto.dayOfWeek,
-      startTime: dto.startTime + ":00", // Add seconds for TIME type
-      endTime: dto.endTime + ":00",
+      startTime: dto.startTime.slice(0, 5) + ":00", // Add seconds for TIME type
+      endTime: dto.endTime.slice(0, 5) + ":00",
       durationMinutes: dto.durationMinutes || 45,
       bufferMinutes: dto.bufferMinutes || 15,
       timezone: dto.timezone || "Africa/Nairobi",
@@ -155,8 +156,8 @@ export class MentorAvailabilityService {
 
     // Update fields
     if (dto.dayOfWeek !== undefined) slot.dayOfWeek = dto.dayOfWeek;
-    if (dto.startTime) slot.startTime = dto.startTime + ":00";
-    if (dto.endTime) slot.endTime = dto.endTime + ":00";
+    if (dto.startTime) slot.startTime = dto.startTime.slice(0, 5) + ":00";
+    if (dto.endTime) slot.endTime = dto.endTime.slice(0, 5) + ":00";
     if (dto.durationMinutes !== undefined) slot.durationMinutes = dto.durationMinutes;
     if (dto.bufferMinutes !== undefined) slot.bufferMinutes = dto.bufferMinutes;
     if (dto.isActive !== undefined) slot.isActive = dto.isActive;
@@ -218,10 +219,10 @@ export class MentorAvailabilityService {
       this.availabilityRepository.create({
         mentorId,
         dayOfWeek: slotDto.dayOfWeek,
-        startTime: slotDto.startTime + ":00",
-        endTime: slotDto.endTime + ":00",
+        startTime: slotDto.startTime.slice(0, 5) + ":00",
+        endTime: slotDto.endTime.slice(0, 5) + ":00",
         durationMinutes: slotDto.durationMinutes || 45,
-        bufferMinutes: slotDto.bufferMinutes || 15,
+        bufferMinutes: slotDto.bufferMinutes ?? 15,
         timezone: slotDto.timezone || defaultTimezone,
         isActive: true,
       }),
@@ -416,134 +417,53 @@ export class MentorAvailabilityService {
    * Get available (bookable) slots for a mentor within a date range
    * This considers: weekly availability, exceptions, and already booked sessions
    */
-  async getAvailableSlots(
-    mentorId: string,
-    query: GetAvailableSlotsQueryDto,
-  ): Promise<AvailableSlotsResponseDto> {
+  async getAvailableSlots(mentorId: string, query: GetAvailableSlotsQueryDto, excludeSessionId?: string): Promise<AvailableSlotsResponseDto> {
     const mentor = await this.mentorRepository.findOne({ where: { id: mentorId } });
-    if (!mentor) {
-      throw new NotFoundException(`Mentor with ID ${mentorId} not found`);
-    }
-
-    const timezone = query.timezone || "Africa/Nairobi";
-    const startDate = new Date(query.startDate);
-    const endDate = new Date(query.endDate);
-
-    // Get weekly availability
-    const weeklySlots = await this.availabilityRepository.find({
-      where: { mentorId, isActive: true },
-    });
-
-    // Get exceptions in date range
-    const exceptions = await this.exceptionRepository.find({
-      where: {
-        mentorId,
-        date: Between(query.startDate, query.endDate),
-      },
-    });
-    const exceptionsByDate = new Map(exceptions.map((e) => [e.date, e]));
-
-    // Get booked sessions in date range
-    const bookedSessions = await this.sessionRepository.find({
-      where: {
-        mentorId,
-        scheduledAt: Between(startDate, endDate),
-        status: ScheduledSessionStatus.SCHEDULED,
-      },
-    });
-
-    // Build set of booked time slots
-    const bookedSlotKeys = new Set(
-      bookedSessions.map((s) => {
-        const date = s.scheduledAt.toISOString().split("T")[0];
-        const time = s.scheduledAt.toISOString().split("T")[1].substring(0, 5);
-        return `${date}-${time}`;
-      }),
-    );
-
-    // Generate all available slots
+    if (!mentor) throw new NotFoundException("Mentor not found");
+    const weekly = await this.availabilityRepository.find({ where: { mentorId, isActive: true } });
+    const mentorZone = weekly[0]?.timezone || "Africa/Nairobi";
+    const zone = query.timezone || mentorZone;
+    const start = DateTime.fromISO(query.startDate, { zone }).startOf("day");
+    const end = DateTime.fromISO(query.endDate, { zone }).endOf("day");
+    if (!start.isValid || !end.isValid || end < start || end.diff(start, "days").days > 93) throw new BadRequestException("Invalid timezone or date range (maximum 93 days)");
+    const first = start.setZone(mentorZone).minus({ days: 1 }).startOf("day");
+    const last = end.setZone(mentorZone).plus({ days: 1 }).endOf("day");
+    const exceptions = await this.exceptionRepository.find({ where: { mentorId, date: Between(first.toISODate()!, last.toISODate()!) } });
+    const byDate = new Map(exceptions.map(item => [item.date, item]));
+    const bookings = await this.sessionRepository.find({ where: { mentorId, scheduledAt: Between(first.toJSDate(), last.toJSDate()), status: In([ScheduledSessionStatus.SCHEDULED, ScheduledSessionStatus.CONFIRMED]) } });
     const slots: BookableSlotDto[] = [];
     const slotsByDate: Record<string, BookableSlotDto[]> = {};
-    const currentDate = new Date(startDate);
-
-    while (currentDate <= endDate) {
-      const dateStr = currentDate.toISOString().split("T")[0];
-      const dayOfWeek = currentDate.getDay() as DayOfWeek;
-      const exception = exceptionsByDate.get(dateStr);
-
-      // Skip if marked as unavailable
-      if (exception?.isUnavailable) {
-        currentDate.setDate(currentDate.getDate() + 1);
-        continue;
-      }
-
-      // Get time slots for this day
-      let daySlots: { startTime: string; endTime: string; durationMinutes: number }[] = [];
-
-      if (exception?.customSlots && exception.customSlots.length > 0) {
-        // Use custom slots from exception
-        daySlots = exception.customSlots.map((s) => ({
-          startTime: s.startTime,
-          endTime: s.endTime,
-          durationMinutes: s.durationMinutes || 45,
-        }));
-      } else {
-        // Use weekly availability
-        const weeklyForDay = weeklySlots.filter((s) => s.dayOfWeek === dayOfWeek);
-        for (const weekly of weeklyForDay) {
-          // Generate individual slots within the time window
-          const generatedSlots = this.generateSlotsInWindow(
-            weekly.startTime,
-            weekly.endTime,
-            weekly.durationMinutes,
-            weekly.bufferMinutes,
-          );
-          daySlots.push(...generatedSlots);
+    const seen = new Set<number>();
+    for (let day = first; day <= last; day = day.plus({ days: 1 })) {
+      const date = day.toISODate()!;
+      const exception = byDate.get(date);
+      if (exception?.isUnavailable) continue;
+      const windows = exception?.customSlots?.length
+        ? exception.customSlots.map(item => ({ ...item, timezone: mentorZone, bufferMinutes: 0, durationMinutes: item.durationMinutes || 45 }))
+        : weekly.filter(item => item.dayOfWeek === day.weekday % 7);
+      for (const window of windows) {
+        for (const candidate of this.generateSlotsInWindow(window.startTime.slice(0, 5), window.endTime.slice(0, 5), window.durationMinutes, window.bufferMinutes)) {
+          const instant = DateTime.fromISO(date + "T" + candidate.startTime, { zone: window.timezone });
+          if (!instant.isValid || instant.toFormat("HH:mm") !== candidate.startTime || instant < start || instant > end || seen.has(instant.toMillis())) continue;
+          seen.add(instant.toMillis());
+          const finish = instant.plus({ minutes: candidate.durationMinutes });
+          const blocked = bookings.some(item => item.id !== excludeSessionId && instant.toMillis() < item.scheduledAt.getTime() + (item.durationMinutes + window.bufferMinutes) * 60000 && finish.plus({ minutes: window.bufferMinutes }).toMillis() > item.scheduledAt.getTime());
+          const display = instant.setZone(zone);
+          const displayEnd = finish.setZone(zone);
+          const dateKey = display.toISODate()!;
+          const slot: BookableSlotDto = {
+            date: dateKey, dayOfWeek: display.weekday % 7, dayName: DAY_OF_WEEK_LABELS[display.weekday % 7 as DayOfWeek],
+            startTime: display.toFormat("HH:mm"), endTime: displayEnd.toFormat("HH:mm"),
+            startDateTime: display.toISO()!, endDateTime: displayEnd.toISO()!, durationMinutes: candidate.durationMinutes,
+            isAvailable: !blocked && instant.toMillis() > Date.now(), timezone: zone,
+          };
+          slots.push(slot);
+          (slotsByDate[dateKey] ||= []).push(slot);
         }
       }
-
-      // Create bookable slots, checking for already booked
-      slotsByDate[dateStr] = [];
-      for (const slot of daySlots) {
-        const slotKey = `${dateStr}-${slot.startTime}`;
-        const isAvailable = !bookedSlotKeys.has(slotKey);
-
-        // Calculate end time for this slot
-        const [startHour, startMin] = slot.startTime.split(":").map(Number);
-        const endMinutes = startHour * 60 + startMin + slot.durationMinutes;
-        const endHour = Math.floor(endMinutes / 60);
-        const endMin = endMinutes % 60;
-        const slotEndTime = `${String(endHour).padStart(2, "0")}:${String(endMin).padStart(2, "0")}`;
-
-        const bookableSlot: BookableSlotDto = {
-          date: dateStr,
-          dayOfWeek,
-          dayName: DAY_OF_WEEK_LABELS[dayOfWeek],
-          startTime: slot.startTime,
-          endTime: slotEndTime,
-          startDateTime: `${dateStr}T${slot.startTime}:00`,
-          endDateTime: `${dateStr}T${slotEndTime}:00`,
-          durationMinutes: slot.durationMinutes,
-          isAvailable,
-          timezone,
-        };
-
-        slots.push(bookableSlot);
-        slotsByDate[dateStr].push(bookableSlot);
-      }
-
-      currentDate.setDate(currentDate.getDate() + 1);
     }
-
-    return {
-      mentorId,
-      mentorName: mentor.fullName,
-      startDate: query.startDate,
-      endDate: query.endDate,
-      timezone,
-      slots,
-      slotsByDate,
-    };
+    slots.sort((a, b) => new Date(a.startDateTime).getTime() - new Date(b.startDateTime).getTime());
+    return { mentorId, mentorName: mentor.fullName, startDate: query.startDate, endDate: query.endDate, timezone: zone, slots, slotsByDate };
   }
 
   // ============ Helper Methods ============
@@ -637,6 +557,7 @@ export class MentorAvailabilityService {
     bufferMinutes: number,
   ): { startTime: string; endTime: string; durationMinutes: number }[] {
     const slots: { startTime: string; endTime: string; durationMinutes: number }[] = [];
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0 || !Number.isFinite(bufferMinutes) || bufferMinutes < 0) throw new BadRequestException("Invalid slot duration or buffer");
     const [startHour, startMin] = startTime.split(":").map(Number);
     const [endHour, endMin] = endTime.split(":").map(Number);
 

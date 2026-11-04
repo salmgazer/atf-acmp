@@ -20,7 +20,7 @@ const audienceConfig: Record<
   all: { label: "Everyone", icon: Users },
   vertical: { label: "Vertical", icon: Users },
   team: { label: "Team", icon: Users },
-  organization: { label: "Organizations", icon: Building2 },
+  organization: { label: "Partners", icon: Building2 },
   mentor: { label: "Mentors", icon: UserCog },
 };
 

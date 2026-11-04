@@ -1,3 +1,4 @@
+import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
 import { IsOptional, IsString, IsEnum, IsDateString, IsInt, Min, Max } from "class-validator";
 import { Type } from "class-transformer";
 import { AuditAction } from "@/database/entities/audit-log.entity";
@@ -39,6 +40,9 @@ export class AuditLogQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(1000000)
   page?: number = 1;
 
   @IsOptional()
@@ -46,6 +50,9 @@ export class AuditLogQueryDto {
   @IsInt()
   @Min(1)
   @Max(100)
+  @QueryIsInt()
+  @QueryMin(1)
+  @QueryMax(500)
   limit?: number = 20;
 }
 

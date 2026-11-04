@@ -1,3 +1,7 @@
+import { resolveCohortGroup } from "@/common/services/cohort-groups";
+import { Transactional, afterCommit } from "@/common/decorators/transactional.decorator";
+import { SocketSessionsService } from "@/auth/socket-sessions.service";
+import { Optional } from "@nestjs/common";
 import {
   Injectable,
   NotFoundException,
@@ -7,7 +11,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, ILike, In, Not } from "typeorm";
+import { Repository, IsNull, ILike, In, Not } from "typeorm";
 import { v4 as uuidv4 } from "uuid";
 import {
   Team,
@@ -70,7 +74,13 @@ export class TeamsService {
     private readonly oneSignalService: OneSignalService,
     private readonly notificationTriggersService: NotificationTriggersService,
     private readonly emailService: EmailService,
+    @Optional() private readonly socketSessions?: SocketSessionsService,
   ) {}
+
+  private assertSameGroup(team: Team, participant: Participant, cohort: Cohort | null): void {
+    const group = resolveCohortGroup(cohort || {}, participant.group);
+    if (group !== (team.group || null)) throw new BadRequestException("Participants must belong to the same group as the team");
+  }
 
   // ============ Helper Methods ============
 
@@ -89,6 +99,7 @@ export class TeamsService {
 
   // ============ Team CRUD ============
 
+  @Transactional()
   async create(dto: CreateTeamDto): Promise<Team> {
     // Verify cohort exists
     const cohort = await this.cohortRepository.findOne({
@@ -96,6 +107,16 @@ export class TeamsService {
     });
     if (!cohort) {
       throw new NotFoundException("Cohort not found");
+    }
+
+    // Check if team formation deadline has passed
+    if (cohort.deadlines?.teamFormationEnd) {
+      const deadline = new Date(cohort.deadlines.teamFormationEnd);
+      if (new Date() > deadline) {
+        throw new BadRequestException(
+          `Team formation deadline has passed (${deadline.toLocaleDateString()}). Teams can no longer be created.`
+        );
+      }
     }
 
     // Verify creator exists and is in the cohort
@@ -123,6 +144,7 @@ export class TeamsService {
       name: dto.name,
       description: dto.description,
       cohortId: dto.cohortId,
+      group: resolveCohortGroup(cohort, creator.group),
       inviteCode,
       status: TeamStatus.FORMING,
     });
@@ -167,6 +189,10 @@ export class TeamsService {
     if (query.cohortId) {
       qb.andWhere("team.cohortId = :cohortId", { cohortId: query.cohortId });
     }
+
+    if (query.group && query.ungrouped) throw new BadRequestException("Choose a group or ungrouped teams");
+    if (query.group) qb.andWhere("team.group = :group", { group: query.group });
+    if (query.ungrouped) qb.andWhere("team.group IS NULL");
 
     if (query.status) {
       qb.andWhere("team.status = :status", { status: query.status });
@@ -243,6 +269,7 @@ export class TeamsService {
     return team;
   }
 
+  @Transactional()
   async joinByInviteCode(inviteCode: string, participantId: string): Promise<Team> {
     const team = await this.findByInviteCode(inviteCode);
 
@@ -271,6 +298,7 @@ export class TeamsService {
     if (!participant) {
       throw new NotFoundException("Participant not found in this cohort");
     }
+    this.assertSameGroup(team, participant, cohort);
 
     // Check if participant is already in a team (confirmed or pending)
     const existingMembership = await this.memberRepository.findOne({
@@ -316,7 +344,7 @@ export class TeamsService {
             participantId: participant.id,
             participantName,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send join request push: ${err.message}`));
 
@@ -349,6 +377,7 @@ export class TeamsService {
   /**
    * Confirm a pending member (called by team lead/co-lead)
    */
+  @Transactional()
   async confirmPendingMember(teamId: string, memberId: string, confirmedBy: string): Promise<TeamMember> {
     const team = await this.findOne(teamId);
 
@@ -418,7 +447,7 @@ export class TeamsService {
             teamId: team.id,
             teamName: team.name,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send confirmation push: ${err.message}`));
 
@@ -436,6 +465,7 @@ export class TeamsService {
   /**
    * Decline a pending member (called by team lead/co-lead)
    */
+  @Transactional()
   async declinePendingMember(teamId: string, memberId: string, declinedBy: string): Promise<void> {
     const team = await this.findOne(teamId);
 
@@ -474,7 +504,7 @@ export class TeamsService {
             teamId: team.id,
             teamName: team.name,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send decline push: ${err.message}`));
 
@@ -554,7 +584,7 @@ export class TeamsService {
               teamId: team.id,
               teamName: team.name,
             },
-            url: "/app/team",
+            url: "/participant/team",
           }
         ).catch((err) => this.logger.warn(`Failed to send removal push: ${err.message}`));
       }
@@ -661,6 +691,7 @@ export class TeamsService {
   /**
    * Approve a member removal request (staff only)
    */
+  @Transactional()
   async approveRemovalRequest(
     requestId: string,
     approvedBy: string,
@@ -716,7 +747,7 @@ export class TeamsService {
             teamId: request.teamId,
             teamName: request.team?.name,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send removal notification: ${err.message}`));
     }
@@ -735,7 +766,7 @@ export class TeamsService {
             teamId: request.teamId,
             participantId: request.participantId,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send approval notification: ${err.message}`));
     }
@@ -746,6 +777,7 @@ export class TeamsService {
   /**
    * Reject a member removal request (staff only)
    */
+  @Transactional()
   async rejectRemovalRequest(
     requestId: string,
     rejectedBy: string,
@@ -786,7 +818,7 @@ export class TeamsService {
             teamId: request.teamId,
             participantId: request.participantId,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send rejection notification: ${err.message}`));
     }
@@ -853,6 +885,7 @@ export class TeamsService {
     return team;
   }
 
+  @Transactional()
   async assignBrief(id: string, briefId: string): Promise<Team> {
     const team = await this.findOne(id);
     const previousBriefId = team.briefId;
@@ -893,6 +926,7 @@ export class TeamsService {
     return this.findOne(id);
   }
 
+  @Transactional()
   async unassignBrief(id: string): Promise<Team> {
     const team = await this.findOne(id);
 
@@ -911,6 +945,7 @@ export class TeamsService {
     return this.findOne(id);
   }
 
+  @Transactional()
   async disqualify(id: string, dto: DisqualifyTeamDto): Promise<Team> {
     const team = await this.findOne(id);
 
@@ -935,6 +970,7 @@ export class TeamsService {
     return team;
   }
 
+  @Transactional()
   async delete(id: string): Promise<void> {
     const team = await this.findOne(id);
 
@@ -954,6 +990,7 @@ export class TeamsService {
 
   // ============ Member Management ============
 
+  @Transactional()
   async addMember(teamId: string, dto: AddMemberDto): Promise<TeamMember> {
     const team = await this.findOne(teamId);
 
@@ -974,6 +1011,7 @@ export class TeamsService {
     if (!participant) {
       throw new NotFoundException("Participant not found in this cohort");
     }
+    this.assertSameGroup(team, participant, cohort);
 
     // Check if participant is already in a team
     const existingMembership = await this.memberRepository.findOne({
@@ -1004,6 +1042,7 @@ export class TeamsService {
     return member;
   }
 
+  @Transactional()
   async removeMember(teamId: string, participantId: string): Promise<void> {
     const team = await this.findOne(teamId);
 
@@ -1039,6 +1078,7 @@ export class TeamsService {
     }
   }
 
+  @Transactional()
   async updateMemberRole(
     teamId: string,
     participantId: string,
@@ -1090,6 +1130,7 @@ export class TeamsService {
     if (!participant) {
       throw new NotFoundException("Participant not found in this cohort");
     }
+    this.assertSameGroup(team, participant, cohort);
 
     // Verify participant has completed onboarding and is ready
     // This ensures they have logged in and set up their account before receiving invitations
@@ -1155,7 +1196,7 @@ export class TeamsService {
           teamId: team.id,
           teamName: team.name,
         },
-        url: "/app/team",
+        url: "/participant/team",
       }
     ).catch((err) => this.logger.warn(`Failed to send invitation push: ${err.message}`));
 
@@ -1206,6 +1247,7 @@ export class TeamsService {
     });
   }
 
+  @Transactional()
   async acceptInvitation(invitationId: string): Promise<Team> {
     const invitation = await this.invitationRepository.findOne({
       where: { id: invitationId },
@@ -1238,6 +1280,10 @@ export class TeamsService {
     if (invitation.team.members.length >= (cohort?.teamSizeMax || 5)) {
       throw new BadRequestException("Team has reached maximum capacity");
     }
+
+    const participant = await this.participantRepository.findOne({ where: { id: invitation.participantId, cohortId: invitation.team.cohortId } });
+    if (!participant) throw new NotFoundException("Participant not found in this cohort");
+    this.assertSameGroup(invitation.team, participant, cohort);
 
     // Accept invitation
     invitation.status = InvitationStatus.ACCEPTED;
@@ -1288,7 +1334,7 @@ export class TeamsService {
             teamId: invitation.teamId,
             participantId: invitation.participantId,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send acceptance push: ${err.message}`));
     }
@@ -1333,7 +1379,7 @@ export class TeamsService {
             teamId: invitation.teamId,
             participantId: invitation.participantId,
           },
-          url: "/app/team",
+          url: "/participant/team",
         }
       ).catch((err) => this.logger.warn(`Failed to send decline push: ${err.message}`));
     }
@@ -1372,7 +1418,8 @@ export class TeamsService {
   async searchAvailableParticipants(
     cohortId: string,
     query: string,
-    limit: number = 10
+    limit: number = 10,
+    group?: string | null
   ): Promise<Participant[]> {
     // Get participants who are not in any team
     const memberedParticipantIds = await this.memberRepository
@@ -1389,6 +1436,9 @@ export class TeamsService {
       .andWhere("p.status IN (:...statuses)", {
         statuses: [ParticipantStatus.READY, ParticipantStatus.ONBOARDING],
       });
+
+    if (group === null) qb.andWhere("p.group IS NULL");
+    else if (group !== undefined) qb.andWhere("p.group = :group", { group });
 
     if (excludeIds.length > 0) {
       qb.andWhere("p.id NOT IN (:...excludeIds)", { excludeIds });
@@ -1425,8 +1475,8 @@ export class TeamsService {
       this.teamRepository.count({ where: { ...where, status: TeamStatus.SUBMITTED } }),
       this.teamRepository.count({ where: { ...where, status: TeamStatus.EVALUATED } }),
       this.teamRepository.count({ where: { ...where, status: TeamStatus.DISQUALIFIED } }),
-      this.teamRepository.count({ where: { ...where, briefId: Not(null as any) } }),
-      this.teamRepository.count({ where: { ...where, briefId: null as any } }),
+      this.teamRepository.count({ where: { ...where, briefId: Not(IsNull()) } }),
+      this.teamRepository.count({ where: { ...where, briefId: IsNull() } }),
     ]);
 
     // Calculate average members
@@ -1557,6 +1607,7 @@ export class TeamsService {
     });
 
     this.logger.log(`Removed participant ${participantId} from team chat ${channel.id}`);
+    afterCommit(this, () => this.socketSessions?.removeChannelMember(channel.id, participantId, SenderType.PARTICIPANT));
   }
 
   /**

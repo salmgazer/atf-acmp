@@ -1,3 +1,5 @@
+import { JwtStrategy } from "@/auth/strategies/jwt.strategy";
+import { SocketSessionsService } from "@/auth/socket-sessions.service";
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -71,10 +73,13 @@ export class ChatGateway
   constructor(
     private readonly chatService: ChatService,
     private readonly jwtService: JwtService,
+    private readonly principalStrategy: JwtStrategy,
+    private readonly sessions: SocketSessionsService,
     private readonly configService: ConfigService
   ) {}
 
   afterInit(server: Server) {
+    this.sessions.register(server);
     this.logger.log("Chat WebSocket Gateway initialized");
   }
 
@@ -114,6 +119,17 @@ export class ChatGateway
         name: userName,
         email: payload.email,
       };
+
+      client.data.memberKey = `${senderType}:${payload.sub}`;
+      client.join(`principal:${payload.principalId}`);
+      client.join(`session:${payload.sessionId}`);
+      const expiry = setTimeout(() => client.disconnect(true), Math.max(0, payload.exp * 1000 - Date.now()));
+      expiry.unref();
+      client.once("disconnect", () => clearTimeout(expiry));
+      client.use(async (_packet, next) => {
+        if (await this.verifyToken(token)) next();
+        else { next(new Error("Session has ended")); client.disconnect(true); }
+      });
 
       // Track connection
       const memberId = `${senderType}:${payload.sub}`;
@@ -253,7 +269,7 @@ export class ChatGateway
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() payload: TypingPayload
   ) {
-    if (!client.user) return;
+    if (!client.user || !await this.chatService.isChannelMember(payload.channelId, client.user.id, client.user.type)) return;
 
     const event = payload.isTyping ? "typing_started" : "typing_stopped";
     client.to(`channel:${payload.channelId}`).emit(event, {
@@ -291,7 +307,7 @@ export class ChatGateway
 
   private getSenderTypeFromRole(role: string): SenderType {
     const normalizedRole = role?.toLowerCase();
-    if (normalizedRole === "admin" || normalizedRole === "super_admin" || normalizedRole === "program_manager" || normalizedRole === "reviewer" || normalizedRole === "evaluator") {
+    if (normalizedRole === "admin" || normalizedRole === "super_admin" || normalizedRole === "program_manager" || normalizedRole === "reviewer" || normalizedRole === "evaluator" || normalizedRole === "viewer") {
       return SenderType.STAFF;
     }
     if (normalizedRole === "mentor") {
@@ -305,8 +321,10 @@ export class ChatGateway
 
   private async verifyToken(token: string): Promise<any> {
     try {
-      const secret = this.configService.get<string>("JWT_SECRET") || "secret";
-      return await this.jwtService.verifyAsync(token, { secret });
+      const secret = this.configService.getOrThrow<string>("jwt.secret");
+      const claims = await this.jwtService.verifyAsync(token, { secret });
+      const principal = await this.principalStrategy.validate(claims);
+      return { ...principal, sub: principal.mentorId || principal.organizationId || principal.id, principalId: principal.id, exp: claims.exp };
     } catch (error) {
       return null;
     }
@@ -382,7 +400,9 @@ export class ChatGateway
   /**
    * Emit member left event
    */
-  emitMemberLeft(channelId: string, memberId: string, memberType: string) {
+  async emitMemberLeft(channelId: string, memberId: string, memberType: string) {
+    const sockets = await this.server.in(`channel:${channelId}`).fetchSockets();
+    for (const socket of sockets) if (socket.data.memberKey === `${memberType}:${memberId}`) await socket.leave(`channel:${channelId}`);
     this.server.to(`channel:${channelId}`).emit("member_left", {
       channelId,
       memberId,

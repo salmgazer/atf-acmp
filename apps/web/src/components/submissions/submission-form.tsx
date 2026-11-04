@@ -1,5 +1,6 @@
 "use client";
 
+import { apiClient } from "@/lib/api/client";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -167,7 +168,7 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
       });
       queryClient.invalidateQueries({ queryKey: ["submissions"] });
       setShowSubmitDialog(false);
-      router.push("/app/submissions");
+      router.push("/participant/submissions");
     } catch (err: any) {
       setError(err.response?.data?.message || "Failed to submit");
       setShowSubmitDialog(false);
@@ -265,7 +266,7 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
         <CardContent className="flex flex-col items-center justify-center py-12">
           <AlertCircle className="h-12 w-12 text-destructive mb-4" />
           <h3 className="text-lg font-medium mb-1">Stage not found</h3>
-          <Button onClick={() => router.push("/app/submissions")} className="mt-4">
+          <Button onClick={() => router.push("/participant/submissions")} className="mt-4">
             Back to Submissions
           </Button>
         </CardContent>
@@ -283,7 +284,7 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
       <div className="space-y-3">
         {/* Back Button and Title Row */}
         <div className="flex items-start gap-3">
-          <Button variant="ghost" size="icon" className="shrink-0 mt-0.5" onClick={() => router.push("/app/submissions")}>
+          <Button variant="ghost" size="icon" className="shrink-0 mt-0.5" onClick={() => router.push("/participant/submissions")}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1 min-w-0">
@@ -465,9 +466,9 @@ export function SubmissionForm({ stageId }: SubmissionFormProps) {
             <AlertDescription>
               <span className="font-medium">GitHub Repository Required</span> — This stage requires a GitHub repository. 
               {team?.githubRepoUrl ? (
-                <span> Your team's repository: <a href={team.githubRepoUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{team.githubRepoUrl}</a></span>
+                <span> Your team&apos;s repository: <a href={team.githubRepoUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{team.githubRepoUrl}</a></span>
               ) : (
-                <span> Please set your team's GitHub repository URL in the <a href="/app/team" className="text-primary hover:underline">Team Settings</a>.</span>
+                <span> Please set your team&apos;s GitHub repository URL in the <a href="/participant/team" className="text-primary hover:underline">Team Settings</a>.</span>
               )}
             </AlertDescription>
           </Alert>
@@ -715,30 +716,22 @@ function FileUploadArea({
   maxSize: number;
   disabled?: boolean;
 }) {
-  // Simulated file upload - in production, this would upload to S3/cloud storage
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (disabled) return;
-    const selectedFiles = e.target.files;
-    if (!selectedFiles) return;
-
-    const newFiles: FileUrl[] = [];
-    for (let i = 0; i < selectedFiles.length; i++) {
-      const file = selectedFiles[i];
-      if (file.size > maxSize * 1024 * 1024) {
-        alert(`File ${file.name} exceeds the maximum size of ${maxSize}MB`);
-        continue;
+  const [isUploading, setUploading] = useState(false);
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (disabled || isUploading) return;
+    const input = e.target;
+    const selected = Array.from(input.files || []);
+    setUploading(true);
+    const uploaded: FileUrl[] = [];
+    try {
+      for (const file of selected) {
+        if (file.size > maxSize * 1024 * 1024) throw new Error(`File ${file.name} exceeds ${maxSize}MB`);
+        const form = new FormData(); form.append("file", file);
+        const response = await apiClient.post<FileUrl>("/submissions/upload-document", form);
+        uploaded.push(response.data);
       }
-      // In production: upload to storage and get URL
-      newFiles.push({
-        name: file.name,
-        url: URL.createObjectURL(file), // Placeholder - would be actual URL
-        type: file.type,
-        size: file.size,
-        uploadedAt: new Date().toISOString(),
-      });
-    }
-    onChange([...files, ...newFiles]);
-    e.target.value = "";
+    } catch (error: any) { alert(error.response?.data?.message || error.message || "Document upload failed"); }
+    finally { onChange([...files, ...uploaded]); input.value = ""; setUploading(false); }
   };
 
   const removeFile = (index: number) => {

@@ -1,8 +1,9 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Get, Req } from "@nestjs/common";
+import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Get, Req, Res, UnauthorizedException, Logger } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from "@nestjs/swagger";
-import { Request } from "express";
+import { Request, Response } from "express";
 import { AuthService } from "./auth.service";
 import { MagicLinkService } from "./magic-link.service";
+import { EmailService } from "../email/email.service";
 import {
   FirebaseVerifyDto,
   LoginDto,
@@ -10,6 +11,8 @@ import {
   VerifyMagicCodeDto,
   RefreshTokenDto,
   ChangePasswordDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
   AuthResponseDto,
   PortalType,
 } from "./dto/auth.dto";
@@ -21,10 +24,32 @@ import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 @ApiTags("auth")
 @Controller("auth")
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
-    private readonly magicLinkService: MagicLinkService
+    private readonly magicLinkService: MagicLinkService,
+    private readonly emailService: EmailService,
   ) {}
+
+  private setSession(res: Response, result: AuthResponseDto): AuthResponseDto {
+    res.cookie("acmp_refresh", result.refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging", sameSite: "lax", path: "/api/auth", maxAge: 7 * 24 * 60 * 60 * 1000 });
+    return { ...result, refreshToken: "" };
+  }
+
+  private checkOrigin(req: Request): void {
+    const origin = req.headers.origin;
+    const allowed = (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || "http://localhost:3000").split(",").map(x => x.trim());
+    if (origin && !allowed.includes(origin)) throw new UnauthorizedException("Invalid session request origin");
+  }
+
+  private refreshCredential(req: Request, dto: RefreshTokenDto, required = true): string {
+    const cookie = req.headers.cookie?.split(";").map(x => x.trim()).find(x => x.startsWith("acmp_refresh="));
+    let value = dto.refreshToken || "";
+    try { if (cookie) value = decodeURIComponent(cookie.slice("acmp_refresh=".length)); } catch { throw new UnauthorizedException("Invalid session cookie"); }
+    if (required && !value) throw new UnauthorizedException("Session credential is missing");
+    return value;
+  }
 
   @Post("firebase/verify")
   @Public()
@@ -36,10 +61,11 @@ export class AuthController {
   async verifyFirebaseToken(
     @Body() dto: FirebaseVerifyDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
     const userAgent = req.headers["user-agent"];
     const ipAddress = req.ip || req.socket.remoteAddress;
-    return this.authService.verifyFirebaseToken(dto.idToken, dto.portal, userAgent, ipAddress);
+    return this.setSession(res, await this.authService.verifyFirebaseToken(dto.idToken, dto.portal, userAgent, ipAddress));
   }
 
   @Post("login")
@@ -49,10 +75,10 @@ export class AuthController {
   @ApiOperation({ summary: "Login with email and password" })
   @ApiResponse({ status: 200, description: "Login successful", type: AuthResponseDto })
   @ApiResponse({ status: 401, description: "Invalid credentials" })
-  async login(@Body() dto: LoginDto, @Req() req: Request): Promise<AuthResponseDto> {
+  async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<AuthResponseDto> {
     const userAgent = req.headers["user-agent"];
     const ipAddress = req.ip || req.socket.remoteAddress;
-    return this.authService.loginWithPassword(dto.email, dto.password, dto.portal, userAgent, ipAddress);
+    return this.setSession(res, await this.authService.loginWithPassword(dto.email, dto.password, dto.portal, userAgent, ipAddress));
   }
 
   @Post("refresh")
@@ -65,20 +91,25 @@ export class AuthController {
   async refreshToken(
     @Body() dto: RefreshTokenDto,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponseDto> {
     const userAgent = req.headers["user-agent"];
     const ipAddress = req.ip || req.socket.remoteAddress;
-    return this.authService.refreshAccessToken(dto.refreshToken, userAgent, ipAddress);
+    this.checkOrigin(req);
+    return this.setSession(res, await this.authService.refreshAccessToken(this.refreshCredential(req, dto), userAgent, ipAddress));
   }
 
   @Post("logout")
-  @UseGuards(JwtAuthGuard)
+  @Public()
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Logout and invalidate refresh token" })
   @ApiResponse({ status: 200, description: "Logged out successfully" })
-  async logout(@Body() dto: RefreshTokenDto): Promise<{ message: string }> {
-    await this.authService.logout(dto.refreshToken);
+  async logout(@Body() dto: RefreshTokenDto, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<{ message: string }> {
+    this.checkOrigin(req);
+    const credential = this.refreshCredential(req, dto, false);
+    if (credential) await this.authService.logout(credential);
+    res.clearCookie("acmp_refresh", { path: "/api/auth" });
     return { message: "Logged out successfully" };
   }
 
@@ -115,8 +146,8 @@ export class AuthController {
   @ApiOperation({ summary: "Verify magic link code" })
   @ApiResponse({ status: 200, description: "Code verified, token returned", type: AuthResponseDto })
   @ApiResponse({ status: 401, description: "Invalid or expired code" })
-  async verifyMagicCode(@Body() dto: VerifyMagicCodeDto): Promise<AuthResponseDto> {
-    return this.magicLinkService.verifyCode(dto.email, dto.code);
+  async verifyMagicCode(@Body() dto: VerifyMagicCodeDto, @Res({ passthrough: true }) res: Response): Promise<AuthResponseDto> {
+    return this.setSession(res, await this.magicLinkService.verifyCode(dto.email, dto.code));
   }
 
   @Post("change-password")
@@ -125,18 +156,18 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Change password" })
-  @ApiResponse({ status: 200, description: "Password changed successfully" })
+  @ApiResponse({ status: 200, description: "Password changed and session renewed", type: AuthResponseDto })
   @ApiResponse({ status: 401, description: "Current password is incorrect" })
   async changePassword(
     @CurrentUser() user: { id: string; role: string },
     @Body() dto: ChangePasswordDto,
-  ): Promise<{ message: string }> {
-    if (user.role === "participant") {
-      await this.authService.changeParticipantPassword(user.id, dto.currentPassword, dto.newPassword);
-    } else {
-      await this.authService.changePassword(user.id, dto.currentPassword, dto.newPassword);
-    }
-    return { message: "Password changed successfully. Please log in again." };
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponseDto & { message: string }> {
+    const session = await this.authService.changePasswordAndRenewSession(
+      user.id, user.role, dto.currentPassword, dto.newPassword, req.headers["user-agent"], req.ip || req.socket.remoteAddress,
+    );
+    return { ...this.setSession(res, session), message: "Password changed successfully" };
   }
 
   @Post("password-changed")
@@ -149,6 +180,55 @@ export class AuthController {
   async passwordChanged(@CurrentUser("id") userId: string): Promise<{ message: string }> {
     await this.authService.markPasswordChanged(userId);
     return { message: "Password change recorded" };
+  }
+
+  @Post("forgot-password")
+  @Public()
+  @StrictThrottle()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Request password reset email" })
+  @ApiResponse({ status: 200, description: "If the email exists, a reset link will be sent" })
+  async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<{ message: string }> {
+    const result = await this.authService.requestPasswordReset(dto.email, dto.portal);
+    
+    // Always return success to prevent email enumeration
+    // The email will only be sent if the user exists
+    if (result) {
+      // Determine the portal path for the reset URL
+      const portalPath = dto.portal === PortalType.PARTICIPANT ? 'participant' : 'staff';
+      
+      try {
+        await this.emailService.sendPasswordResetLink({
+          to: dto.email,
+          token: result.token,
+          firstName: result.firstName,
+          portal: portalPath,
+        });
+        this.logger.log(`Password reset email sent to ${dto.email}`);
+      } catch (error) {
+        this.logger.error(`Failed to send password reset email to ${dto.email}: ${error.message}`);
+        // Don't reveal the error to the user
+      }
+    }
+    
+    return { 
+      message: "If an account with that email exists, you will receive a password reset link shortly." 
+    };
+  }
+
+  @Post("reset-password")
+  @Public()
+  @StrictThrottle()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Reset password using token" })
+  @ApiResponse({ status: 200, description: "Password reset successful" })
+  @ApiResponse({ status: 401, description: "Invalid or expired token" })
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<{ message: string; portal: string }> {
+    const result = await this.authService.resetPassword(dto.token, dto.newPassword);
+    return { 
+      message: "Password has been reset successfully. You can now log in with your new password.",
+      portal: result.portal,
+    };
   }
 
   @Get("sessions")

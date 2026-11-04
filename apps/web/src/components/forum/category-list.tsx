@@ -31,13 +31,13 @@ const iconMap: Record<string, typeof MessageSquare> = {
 interface CategoryListProps {
   cohortId: string;
   verticalId?: string;
-  basePath?: string; // e.g., "/app/forum" or "/mentor/forum"
+  basePath?: string; // e.g., "/participant/forum" or "/mentor/forum"
 }
 
 export function CategoryList({
   cohortId,
   verticalId,
-  basePath = "/app/forum",
+  basePath = "/participant/forum",
 }: CategoryListProps) {
   const { data: categories, isLoading, error } = useForumCategories(cohortId, verticalId);
 

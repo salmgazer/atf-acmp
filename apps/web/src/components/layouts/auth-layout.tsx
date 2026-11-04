@@ -40,8 +40,9 @@ export function AuthLayout({ children, title, subtitle, portal }: AuthLayoutProp
                   src="/logos/full/Bright-color-logo.png"
                   alt="ATF Logo"
                   width={240}
-                  height={72}
-                  className="mx-auto object-contain"
+                  height={62}
+                  priority
+                  className="h-auto mx-auto object-contain"
                 />
               </div>
               <p className="mt-4 text-white/80">
@@ -67,8 +68,9 @@ export function AuthLayout({ children, title, subtitle, portal }: AuthLayoutProp
               src="/logos/full/Full-color-logo.png"
               alt="ATF Logo"
               width={160}
-              height={48}
-              className="object-contain"
+              height={41}
+              priority
+              className="h-auto object-contain"
             />
           </div>
 

@@ -1,3 +1,4 @@
+import { CACHE_MANAGER } from "@nestjs/cache-manager";
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { NotFoundException, BadRequestException } from "@nestjs/common";
@@ -12,6 +13,8 @@ import {
 } from "@/database/entities/participant.entity";
 import { Brief } from "@/database/entities/brief.entity";
 import { Vertical } from "@/database/entities/vertical.entity";
+import { OneSignalService } from "@/modules/notifications/onesignal.service";
+import { EmailService } from "@/email/email.service";
 import {
   createMockRepository,
   createMockQueryBuilder,
@@ -37,6 +40,7 @@ describe("TeamFormationService", () => {
   });
 
   const createMockParticipant = (id: string, country: string, overrides: Partial<any> = {}) => ({
+    group: null as string | null,
     ...createTestParticipant({
       id,
       participantId: `PART-${id}`,
@@ -84,12 +88,22 @@ describe("TeamFormationService", () => {
     // Default: no existing teams to backfill
     teamRepository.find.mockResolvedValue([]);
 
+    // Default: no team members (for notifications)
+    teamMemberRepository.find.mockResolvedValue([]);
+
+    // Default: no participants found (for notifications)
+    participantRepository.find.mockImplementation(async options => {
+      const ids = (options?.where as any)?.id?._value;
+      return Array.isArray(ids) ? ids.map(id => createMockParticipant(id, "Ghana")) : [];
+    });
+
     // Default: no briefs or verticals (for brief-centric formation)
     briefRepository.find.mockResolvedValue([]);
     verticalRepository.find.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: CACHE_MANAGER, useFactory: () => { const data = new Map(); return { get: jest.fn(async key => data.get(key)), set: jest.fn(async (key, value) => { data.set(key,value); }), del: jest.fn(async key => { data.delete(key); }) }; } },
         TeamFormationService,
         { provide: getRepositoryToken(Team), useValue: teamRepository },
         { provide: getRepositoryToken(TeamMember), useValue: teamMemberRepository },
@@ -98,15 +112,79 @@ describe("TeamFormationService", () => {
         { provide: getRepositoryToken(ParticipantPreference), useValue: preferenceRepository },
         { provide: getRepositoryToken(Brief), useValue: briefRepository },
         { provide: getRepositoryToken(Vertical), useValue: verticalRepository },
+        {
+          provide: OneSignalService,
+          useValue: {
+            sendToExternalUserIds: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: EmailService,
+          useValue: {
+            sendTeamFormationEmail: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<TeamFormationService>(TeamFormationService);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     jest.clearAllMocks();
     service.clearFormationPreviewCache("cohort-123");
+  });
+
+  describe("group boundaries", () => {
+    it.each([false, true])("forms homogeneous teams and leaves ungrouped participants unassigned (brief mode %s)", async useBriefCentricAssignment => {
+      cohortRepository.findOne.mockResolvedValue({ ...mockCohort, groups: ["North", "South"], teamSizeMax: 3 });
+      const participants = ["North", "South"].flatMap(group => [1,2,3].map(n => createMockParticipant(group + n, "GH", { group })));
+      participants.push(createMockParticipant("missing", "GH", { group: null }));
+      const qb = createMockQueryBuilder(); qb.getMany.mockResolvedValue(participants);
+      participantRepository.createQueryBuilder.mockReturnValue(qb);
+      preferenceRepository.find.mockResolvedValue([]);
+      const result = await service.runTeamFormation("cohort-123", { config: { useBriefCentricAssignment } });
+      expect(result.proposedTeams).toHaveLength(2);
+      for (const team of result.proposedTeams) {
+        expect(team.group).toBeTruthy();
+        expect(team.participantIds.every(id => participants.find(p => p.id === id)?.group === team.group)).toBe(true);
+      }
+      expect(result.unassignedParticipantIds).toContain("missing");
+      expect(result.warnings).toContain("1 participant(s) need a group before team formation");
+    });
+    it("does not combine small groups to reach the minimum team size", async () => {
+      cohortRepository.findOne.mockResolvedValue({ ...mockCohort, groups: ["North", "South"] });
+      const qb = createMockQueryBuilder();
+      qb.getMany.mockResolvedValue([createMockParticipant("a", "GH", { group: "North" }), createMockParticipant("b", "GH", { group: "North" }), createMockParticipant("c", "GH", { group: "South" })]);
+      participantRepository.createQueryBuilder.mockReturnValue(qb);
+      preferenceRepository.find.mockResolvedValue([]);
+      const result = await service.runTeamFormation("cohort-123", { config: { useBriefCentricAssignment: false } });
+      expect(result.proposedTeams).toHaveLength(0);
+      expect(result.unassignedParticipantIds).toHaveLength(3);
+    });
+    it("selects a single group when forming a team for an approved brief", async () => {
+      const internal = service as any;
+      const participants = ["North", "South"].flatMap(group => [1,2,3].map(n => createMockParticipant(group + n, "GH", { group })));
+      preferenceRepository.find.mockResolvedValue([]);
+      const prepared = await internal.prepareParticipantsWithPreferences(participants);
+      const config = internal.normalizeConfig({ teamSizeMax: 3 }, mockCohort);
+      const team = internal.formTeamForBrief({ id: "brief-1", title: "Test brief", verticalId: "vertical-1" }, { id: "vertical-1", name: "Test" }, prepared, config, 1);
+      expect(team).not.toBeNull();
+      expect(team.participantIds.every((id: string) => participants.find(p => p.id === id)?.group === team.group)).toBe(true);
+    });
+    it("excludes other groups from backfill candidates", async () => {
+      const internal = service as any;
+      preferenceRepository.find.mockResolvedValue([]);
+      const prepared = await internal.prepareParticipantsWithPreferences([createMockParticipant("same", "GH", { group: "North" }), createMockParticipant("other", "GH", { group: "South" })]);
+      const found = internal.findCompatibleParticipantsForTeam({ team: { group: "North" }, memberParticipants: [], countries: ["GH"], verticalPreferences: [], skillProfiles: { tech: 0, nonTech: 0, hybrid: 0 } }, prepared, internal.normalizeConfig({}, mockCohort));
+      expect(found.map((p: any) => p.participant.id)).toEqual(["same"]);
+    });
+    it("revalidates member groups when finalizing a stale preview", async () => {
+      cohortRepository.findOne.mockResolvedValue({ ...mockCohort, groups: ["North", "South"] });
+      participantRepository.find.mockResolvedValue([createMockParticipant("lead", "GH", { group: "North" }), createMockParticipant("changed", "GH", { group: "South" })]);
+      await expect((service as any).createTeamWithMembers("cohort-123", "Stale team", ["lead", "changed"], "lead", "changed")).rejects.toThrow("team lead's group");
+      expect(teamRepository.save).not.toHaveBeenCalled();
+    });
   });
 
   describe("runTeamFormation", () => {
