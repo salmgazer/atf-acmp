@@ -1,10 +1,13 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { Cron, CronExpression } from "@nestjs/schedule";
-import { DataSource, EntityManager } from "typeorm";
+import { DataSource, EntityManager, In } from "typeorm";
 import { randomUUID } from "crypto";
 import { v5 as uuidv5 } from "uuid";
 import { Brief } from "@/database/entities/brief.entity";
+import { briefHostContact, ensurePartnerContactLogin, normalizedEmail, resolveBriefHost } from "@/common/services/brief-contacts";
+import { BriefContact } from "@/database/entities/brief-contact.entity";
+import { BriefEventHostInvitation } from "@/database/entities/brief-event-host.entity";
 import { BriefEvent, BriefEventAttendee } from "@/database/entities/brief-event.entity";
 import { Participant } from "@/database/entities/participant.entity";
 import { Organization, OrganizationUser } from "@/database/entities/organization.entity";
@@ -49,11 +52,11 @@ export class BriefEventsService {
       .where("t.brief_id = :briefId", { briefId }).distinct(true);
   }
 
-  private async access(brief: Brief, actor: EventActor, write = false): Promise<{ canManage: boolean; canView: boolean }> {
+  private async access(brief: Brief, actor: EventActor, write = false): Promise<{ canManage: boolean; canView: boolean; canHost: boolean }> {
     if (staff.includes(actor.role)) {
       const canManage = managers.includes(actor.role);
       if (write && !canManage) throw new ForbiddenException("Only program managers can manage brief events");
-      return { canManage, canView: true };
+      return { canManage, canView: true, canHost: canManage };
     }
     if (actor.role === "organization") {
       const link = await this.db.getRepository(OrganizationUser).findOne({ where: { userId: actor.id } });
@@ -63,11 +66,11 @@ export class BriefEventsService {
       if (!org || !org.isActive || org.status !== "approved" || brief.organizationId !== org.id) throw new ForbiddenException("This brief belongs to another organization");
       const canManage = !link || ["owner", "admin"].includes(link.role);
       if (write && !canManage) throw new ForbiddenException("Only organization owners and admins can manage events");
-      return { canManage, canView: true };
+      return { canManage, canView: true, canHost: normalizedEmail(actor.email || "") === (await resolveBriefHost(this.db.manager, brief)).email };
     }
     if (actor.role === "participant" && !write) {
       const canView = actor.cohortId === brief.cohortId && !!await this.recipients(brief.id).andWhere("p.id = :participantId", { participantId: actor.id }).getOne();
-      return { canManage: false, canView };
+      return { canManage: false, canView, canHost: false };
     }
     throw new ForbiddenException("You cannot access brief events");
   }
@@ -99,7 +102,7 @@ export class BriefEventsService {
     const brief = await this.brief(briefId);
     const access = await this.access(brief, actor);
     const events = access.canView ? await this.db.getRepository(BriefEvent).find({ where: { briefId }, order: { startAt: "DESC" } }) : [];
-    return { events: await Promise.all(events.map(event => this.response(event, access.canManage))), canManage: access.canManage, zoomConfigured: access.canManage && this.zoom.isReady() };
+    return { events: await Promise.all(events.map(event => this.response(event, access.canManage))), canManage: access.canManage, canHost: access.canHost, host: access.canView ? await resolveBriefHost(this.db.manager, brief) : undefined, zoomConfigured: access.canManage && this.zoom.isReady() };
   }
 
   async staffCalendar(query: BriefEventCalendarQueryDto, actor: EventActor) {
@@ -113,17 +116,20 @@ export class BriefEventsService {
     const events = this.db.getRepository(BriefEvent).createQueryBuilder("event")
       .innerJoinAndSelect("event.brief", "brief")
       .innerJoinAndSelect("brief.organization", "organization")
-      .select(["event.id", "event.briefId", "event.title", "event.description", "event.startAt", "event.endAt", "event.timezone", "event.durationMinutes", "event.status", "event.zoomJoinUrl", "event.revision", "brief.id", "brief.title", "organization.id", "organization.name"])
+      .select(["event.id", "event.briefId", "event.title", "event.description", "event.startAt", "event.endAt", "event.timezone", "event.durationMinutes", "event.status", "event.zoomJoinUrl", "event.revision", "brief.id", "brief.title", "brief.secondaryContact", "organization.id", "organization.name", "organization.email", "organization.contactPerson"])
       .where("brief.cohortId = :cohortId", { cohortId: query.cohortId })
       .andWhere("event.startAt < :endAt AND event.endAt > :startAt", { startAt, endAt })
       .orderBy("event.startAt", "ASC").addOrderBy("event.id", "ASC");
     if (query.search) events.andWhere("organization.name ILIKE :search", { search: `%${query.search}%` });
-    return { events: (await events.getMany()).map(event => ({
+    const result = await events.getMany();
+    const contacts = result.length ? await this.db.manager.find(BriefContact, { where: { briefId: In([...new Set(result.map(event => event.briefId))]), isPrimary: true } }) : [];
+    return { events: result.map(event => ({
       id: event.id, briefId: event.briefId, title: event.title, description: event.description,
       startAt: event.startAt, endAt: event.endAt, timezone: event.timezone, durationMinutes: event.durationMinutes,
       status: event.status, zoomJoinUrl: event.status === "scheduled" ? event.zoomJoinUrl : null, revision: event.revision,
       brief: { id: event.brief.id, title: event.brief.title },
       organization: { id: event.brief.organization.id, name: event.brief.organization.name },
+      host: briefHostContact(event.brief, event.brief.organization, contacts.find(contact => contact.briefId === event.briefId)),
     })) };
   }
 
@@ -136,6 +142,8 @@ export class BriefEventsService {
     try {
       event = await this.db.transaction(async manager => {
         await this.lockHost(manager);
+        const contact = await resolveBriefHost(manager, brief);
+        await ensurePartnerContactLogin(manager, brief.organizationId, contact);
         const hostId = this.zoom.hostId;
         await this.checkOverlap(manager, hostId, dates.startAt, dates.endAt);
         const meeting = await this.zoom.createMeeting({ ...dto, startAt: dates.startAt });
@@ -183,19 +191,21 @@ export class BriefEventsService {
 
   private async response(event: BriefEvent, canManage: boolean) {
     const attendees = canManage ? await this.db.getRepository(BriefEventAttendee).findBy({ eventId: event.id }) : [];
+    const hosts = canManage ? await this.db.getRepository(BriefEventHostInvitation).findBy({ eventId: event.id }) : [];
     return {
       id: event.id, briefId: event.briefId, title: event.title, description: event.description,
       startAt: event.startAt, endAt: event.endAt, timezone: event.timezone, durationMinutes: event.durationMinutes,
       status: event.status, zoomJoinUrl: event.status === "scheduled" ? event.zoomJoinUrl : null, revision: event.revision,
       ...(canManage ? { attendeeCount: attendees.filter(a => a.active).length,
-        deliveryPending: !!event.syncError || event.zoomSyncedRevision < event.revision || attendees.some(a => a.emailSequence < a.sequence || a.notificationSequence < a.sequence || a.pushSequence < a.sequence) } : {}),
+        deliveryPending: !!event.syncError || event.zoomSyncedRevision < event.revision || hosts.some(host => host.emailSequence < host.sequence) || attendees.some(a => a.emailSequence < a.sequence || a.notificationSequence < a.sequence || a.pushSequence < a.sequence) } : {}),
     };
   }
 
   async start(id: string, actor: EventActor): Promise<{ startUrl: string }> {
     const event = await this.db.getRepository(BriefEvent).findOneBy({ id });
     if (!event) throw new NotFoundException("Event not found");
-    await this.access(await this.brief(event.briefId), actor, true);
+    const access = await this.access(await this.brief(event.briefId), actor);
+    if (!access.canHost) throw new ForbiddenException("Only the brief's designated host or program managers can start this event");
     if (event.status !== "scheduled" || event.endAt.getTime() <= Date.now()) throw new BadRequestException("Only scheduled upcoming or ongoing events can be hosted");
     // Fetch a fresh, short-lived host link only after authorization; never store it.
     return { startUrl: await this.zoom.getHostUrl(event.zoomMeetingId) };
@@ -205,7 +215,7 @@ export class BriefEventsService {
     return this.config.get<string>("RESEND_FROM_EMAIL") || this.config.get<string>("SMTP_FROM_EMAIL") || this.config.get<string>("email.fromEmail") || "noreply@atf.africa";
   }
 
-  private invitation(event: BriefEvent, attendee: BriefEventAttendee, brief: Brief) {
+  private invitation(event: BriefEvent, attendee: Pick<BriefEventAttendee, "sequence" | "email" | "active">, brief: Brief) {
     return calendarInvitation({ eventId: event.id, sequence: attendee.sequence, title: event.title,
       description: `${brief.organization.name} — ${brief.title}\n\n${event.description}`,
       startAt: event.startAt, endAt: event.endAt, joinUrl: event.zoomJoinUrl, organizer: this.organizerEmail(),
@@ -290,10 +300,45 @@ export class BriefEventsService {
         existing.push(await repository.save({ eventId: id, participantId: participant.id, email: participant.email, active: true, eventRevision: event.revision }));
       }
       for (const attendee of existing) await this.deliver(event, brief, attendee, manager, errors);
+      await this.deliverHostInvitations(event, brief, manager, errors);
       await manager.getRepository(BriefEvent).update(id, { syncError: errors.length ? Array.from(new Set(errors)).join("; ") : null });
     } finally {
       try { if (locked) await runner.query("SELECT pg_advisory_unlock(hashtext($1))", ["brief-event:" + id]); }
       finally { await runner.release(); }
+    }
+  }
+
+  private async deliverHostInvitations(event: BriefEvent, brief: Brief, manager: EntityManager, errors: string[]) {
+    const host = await resolveBriefHost(manager, brief);
+    if (event.status === "scheduled" && event.endAt.getTime() > Date.now()) {
+      try { await ensurePartnerContactLogin(manager, brief.organizationId, host); }
+      catch { errors.push("Host contact account setup is pending"); return; }
+    }
+    const repo = manager.getRepository(BriefEventHostInvitation);
+    const invitations = await repo.findBy({ eventId: event.id });
+    for (const invite of invitations) {
+      const active = event.status === "scheduled" && invite.email === host.email;
+      if (invite.active !== active || invite.eventRevision !== event.revision) {
+        if (invite.active || active) invite.sequence++;
+        invite.active = active;
+        invite.eventRevision = event.revision;
+        await repo.save(invite);
+      }
+    }
+    if (event.status === "scheduled" && event.endAt.getTime() > Date.now() && !invitations.some(invite => invite.email === host.email)) {
+      invitations.push(await repo.save({ eventId: event.id, email: host.email, eventRevision: event.revision, active: true }));
+    }
+    for (const invite of invitations) {
+      if (invite.emailSequence >= invite.sequence) continue;
+      const cancelled = !invite.active || event.status === "cancelled";
+      const subject = `${cancelled ? "Host invitation cancelled" : invite.sequence ? "Host invitation updated" : "Host invitation"}: ${event.title}`;
+      const portal = this.config.get<string>("FRONTEND_URL", "http://localhost:3000").replace(/\/$/, "");
+      const time = new Intl.DateTimeFormat("en-GB", { dateStyle: "full", timeStyle: "short", timeZone: event.timezone }).format(event.startAt);
+      const text = `${brief.organization.name}\nBrief: ${brief.title}\n${event.title}\n${time} (${event.timezone})\n\n${event.description}\n\n${cancelled ? "You are no longer hosting this event." : `You are the designated host. Sign in with ${invite.email} and use the protected Host event button: ${portal}/partners/briefs/${brief.id}#events`}`;
+      try {
+        await this.email.sendCalendarInvitation(invite.email, subject, `<p style="white-space:pre-wrap">${escapeHtml(text)}</p>`, text, this.invitation(event, invite, brief));
+        await repo.update(invite.id, { emailSequence: invite.sequence });
+      } catch { errors.push("Host invitations are pending"); }
     }
   }
 

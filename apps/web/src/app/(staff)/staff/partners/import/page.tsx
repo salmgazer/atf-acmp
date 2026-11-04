@@ -1,5 +1,6 @@
 "use client";
 
+import { SubmissionImportPanel } from "@/components/partners/submission-import-panel";
 import { useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -101,6 +102,7 @@ function parseCSV(text: string): BulkImportPartnerRow[] {
 
 function ImportPartnersContent() {
   const router = useRouter();
+  const [mode, setMode] = useState<"partners" | "submissions">("partners");
   const [selectedCohortId, setSelectedCohortId] = useState("");
   const [csvText, setCsvText] = useState("");
   const [parsedRows, setParsedRows] = useState<BulkImportPartnerRow[]>([]);
@@ -165,7 +167,7 @@ function ImportPartnersContent() {
 
   return (
     <StaffLayout>
-      <div className="space-y-6 max-w-4xl mx-auto">
+      <div className="w-full space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">
           <Link
@@ -182,6 +184,11 @@ function ImportPartnersContent() {
           </div>
         </div>
 
+        <div role="group" aria-label="Partner import mode" className="flex flex-wrap gap-2">
+          <Button variant={mode === "partners" ? "default" : "outline"} onClick={() => setMode("partners")}>Partners only</Button>
+          <Button variant={mode === "submissions" ? "default" : "outline"} onClick={() => setMode("submissions")}>Partners and briefs</Button>
+        </div>
+        {mode === "submissions" ? <SubmissionImportPanel /> : <>
         {/* Cohort Selection */}
         <div className="rounded-xl border border-border bg-card p-4">
           <Label className="text-foreground font-medium">Select Cohort *</Label>
@@ -383,6 +390,7 @@ function ImportPartnersContent() {
             </div>
           </div>
         )}
+        </>}
       </div>
     </StaffLayout>
   );

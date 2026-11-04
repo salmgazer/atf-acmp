@@ -55,6 +55,7 @@ export function BriefEvents({ briefId }: { briefId: string }) {
         <h2 id={`brief-events-${briefId}`} className="flex items-center gap-2 text-lg font-semibold"><Calendar className="h-5 w-5" />Brief events</h2>
         {data.canManage && <Button size="sm" disabled={!data.zoomConfigured} onClick={() => showEditor()}><CalendarPlus className="mr-2 h-4 w-4" />Schedule event</Button>}
       </div>
+      {data.host && <p className="mt-2 text-sm text-muted-foreground">Event host: {data.host.name}{data.host.source === "partner" ? " (partner main contact)" : " (brief main contact)"}</p>}
       {data.canManage && <p className="mt-2 text-sm text-muted-foreground">Confirmed participants in every team assigned to this brief receive calendar invitations, email, and push notifications. Teams assigned later are invited automatically.</p>}
       {data.canManage && !data.zoomConfigured && <p className="mt-3 rounded-md bg-muted p-3 text-sm">Event scheduling will be available once staff connects the shared ATF Zoom account.</p>}
       <div className="mt-4 space-y-4">
@@ -70,8 +71,8 @@ export function BriefEvents({ briefId }: { briefId: string }) {
               <div className="mt-4 flex flex-wrap gap-2">
                 {upcoming && event.zoomJoinUrl && <Button asChild size="sm"><a href={event.zoomJoinUrl} target="_blank" rel="noopener noreferrer"><Video className="mr-2 h-4 w-4" />Join Zoom</a></Button>}
                 <Button variant="outline" size="sm" onClick={() => downloadBriefEventCalendar(event.id).catch(() => toast.error("Could not download the calendar invitation"))}><Download className="mr-2 h-4 w-4" />Add to calendar</Button>
+                {data.canHost && upcoming && <Button size="sm" variant="outline" onClick={() => hostBriefEvent(event.id)}><Video className="mr-2 h-4 w-4" />Host event</Button>}
                 {data.canManage && upcoming && <>
-                  <Button size="sm" variant="outline" onClick={() => hostBriefEvent(event.id)}><Video className="mr-2 h-4 w-4" />Host event</Button>
                   <Button size="sm" variant="outline" onClick={() => showEditor(event)}><Pencil className="mr-2 h-4 w-4" />Edit event</Button>
                   <Button size="sm" variant="outline" onClick={() => setCancelling(event)}>Cancel event</Button>
                 </>}

@@ -118,22 +118,22 @@ class ScoringAnswersDto {
 export class CreateBriefDto {
   @IsString()
   @MinLength(5)
-  @MaxLength(200)
+  @MaxLength(255)
   title: string;
 
   @IsString()
-  @MinLength(50)
-  @MaxLength(5000)
+  @MinLength(20)
+  @MaxLength(100000)
   description: string;
 
   @IsString()
-  @MinLength(50)
-  @MaxLength(5000)
+  @MinLength(20)
+  @MaxLength(100000)
   problemStatement: string;
 
   @IsString()
-  @MinLength(50)
-  @MaxLength(3000)
+  @MinLength(1)
+  @MaxLength(100000)
   expectedOutcomes: string;
 
   @IsUUID()
@@ -166,17 +166,17 @@ export class CreateBriefDto {
   // Fields from onboard-organization form
   @IsOptional()
   @IsString()
-  @MaxLength(5000)
+  @MaxLength(100000)
   whatChanges?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLength(10000)
   affectedCount?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(5000)
+  @MaxLength(100000)
   dataDescription?: string;
 
   @IsOptional()
@@ -199,25 +199,25 @@ export class UpdateBriefDto {
   @IsOptional()
   @IsString()
   @MinLength(5)
-  @MaxLength(200)
+  @MaxLength(255)
   title?: string;
 
   @IsOptional()
   @IsString()
-  @MinLength(50)
-  @MaxLength(5000)
+  @MinLength(20)
+  @MaxLength(100000)
   description?: string;
 
   @IsOptional()
   @IsString()
-  @MinLength(50)
-  @MaxLength(5000)
+  @MinLength(20)
+  @MaxLength(100000)
   problemStatement?: string;
 
   @IsOptional()
   @IsString()
-  @MinLength(50)
-  @MaxLength(3000)
+  @MinLength(1)
+  @MaxLength(100000)
   expectedOutcomes?: string;
 
   @IsOptional()
@@ -253,17 +253,17 @@ export class UpdateBriefDto {
   // Fields from onboard-organization form
   @IsOptional()
   @IsString()
-  @MaxLength(5000)
+  @MaxLength(100000)
   whatChanges?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLength(10000)
   affectedCount?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(5000)
+  @MaxLength(100000)
   dataDescription?: string;
 
   @IsOptional()
@@ -307,25 +307,25 @@ export class StaffUpdateBriefDto {
   @IsOptional()
   @IsString()
   @MinLength(5)
-  @MaxLength(200)
+  @MaxLength(255)
   title?: string;
 
   @IsOptional()
   @IsString()
-  @MinLength(50)
-  @MaxLength(5000)
+  @MinLength(20)
+  @MaxLength(100000)
   description?: string;
 
   @IsOptional()
   @IsString()
-  @MinLength(50)
-  @MaxLength(5000)
+  @MinLength(20)
+  @MaxLength(100000)
   problemStatement?: string;
 
   @IsOptional()
   @IsString()
-  @MinLength(50)
-  @MaxLength(3000)
+  @MinLength(1)
+  @MaxLength(100000)
   expectedOutcomes?: string;
 
   @IsOptional()
@@ -357,17 +357,17 @@ export class StaffUpdateBriefDto {
   // Fields from onboard-organization form
   @IsOptional()
   @IsString()
-  @MaxLength(5000)
+  @MaxLength(100000)
   whatChanges?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLength(10000)
   affectedCount?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(5000)
+  @MaxLength(100000)
   dataDescription?: string;
 
   @IsOptional()

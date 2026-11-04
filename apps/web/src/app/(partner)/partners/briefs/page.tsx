@@ -91,10 +91,12 @@ function BriefRow({
   brief,
   onEdit,
   onDelete,
+  canManage,
 }: {
   brief: Brief;
   onEdit: (brief: Brief) => void;
   onDelete: (brief: Brief) => void;
+  canManage: boolean;
 }) {
   const config = statusConfig[brief.status];
   const StatusIcon = config.icon;
@@ -167,7 +169,7 @@ function BriefRow({
                 View
               </Link>
             </DropdownMenuItem>
-            {(brief.status === "draft" || brief.status === "revision_requested") && (
+            {canManage && (brief.status === "draft" || brief.status === "revision_requested") && (
               <DropdownMenuItem asChild>
                 <Link href={`/partners/briefs/${brief.id}/edit`}>
                   <Pencil className="mr-2 h-4 w-4" />
@@ -175,7 +177,7 @@ function BriefRow({
                 </Link>
               </DropdownMenuItem>
             )}
-            {brief.status === "draft" && (
+            {canManage && brief.status === "draft" && (
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -384,14 +386,14 @@ function BriefsContent() {
                 </span>
               )}
             </button>
-            <div className="ml-auto">
+            {currentOrg?.canManage && <div className="ml-auto">
               <Button asChild className="gap-2">
                 <Link href="/partners/briefs/new">
                   <Plus className="h-4 w-4" />
                   New Brief
                 </Link>
               </Button>
-            </div>
+            </div>}
           </div>
         )}
 
@@ -447,7 +449,7 @@ function BriefsContent() {
                     ? `You don't have any briefs with status "${statusConfig[statusFilter]?.label}".`
                     : "Create your first brief to get started."}
                 </p>
-                {statusFilter === "all" && (
+                {currentOrg?.canManage && statusFilter === "all" && (
                   <Button asChild className="mt-4">
                     <Link href="/partners/briefs/new">
                       <Plus className="mr-2 h-4 w-4" />
@@ -493,6 +495,7 @@ function BriefsContent() {
                         brief={brief}
                         onEdit={handleEditClick}
                         onDelete={handleDeleteClick}
+                        canManage={currentOrg?.canManage === true}
                       />
                     ))}
                   </tbody>

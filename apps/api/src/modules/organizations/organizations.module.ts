@@ -10,6 +10,7 @@ import { BullModule } from "@nestjs/bullmq";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { PartnerInvitesService, PARTNER_INVITES_QUEUE } from "./partner-invites.service";
 import { PartnerInvitesProcessor } from "./partner-invites.processor";
+import { SubmissionImportService } from "./submission-import.service";
 
 @Module({
   imports: [
@@ -24,7 +25,7 @@ import { PartnerInvitesProcessor } from "./partner-invites.processor";
     UploadModule,
   ],
   controllers: [OrganizationsController],
-  providers: [OrganizationsService, PartnerInvitesService, PartnerInvitesProcessor],
+  providers: [OrganizationsService, PartnerInvitesService, PartnerInvitesProcessor, SubmissionImportService],
   exports: [OrganizationsService],
 })
 export class OrganizationsModule {}
