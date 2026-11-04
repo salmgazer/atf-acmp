@@ -32,6 +32,43 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
   const fixture = (values: Partial<Organization> = {}) => db.getRepository(Organization).save({ name: "Partner", email: `${randomUUID()}@example.test`, status: OrganizationStatus.APPROVED, isActive: true, cohortId: cohort.id, ...values });
   const queue = () => ({ add: jest.fn(async (_name: string, _data: any) => ({ id: randomUUID() })) });
 
+  it("bulk approves pending partners with staff attribution, owner access and unchanged existing credentials", async () => {
+    const first = await fixture({ status: OrganizationStatus.PENDING }), second = await fixture({ status: OrganizationStatus.PENDING });
+    const existing = await db.getRepository(User).save({ email: second.email, role: Role.ORGANIZATION, isActive: true, passwordHash: "existing-password-hash" });
+    const actor = randomUUID();
+    expect(await service.bulkApprove([first.id, second.id], actor)).toEqual({ approvedCount: 2, organizationIds: [first.id, second.id] });
+    for (const org of [first, second]) {
+      expect(await db.getRepository(Organization).findOneByOrFail({ id: org.id })).toMatchObject({ status: OrganizationStatus.APPROVED, approvedBy: actor, approvedAt: expect.any(Date) });
+      const user = await db.getRepository(User).findOneByOrFail({ email: org.email });
+      expect(await db.getRepository(OrganizationUser).findOneByOrFail({ organizationId: org.id, userId: user.id })).toMatchObject({ role: "owner", isPrimary: true });
+    }
+    expect((await db.getRepository(User).findOneOrFail({ where: { id: existing.id }, select: { passwordHash: true } })).passwordHash).toBe("existing-password-hash");
+    expect(email.sendOrganizationInvite).not.toHaveBeenCalled();
+    await expect(service.bulkApprove([first.id], actor)).rejects.toThrow("Only pending");
+  });
+
+  it("rejects stale or ineligible bulk approval selections without approving any partner", async () => {
+    const pending = await fixture({ status: OrganizationStatus.PENDING });
+    const approved = await fixture(), rejected = await fixture({ status: OrganizationStatus.REJECTED });
+    const inactive = await fixture({ status: OrganizationStatus.PENDING, isActive: false }), deleted = await fixture({ status: OrganizationStatus.PENDING });
+    await db.getRepository(Organization).softDelete(deleted.id);
+    for (const id of [approved.id, rejected.id, inactive.id, deleted.id, randomUUID()]) {
+      await expect(service.bulkApprove([pending.id, id], randomUUID())).rejects.toThrow("Only pending");
+      expect((await db.getRepository(Organization).findOneByOrFail({ id: pending.id })).status).toBe(OrganizationStatus.PENDING);
+      expect(await db.getRepository(User).countBy({ email: pending.email })).toBe(0);
+    }
+  });
+
+  it("rolls back all approvals and new accounts when a later partner email conflicts with a staff account", async () => {
+    const first = await fixture({ id: "10000000-0000-4000-8000-000000000001", status: OrganizationStatus.PENDING });
+    const second = await fixture({ id: "10000000-0000-4000-8000-000000000002", status: OrganizationStatus.PENDING });
+    await db.getRepository(User).save({ email: second.email, role: Role.PROGRAM_MANAGER, isActive: true });
+    await expect(service.bulkApprove([first.id, second.id], randomUUID())).rejects.toThrow("different account");
+    expect(await db.getRepository(User).countBy({ email: first.email })).toBe(0);
+    expect(await db.getRepository(OrganizationUser).countBy({ organizationId: first.id })).toBe(0);
+    for (const org of [first, second]) expect((await db.getRepository(Organization).findOneByOrFail({ id: org.id })).status).toBe(OrganizationStatus.PENDING);
+  });
+
   it("rejects pending, rejected, inactive, deleted and missing selections atomically", async () => {
     const approved = await fixture(), pending = await fixture({ status: OrganizationStatus.PENDING }), rejected = await fixture({ status: OrganizationStatus.REJECTED }), inactive = await fixture({ isActive: false }), deleted = await fixture();
     await db.getRepository(Organization).softDelete(deleted.id);

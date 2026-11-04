@@ -252,13 +252,13 @@ export function OpportunityStep({
           </div>
         </div>
 
-        {/* Secondary Contact (Optional) */}
+        {/* Brief Main Contact (Optional) */}
         <div className="rounded-xl border border-border bg-card p-6">
           <h3 className="font-medium text-foreground mb-4">
-            Secondary Contact (Optional)
+            Brief Main Contact (Optional)
           </h3>
           <p className="text-sm text-muted-foreground mb-4">
-            Add another person who can speak to this opportunity.
+            This person hosts events for this brief. Leave blank to use the partner’s main contact.
           </p>
 
           <div className="grid gap-4 sm:grid-cols-2">

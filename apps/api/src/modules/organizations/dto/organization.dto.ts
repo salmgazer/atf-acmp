@@ -111,6 +111,15 @@ export class ApproveOrganizationDto {
   approvedBy?: string;
 }
 
+export class BulkApproveOrganizationsDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
+  @ArrayUnique()
+  @IsUUID("4", { each: true })
+  organizationIds: string[];
+}
+
 export class RejectOrganizationDto {
   @IsString()
   @MinLength(10)

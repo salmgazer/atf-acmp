@@ -12,6 +12,7 @@ import { Brief, BriefStatus } from "@/database/entities/brief.entity";
 import { Cohort, CohortStatus } from "@/database/entities/cohort.entity";
 import { User, Role } from "@/database/entities/user.entity";
 import { BriefScoringService } from "@/modules/briefs/brief-scoring.service";
+import { saveBriefContacts } from "@/common/services/brief-contacts";
 import { EmailService } from "@/email/email.service";
 import {
   PublicSubmissionDto,
@@ -196,6 +197,7 @@ export class PublicService {
 
         const brief = queryRunner.manager.create(Brief, briefData);
         const savedBrief = await queryRunner.manager.save(brief);
+        await saveBriefContacts(queryRunner.manager, savedBrief, opp.secondaryContact, { name: dto.org.contactName, email: dto.org.email, phone: dto.org.phone, role: dto.org.designation });
         briefIds.push(savedBrief.id);
 
         this.logger.log(

@@ -31,10 +31,13 @@ export interface BriefEventInput {
 export interface BriefEventsResponse {
   events: BriefEvent[];
   canManage: boolean;
+  canHost: boolean;
+  host?: { name: string; email: string; source: "brief" | "partner" };
   zoomConfigured: boolean;
 }
 
 export interface PartnerCalendarEvent extends BriefEvent {
+  host?: { name: string; email: string; source: "brief" | "partner" };
   brief: { id: string; title: string };
   organization: { id: string; name: string };
 }
