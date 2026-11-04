@@ -518,9 +518,13 @@ jobs:
           echo "Web Status: $WEB_STATUS"
           echo "Built domain status: $BUILT_STATUS"
           
-          if [ "$API_STATUS" != "ok" ] || [ "$WEB_STATUS" != "200" ] || [ "$BUILT_STATUS" != "200" ]; then
+          if [ "$API_STATUS" != "ok" ] || [ "$WEB_STATUS" != "200" ]; then
             echo "WARNING: Some endpoints may not be responding correctly"
             exit 1
           fi
+
+          if [ "$BUILT_STATUS" != "200" ]; then
+            echo "::warning::The optional built.atfchallenge.org alias is not serving the AWS app. Check its Vercel DNS record separately."
+          fi
           
-          echo "All endpoints verified successfully!"
+          echo "Production API and app endpoints verified successfully!"

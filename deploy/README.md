@@ -295,6 +295,8 @@ Release images also receive `production-<commit>` or `staging-<commit>` tags. Th
 
 Before a production release with migrations, take an RDS snapshot and verify that the production GitHub environment has `MIGRATION_SUBNET`, `MIGRATION_SECURITY_GROUP`, and `ECS_EXECUTION_ROLE_ARN`. Credential references ending in `_ARN` must point to production Secrets Manager secrets. API health checks use `/api/health/ready`; web health checks use `/api/health`. Final public endpoint checks retry briefly to allow load-balancer rule updates to propagate.
 
+The canonical production endpoints are `api.atfchallenge.org` and `app.atfchallenge.org`. The `built.atfchallenge.org` alias also needs its Vercel DNS record pointed at the shared AWS load balancer. Its availability is reported separately from the required canonical endpoint checks.
+
 ---
 
 ## Manual Deployment (First Time)
