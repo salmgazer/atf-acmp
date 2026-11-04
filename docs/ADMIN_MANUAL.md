@@ -36,8 +36,10 @@ This manual provides comprehensive guidance for administrators managing the ATF 
 |------|-------------|
 | **Super Admin** | Full system access, user management, system configuration |
 | **Program Manager** | Cohort management, participant/mentor management, evaluations |
-| **Evaluator** | View submissions, conduct evaluations, manage scores |
+| **Evaluator** | Review briefs/submissions and submit human evaluation scores; no program or AI queue administration |
 | **Viewer** | Read-only access to dashboards and reports |
+
+All staff roles can access every cohort. Permissions control actions, with no staff assignment restrictions by cohort, group or vertical. See [the staff permission matrix](STAFF_ROLES.md) for the full policy.
 
 ---
 

@@ -71,7 +71,10 @@ export class AuthService {
       if (user) {
         if (user.firebaseUid && user.firebaseUid !== decodedToken.uid) throw new UnauthorizedException("Account is already linked to a different identity");
         user.firebaseUid = decodedToken.uid;
-        await this.userRepository.save(user);
+        if (user.role === Role.MENTOR) {
+          const linked = await this.userRepository.update({ id: user.id, email: user.email }, { firebaseUid: decodedToken.uid });
+          if (linked.affected !== 1) throw new UnauthorizedException("Your account changed. Please sign in again");
+        } else await this.userRepository.save(user);
       }
     }
 
@@ -88,7 +91,7 @@ export class AuthService {
     }
 
     user.lastLoginAt = new Date();
-    await this.userRepository.save(user);
+    await this.recordLogin(user);
 
     // Activate mentor if logging into mentor portal
     if (portal === PortalType.MENTOR && user.role === Role.MENTOR) {
@@ -134,7 +137,7 @@ export class AuthService {
     }
 
     user.lastLoginAt = new Date();
-    await this.userRepository.save(user);
+    await this.recordLogin(user);
 
     // Activate mentor if logging into mentor portal
     if (portal === PortalType.MENTOR && user.role === Role.MENTOR) {
@@ -561,7 +564,10 @@ export class AuthService {
 
       user.passwordResetToken = crypto.createHash("sha256").update(token).digest("hex");
       user.passwordResetExpires = expiresAt;
-      await this.userRepository.save(user);
+      if (user.role === Role.MENTOR) {
+        const updated = await this.userRepository.update({ id: user.id, email: user.email }, { passwordResetToken: user.passwordResetToken, passwordResetExpires: expiresAt });
+        if (updated.affected !== 1) return null;
+      } else await this.userRepository.save(user);
 
       return { token, firstName: user.firstName || 'User', expiresAt };
     }
@@ -685,9 +691,16 @@ export class AuthService {
     if (!mentor || mentor.status === MentorStatus.INACTIVE) throw new UnauthorizedException("Mentor account is inactive");
     if (mentor.cohort && this.blockedCohortStatuses.includes(mentor.cohort.status)) throw new UnauthorizedException("COHORT_NOT_ACCESSIBLE: Your cohort is no longer accessible");
     if (mentor.status === MentorStatus.IMPORTED) {
-      mentor.status = MentorStatus.ACTIVE;
-      await this.mentorRepository.save(mentor);
+      const activated = await this.mentorRepository.update({ id: mentor.id, email: email.toLowerCase(), status: MentorStatus.IMPORTED }, { status: MentorStatus.ACTIVE });
+      if (activated.affected !== 1) throw new UnauthorizedException("Your mentor account changed. Please sign in again");
     }
+  }
+
+  private async recordLogin(user: User): Promise<void> {
+    if (user.role !== Role.MENTOR) { await this.userRepository.save(user); return; }
+    // A concurrent imported-email correction must not be overwritten by a stale User snapshot.
+    const updated = await this.userRepository.update({ id: user.id, email: user.email }, { lastLoginAt: user.lastLoginAt });
+    if (updated.affected !== 1) throw new UnauthorizedException("Your account changed. Please sign in again");
   }
 
   canAccessPortal(role: Role, portal: PortalType): boolean {

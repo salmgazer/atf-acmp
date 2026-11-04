@@ -24,6 +24,7 @@ import { RolesGuard } from "@/auth/guards/roles.guard";
 import { Roles } from "@/common/decorators/roles.decorator";
 import { Role } from "@/database/entities/user.entity";
 import { ForumService, AuthorInfo } from "./forum.service";
+import { hasStaffPermission } from "@acmp/shared";
 import {
   CreateCategoryDto,
   UpdateCategoryDto,
@@ -216,6 +217,7 @@ export class ForumController {
       type: authorType,
       name: authorName,
       avatarUrl: authorAvatarUrl,
+      canModerate: hasStaffPermission(user.role, "manage"),
     };
   }
 
@@ -299,6 +301,7 @@ export class AdminForumController {
     const author: AuthorInfo = {
       id: req.user.id,
       type: ForumAuthorType.STAFF,
+      canModerate: true,
       name: `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim(),
     };
     await this.forumService.deleteThread(id, author);
@@ -313,6 +316,7 @@ export class AdminForumController {
     const author: AuthorInfo = {
       id: req.user.id,
       type: ForumAuthorType.STAFF,
+      canModerate: true,
       name: `${req.user.firstName || ""} ${req.user.lastName || ""}`.trim(),
     };
     await this.forumService.deleteReply(id, author);

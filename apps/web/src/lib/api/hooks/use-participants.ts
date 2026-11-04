@@ -148,6 +148,51 @@ export interface UpdateParticipantDto {
   interests?: string[];
 }
 
+export function canResendParticipantInvite(participant: Participant): boolean {
+  return participant.mustChangePassword && !participant.onboardingComplete && participant.status !== "inactive";
+}
+
+export interface ParticipantInviteBatch {
+  id: string;
+  state: "queued" | "active" | "completed" | "failed";
+  total: number;
+  processed: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  failures: { participantId: string; message: string }[];
+  error?: string;
+}
+
+export type ParticipantInviteRequest = { mode: "single"; participantId: string }
+  | { mode: "selected"; participantIds: string[] }
+  | { mode: "pending"; filters: { cohortId: string; group?: string; ungrouped?: boolean; search?: string; status?: ParticipantStatus } };
+
+export function useResendParticipantInvites() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (request: ParticipantInviteRequest) => request.mode === "single"
+      ? api.post<ParticipantInviteBatch>(`/participants/${request.participantId}/resend-invite`)
+      : request.mode === "selected" ? api.post<ParticipantInviteBatch>("/participants/resend-invites", { participantIds: request.participantIds })
+        : api.post<ParticipantInviteBatch>("/participants/resend-pending-invites", request.filters),
+    onSuccess: batch => {
+      cache.setQueryData(["participant-invite-batch", batch.id], batch);
+      toast.success(`${batch.total} invitation${batch.total === 1 ? "" : "s"} queued`);
+    },
+    onError: (error: Error) => toast.error(error.message || "Could not resend invitations"),
+  });
+}
+
+export function useParticipantInviteBatch(id: string | null) {
+  return useQuery({
+    queryKey: ["participant-invite-batch", id],
+    queryFn: () => api.get<ParticipantInviteBatch>(`/participants/invite-resends/${id}`),
+    enabled: !!id,
+    refetchInterval: query => ["queued", "active"].includes(query.state.data?.state || "queued") ? 1500 : false,
+    retry: false,
+  });
+}
+
 // Query keys
 export const participantKeys = {
   all: ["participants"] as const,

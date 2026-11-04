@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/client";
 import { toast } from "sonner";
+import { useStaffPermission } from "@/components/auth/staff-only";
 
 // Types
 export type StaffRole = "super_admin" | "program_manager" | "evaluator" | "viewer";
@@ -95,9 +96,11 @@ export function useStaffMember(id: string) {
 }
 
 export function useStaffStatistics() {
+  const canManage = useStaffPermission("manage");
   return useQuery({
     queryKey: staffKeys.statistics(),
     queryFn: () => api.get<StaffStatistics>("/admin/staff/statistics"),
+    enabled: canManage,
   });
 }
 

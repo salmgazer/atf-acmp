@@ -176,6 +176,7 @@ export class MagicLinkService {
     if (!user.isActive) {
       throw new UnauthorizedException("Account is deactivated");
     }
+    if (user.role === Role.MENTOR && user.email.toLowerCase() !== normalizedEmail) throw new UnauthorizedException("Invalid or expired code");
 
     // Check cohort status for organization and mentor portals
     const portal = verificationCode.portal as PortalType | undefined;
@@ -190,7 +191,10 @@ export class MagicLinkService {
 
     // Update last login
     user.lastLoginAt = new Date();
-    await this.userRepository.save(user);
+    if (user.role === Role.MENTOR) {
+      const updated = await this.userRepository.update({ id: user.id, email: normalizedEmail }, { lastLoginAt: user.lastLoginAt });
+      if (updated.affected !== 1) throw new UnauthorizedException("Your mentor account changed. Please request a new code");
+    } else await this.userRepository.save(user);
 
     return this.authService.generateTokens(user);
   }

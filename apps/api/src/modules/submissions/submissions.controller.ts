@@ -264,6 +264,7 @@ export class AdminStagesController {
     return { success: true };
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("cohort/:cohortId/stats")
   @ApiOperation({ summary: "Get stages with submission statistics" })
   @ApiParam({ name: "cohortId", description: "Cohort ID" })
@@ -282,6 +283,7 @@ export class AdminStagesController {
 export class AdminSubmissionsController {
   constructor(private readonly submissionsService: SubmissionsService) {}
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get()
   @ApiOperation({ summary: "Get all submissions with filters" })
   @ApiResponse({ status: 200, description: "Paginated submissions" })
@@ -289,6 +291,7 @@ export class AdminSubmissionsController {
     return this.submissionsService.getSubmissions(query);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("pending-approval")
   @ApiOperation({ summary: "Get submissions pending approval" })
   @ApiResponse({ status: 200, description: "Submissions needing approval" })
@@ -296,6 +299,7 @@ export class AdminSubmissionsController {
     return this.submissionsService.getPendingApprovalSubmissions(query);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("stats/:cohortId")
   @ApiOperation({ summary: "Get submission statistics for a cohort" })
   @ApiParam({ name: "cohortId", description: "Cohort ID" })
@@ -304,6 +308,7 @@ export class AdminSubmissionsController {
     return this.submissionsService.getSubmissionStats(cohortId);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get(":id")
   @ApiOperation({ summary: "Get a submission by ID (admin)" })
   @ApiParam({ name: "id", description: "Submission ID" })
@@ -312,6 +317,7 @@ export class AdminSubmissionsController {
     return this.submissionsService.getSubmission(id);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR)
   @Post(":id/approve")
   @Audit({
     action: AuditAction.STATUS_CHANGE,
@@ -331,6 +337,7 @@ export class AdminSubmissionsController {
     return this.submissionsService.approveSubmission(id, req.user.id, dto);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR)
   @Post(":id/reject")
   @Audit({
     action: AuditAction.STATUS_CHANGE,
@@ -350,6 +357,7 @@ export class AdminSubmissionsController {
     return this.submissionsService.rejectSubmission(id, req.user.id, dto);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR)
   @Post(":id/evaluate")
   @Audit({
     action: AuditAction.UPDATE,
@@ -368,6 +376,7 @@ export class AdminSubmissionsController {
     return this.submissionsService.evaluateSubmission(id, req.user.id, dto);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get(":id/history")
   @ApiOperation({ summary: "Get submission version history (admin)" })
   @ApiParam({ name: "id", description: "Submission ID" })

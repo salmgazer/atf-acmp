@@ -229,4 +229,41 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     await expect(service.create(brief.id, input, owner)).rejects.toThrow("shared ATF Zoom account");
     expect(await db.getRepository(BriefEvent).countBy({ briefId: brief.id })).toBe(0);
   });
+  it("staff calendar includes every overlapping event with safe partner/brief details and no table pagination", async () => {
+    const startAt = new Date("2030-06-01T00:00:00Z"), endAt = new Date("2030-07-01T00:00:00Z");
+    const save = (start: string, values: Partial<BriefEvent> = {}) => db.getRepository(BriefEvent).save({
+      briefId: brief.id, title: "Calendar event", description: "Discussion agenda", startAt: new Date(start), endAt: new Date(new Date(start).getTime() + 3600000),
+      timezone: "Africa/Accra", durationMinutes: 60, zoomMeetingId: randomUUID(), zoomHostId: runHost, zoomJoinUrl: "https://zoom.us/j/calendar", createdBy: owner.id, ...values,
+    });
+    const crossing = await save("2030-05-31T23:30:00Z"), onStart = await save(startAt.toISOString());
+    const cancelled = await save("2030-06-10T12:00:00Z", { status: "cancelled" });
+    const many = await Promise.all(Array.from({ length: 21 }, (_, index) => save(`2030-06-15T${String(index).padStart(2, "0")}:00:00Z`)));
+    await save("2030-05-31T23:00:00Z"); // Ends exactly at the range start.
+    await save(endAt.toISOString()); // Starts exactly at the exclusive range end.
+    const deleted = await save("2030-06-20T12:00:00Z"); await db.getRepository(BriefEvent).softDelete(deleted.id);
+    const deletedBrief = await newBrief(); await save("2030-06-21T12:00:00Z", { briefId: deletedBrief.id }); await db.getRepository(Brief).softDelete(deletedBrief.id);
+    const otherCohort = await db.getRepository(Cohort).save({ name: "Other calendar cohort" });
+    const outside = await db.getRepository(Brief).save({ title: "Other cohort brief", description: "Description", problemStatement: "Problem", expectedOutcomes: "Outcomes", cohortId: otherCohort.id, organizationId: org.id });
+    await save("2030-06-22T12:00:00Z", { briefId: outside.id });
+    const result = await service.staffCalendar({ cohortId: cohort.id, startAt: startAt.toISOString(), endAt: endAt.toISOString() }, { id: randomUUID(), role: "viewer", cohortId: otherCohort.id });
+    expect(result.events.map(event => event.id)).toEqual([crossing.id, onStart.id, cancelled.id, ...many.map(event => event.id)]);
+    expect(result.events[0]).toMatchObject({ description: "Discussion agenda", organization: { id: org.id, name: org.name }, brief: { id: brief.id, title: brief.title } });
+    expect(result.events.find(event => event.id === cancelled.id)?.zoomJoinUrl).toBeNull();
+    for (const field of ["zoomHostId", "zoomMeetingId", "createdBy", "syncError"]) expect(result.events[0]).not.toHaveProperty(field);
+    expect(zoom.getHostUrl).not.toHaveBeenCalled();
+    expect(email.sendCalendarInvitation).not.toHaveBeenCalled();
+  });
+
+  it("staff calendar filters by partner name and excludes deleted partners", async () => {
+    const first = await service.create(brief.id, input, owner);
+    const another = await db.getRepository(Organization).save({ name: "Different calendar partner", email: randomUUID() + "@example.test", cohortId: cohort.id, status: OrganizationStatus.APPROVED });
+    const anotherBrief = await db.getRepository(Brief).save({ title: "Another brief", description: "Description", problemStatement: "Problem", expectedOutcomes: "Outcomes", cohortId: cohort.id, organizationId: another.id });
+    await db.getRepository(BriefEvent).save({ briefId: anotherBrief.id, title: "Other event", description: "Other discussion", startAt: new Date(input.startAt), endAt: new Date(new Date(input.startAt).getTime() + 3600000), durationMinutes: 60, timezone: input.timezone, zoomMeetingId: randomUUID(), zoomHostId: runHost, zoomJoinUrl: "https://zoom.us/j/other", createdBy: owner.id });
+    const query = { cohortId: cohort.id, startAt: new Date(new Date(input.startAt).getTime() - 86400000).toISOString(), endAt: new Date(new Date(input.startAt).getTime() + 86400000).toISOString() };
+    expect((await service.staffCalendar(query, { id: owner.id, role: "program_manager" })).events).toHaveLength(2);
+    expect((await service.staffCalendar({ ...query, search: "TEST PARTNER" }, { id: owner.id, role: "evaluator" })).events.map(event => event.id)).toEqual([first.id]);
+    await db.getRepository(Organization).softDelete(org.id);
+    expect((await service.staffCalendar({ ...query, search: "Test partner" }, { id: owner.id, role: "evaluator" })).events).toEqual([]);
+  });
+
 });

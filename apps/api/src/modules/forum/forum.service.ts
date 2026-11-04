@@ -34,6 +34,7 @@ export interface AuthorInfo {
   type: ForumAuthorType;
   name: string;
   avatarUrl?: string;
+  canModerate?: boolean;
 }
 
 @Injectable()
@@ -202,7 +203,7 @@ export class ForumService {
     // Check ownership or staff
     if (
       thread.authorId !== author.id &&
-      author.type !== ForumAuthorType.STAFF
+      !author.canModerate
     ) {
       throw new ForbiddenException("Not authorized to edit this thread");
     }
@@ -310,7 +311,7 @@ export class ForumService {
     // Check ownership or staff
     if (
       thread.authorId !== author.id &&
-      author.type !== ForumAuthorType.STAFF
+      !author.canModerate
     ) {
       throw new ForbiddenException("Not authorized to delete this thread");
     }
@@ -356,9 +357,9 @@ export class ForumService {
         .where("id = :id", { id: threadId })
         .andWhere(
           `NOT EXISTS (
-            SELECT 1 FROM forum_thread_views 
-            WHERE thread_id = :id 
-            AND viewer_id = :viewerId 
+            SELECT 1 FROM forum_thread_views
+            WHERE thread_id = :id
+            AND viewer_id = :viewerId
             AND viewer_type = :viewerType
             AND last_viewed_at < NOW() - INTERVAL '1 hour'
           )`,
@@ -430,7 +431,7 @@ export class ForumService {
     const reply = await this.findReplyById(id);
 
     // Check ownership or staff
-    if (reply.authorId !== author.id && author.type !== ForumAuthorType.STAFF) {
+    if (reply.authorId !== author.id && !author.canModerate) {
       throw new ForbiddenException("Not authorized to edit this reply");
     }
 
@@ -457,7 +458,7 @@ export class ForumService {
     const reply = await this.findReplyById(id);
 
     // Check ownership or staff
-    if (reply.authorId !== author.id && author.type !== ForumAuthorType.STAFF) {
+    if (reply.authorId !== author.id && !author.canModerate) {
       throw new ForbiddenException("Not authorized to delete this reply");
     }
 
@@ -488,7 +489,7 @@ export class ForumService {
     // Only thread author or staff can mark solution
     if (
       thread.authorId !== markedBy.id &&
-      markedBy.type !== ForumAuthorType.STAFF
+      !markedBy.canModerate
     ) {
       throw new ForbiddenException("Not authorized to mark solution");
     }

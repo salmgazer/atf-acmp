@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
 import { use, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -154,13 +155,13 @@ function MemberCard({
           </div>
         </div>
         {!isDisqualified && (
-          <Button variant="ghost" size="sm" onClick={() => setShowRoleDialog(true)}>
+          <StaffOnly permission="manage"><Button variant="ghost" size="sm" onClick={() => setShowRoleDialog(true)}>
             <Pencil className="h-4 w-4" />
-          </Button>
+          </Button></StaffOnly>
         )}
       </div>
 
-      <Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}>
+      <StaffOnly permission="manage"><Dialog open={showRoleDialog} onOpenChange={setShowRoleDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Change Member Role</DialogTitle>
@@ -193,7 +194,7 @@ function MemberCard({
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
     </>
   );
 }
@@ -309,19 +310,19 @@ function TeamDetailContent({ id }: { id: string }) {
           {!isDisqualified && (
             <div className="flex gap-2">
               {!team.brief && (
-                <Button onClick={() => setShowAssignBriefDialog(true)}>
+                <StaffOnly permission="manage"><Button onClick={() => setShowAssignBriefDialog(true)}>
                   <FileText className="mr-2 h-4 w-4" />
                   Assign Brief
-                </Button>
+                </Button></StaffOnly>
               )}
-              <Button
+              <StaffOnly permission="manage"><Button
                 variant="outline"
                 className="text-destructive"
                 onClick={() => setShowDisqualifyDialog(true)}
               >
                 <XCircle className="mr-2 h-4 w-4" />
                 Disqualify
-              </Button>
+              </Button></StaffOnly>
             </div>
           )}
         </div>
@@ -379,21 +380,21 @@ function TeamDetailContent({ id }: { id: string }) {
                   )}
                   {!isDisqualified && (
                     <div className="flex gap-2 mt-4">
-                      <Button
+                      <StaffOnly permission="manage"><Button
                         variant="outline"
                         size="sm"
                         onClick={() => setShowAssignBriefDialog(true)}
                       >
                         Change Brief
-                      </Button>
-                      <Button
+                      </Button></StaffOnly>
+                      <StaffOnly permission="manage"><Button
                         variant="outline"
                         size="sm"
                         className="text-destructive hover:text-destructive"
                         onClick={() => setShowUnassignDialog(true)}
                       >
                         Unassign
-                      </Button>
+                      </Button></StaffOnly>
                     </div>
                   )}
                 </div>
@@ -402,14 +403,14 @@ function TeamDetailContent({ id }: { id: string }) {
                   <FileText className="mx-auto h-10 w-10 text-muted-foreground/50" />
                   <p className="mt-2 text-sm text-muted-foreground">No brief assigned</p>
                   {!isDisqualified && (
-                    <Button
+                    <StaffOnly permission="manage"><Button
                       variant="outline"
                       size="sm"
                       className="mt-4"
                       onClick={() => setShowAssignBriefDialog(true)}
                     >
                       Assign Brief
-                    </Button>
+                    </Button></StaffOnly>
                   )}
                 </div>
               )}
@@ -429,10 +430,10 @@ function TeamDetailContent({ id }: { id: string }) {
                           <div key={session.id} className="flex items-start gap-4 p-3 rounded-lg border bg-muted/30">
                             <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
                               {session.mentor.profileImageUrl ? (
-                                <img 
-                                  src={session.mentor.profileImageUrl} 
-                                  alt="" 
-                                  className="w-full h-full object-cover" 
+                                <img
+                                  src={session.mentor.profileImageUrl}
+                                  alt=""
+                                  className="w-full h-full object-cover"
                                 />
                               ) : (
                                 <UserCircle className="h-5 w-5 text-muted-foreground" />
@@ -482,10 +483,10 @@ function TeamDetailContent({ id }: { id: string }) {
                           <div key={session.id} className="flex items-start gap-4 p-3 rounded-lg border">
                             <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
                               {session.mentor.profileImageUrl ? (
-                                <img 
-                                  src={session.mentor.profileImageUrl} 
-                                  alt="" 
-                                  className="w-full h-full object-cover" 
+                                <img
+                                  src={session.mentor.profileImageUrl}
+                                  alt=""
+                                  className="w-full h-full object-cover"
                                 />
                               ) : (
                                 <UserCircle className="h-5 w-5 text-muted-foreground" />
@@ -499,8 +500,8 @@ function TeamDetailContent({ id }: { id: string }) {
                                 >
                                   {session.mentor.firstName} {session.mentor.lastName}
                                 </Link>
-                                <Badge 
-                                  variant={session.status === "completed" ? "default" : "secondary"} 
+                                <Badge
+                                  variant={session.status === "completed" ? "default" : "secondary"}
                                   className="text-xs flex-shrink-0"
                                 >
                                   {session.status === "completed" ? "Completed" : session.status === "cancelled" ? "Cancelled" : session.status}
@@ -620,7 +621,7 @@ function TeamDetailContent({ id }: { id: string }) {
       </div>
 
       {/* Assign Brief Dialog */}
-      <Dialog open={showAssignBriefDialog} onOpenChange={setShowAssignBriefDialog}>
+      <StaffOnly permission="manage"><Dialog open={showAssignBriefDialog} onOpenChange={setShowAssignBriefDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Assign Brief to Team</DialogTitle>
@@ -665,10 +666,10 @@ function TeamDetailContent({ id }: { id: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Disqualify Dialog */}
-      <Dialog open={showDisqualifyDialog} onOpenChange={setShowDisqualifyDialog}>
+      <StaffOnly permission="manage"><Dialog open={showDisqualifyDialog} onOpenChange={setShowDisqualifyDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Disqualify Team</DialogTitle>
@@ -703,10 +704,10 @@ function TeamDetailContent({ id }: { id: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Unassign Brief Dialog */}
-      <Dialog open={showUnassignDialog} onOpenChange={setShowUnassignDialog}>
+      <StaffOnly permission="manage"><Dialog open={showUnassignDialog} onOpenChange={setShowUnassignDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Unassign Brief</DialogTitle>
@@ -730,7 +731,7 @@ function TeamDetailContent({ id }: { id: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
     </StaffLayout>
   );
 }

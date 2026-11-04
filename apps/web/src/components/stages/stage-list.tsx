@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
 import { useState } from "react";
 import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
@@ -99,10 +100,10 @@ export function StageList({ cohortId }: StageListProps) {
   return (
     <div className="space-y-6">
       <div className="flex justify-end">
-        <Button onClick={() => setIsCreating(true)}>
+        <StaffOnly permission="manage"><Button onClick={() => setIsCreating(true)}>
           <Plus className="mr-2 h-4 w-4" />
           Add Stage
-        </Button>
+        </Button></StaffOnly>
       </div>
 
       {stages && stages.length === 0 ? (
@@ -115,10 +116,10 @@ export function StageList({ cohortId }: StageListProps) {
             <p className="text-sm text-muted-foreground mb-6 text-center max-w-sm">
               Add stages to define the submission timeline for this cohort
             </p>
-            <Button onClick={() => setIsCreating(true)}>
+            <StaffOnly permission="manage"><Button onClick={() => setIsCreating(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Add First Stage
-            </Button>
+            </Button></StaffOnly>
           </CardContent>
         </Card>
       ) : (
@@ -199,26 +200,26 @@ export function StageList({ cohortId }: StageListProps) {
                         </div>
                       </div>
                     </div>
-                    <DropdownMenu>
+                    <StaffOnly permission="manage"><DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity">
                           <MoreVertical className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setEditingStage(stage)}>
+                        <StaffOnly permission="manage"><DropdownMenuItem onClick={() => setEditingStage(stage)}>
                           <Edit className="mr-2 h-4 w-4" />
                           Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
+                        </DropdownMenuItem></StaffOnly>
+                        <StaffOnly permission="manage"><DropdownMenuItem
                           className="text-destructive"
                           onClick={() => setDeletingId(stage.id)}
                         >
                           <Trash2 className="mr-2 h-4 w-4" />
                           Delete
-                        </DropdownMenuItem>
+                        </DropdownMenuItem></StaffOnly>
                       </DropdownMenuContent>
-                    </DropdownMenu>
+                    </DropdownMenu></StaffOnly>
                   </div>
 
                   {/* Description */}
@@ -318,7 +319,7 @@ export function StageList({ cohortId }: StageListProps) {
       )}
 
       {/* Create/Edit Dialog */}
-      <StageFormDialog
+      <StaffOnly permission="manage"><StageFormDialog
         cohortId={cohortId}
         stage={editingStage}
         open={isCreating || !!editingStage}
@@ -329,10 +330,10 @@ export function StageList({ cohortId }: StageListProps) {
           }
         }}
         nextNumber={stages ? Math.max(...stages.map((s) => s.number), 0) + 1 : 1}
-      />
+      /></StaffOnly>
 
       {/* Delete Confirmation */}
-      <AlertDialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
+      <StaffOnly permission="manage"><AlertDialog open={!!deletingId} onOpenChange={() => setDeletingId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Stage</AlertDialogTitle>
@@ -351,7 +352,7 @@ export function StageList({ cohortId }: StageListProps) {
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
-      </AlertDialog>
+      </AlertDialog></StaffOnly>
     </div>
   );
 }

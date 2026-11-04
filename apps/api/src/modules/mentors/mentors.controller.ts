@@ -49,6 +49,8 @@ import { Roles } from "@/common/decorators/roles.decorator";
 import { CurrentUser } from "@/common/decorators/current-user.decorator";
 import { BulkThrottle, UploadThrottle } from "@/common/decorators/throttle.decorator";
 import { Role } from "@/database/entities/user.entity";
+import { MentorInvitesService } from "./mentor-invites.service";
+import { ResendMentorInvitesDto, ResendImportedMentorInvitesDto } from "./dto/mentor-invites.dto";
 import { UploadService } from "@/common/services/upload.service";
 import { Audit } from "@/common/decorators/audit.decorator";
 import { AuditInterceptor } from "@/common/interceptors/audit.interceptor";
@@ -62,7 +64,26 @@ export class MentorsController {
   constructor(
     private readonly mentorsService: MentorsService,
     private readonly uploadService: UploadService,
+    private readonly invites: MentorInvitesService,
   ) {}
+
+  @Post("resend-invites")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @BulkThrottle()
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Audit({ action: AuditAction.UPDATE, entityType: "MentorInviteBatch", getEntityId: result => result?.id, getDescription: result => `Queued ${result?.total} mentor invitations` })
+  async resendInvites(@Body() dto: ResendMentorInvitesDto, @CurrentUser("id") actor: string) { return this.invites.resendSelected(dto.mentorIds, actor); }
+
+  @Post("resend-imported-invites")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @BulkThrottle()
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Audit({ action: AuditAction.UPDATE, entityType: "MentorInviteBatch", getEntityId: result => result?.id, getDescription: result => `Queued ${result?.total} imported mentor invitations` })
+  async resendImportedInvites(@Body() dto: ResendImportedMentorInvitesDto, @CurrentUser("id") actor: string) { return this.invites.resendImported(dto, actor); }
+
+  @Get("invite-resends/:jobId")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  async inviteResendStatus(@Param("jobId", ParseUUIDPipe) id: string) { return this.invites.status(id); }
 
   @Post()
   @Audit({
@@ -125,6 +146,16 @@ export class MentorsController {
     @Body() dto: UpdateMentorDto
   ): Promise<Mentor> {
     return this.mentorsService.update(id, dto);
+  }
+
+  @Post(":id/resend-invite")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @BulkThrottle()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Resend the welcome invitation to an imported mentor" })
+  @Audit({ action: AuditAction.UPDATE, entityType: "Mentor", getDescription: () => "Resent mentor invitation" })
+  async resendInvite(@Param("id", ParseUUIDPipe) id: string) {
+    return this.mentorsService.resendInvite(id);
   }
 
   @Post(":id/profile-picture")

@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
 import { useState, useEffect } from "react";
 import { StaffLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -22,11 +23,11 @@ import { EvaluationDashboard } from "@/components/evaluations";
 export default function EvaluationsPage() {
   // Get global cohort from store (set by sidebar)
   const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
-  
+
   // Local cohort filter - initialized from global but can be overridden
   const [localCohortId, setLocalCohortId] = useState<string | null>(null);
   const [hasInitialized, setHasInitialized] = useState(false);
-  
+
   // Initialize local cohort from global when component mounts or global changes (if not yet set locally)
   useEffect(() => {
     if (globalCohortId && !hasInitialized) {
@@ -34,16 +35,16 @@ export default function EvaluationsPage() {
       setHasInitialized(true);
     }
   }, [globalCohortId, hasInitialized]);
-  
+
   // Use local cohort if set, otherwise fall back to global
   const selectedCohortId = localCohortId || globalCohortId || "";
-  
+
   // Handle local cohort change (doesn't affect global sidebar)
   const handleCohortChange = (cohortId: string) => {
     setLocalCohortId(cohortId);
     setHasInitialized(true);
   };
-  
+
   const { data: cohorts, isLoading: cohortsLoading } = useCohorts();
   const { data: stages } = useStages(selectedCohortId || undefined);
 
@@ -94,11 +95,11 @@ export default function EvaluationsPage() {
                     This cohort doesn&apos;t have any stages configured for AI evaluation yet.
                     Enable AI evaluation on stages to use this feature.
                   </p>
-                  <Button variant="outline" asChild>
+                  <StaffOnly permission="manage"><Button variant="outline" asChild>
                     <a href={`/staff/cohorts/${selectedCohortId}/stages`}>
                       Configure Stages
                     </a>
-                  </Button>
+                  </Button></StaffOnly>
                 </CardContent>
               </Card>
             ) : (

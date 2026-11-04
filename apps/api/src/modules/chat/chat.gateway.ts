@@ -23,6 +23,7 @@ interface AuthenticatedSocket extends Socket {
     type: SenderType;
     name: string;
     email: string;
+    role: string;
   };
 }
 
@@ -108,8 +109,8 @@ export class ChatGateway
 
       // Determine sender type from role
       const senderType = this.getSenderTypeFromRole(payload.role);
-      const userName = payload.firstName && payload.lastName 
-        ? `${payload.firstName} ${payload.lastName}` 
+      const userName = payload.firstName && payload.lastName
+        ? `${payload.firstName} ${payload.lastName}`
         : payload.name || payload.email || "Unknown";
 
       // Store user info on socket
@@ -118,6 +119,7 @@ export class ChatGateway
         type: senderType,
         name: userName,
         email: payload.email,
+        role: payload.role,
       };
 
       client.data.memberKey = `${senderType}:${payload.sub}`;
@@ -127,7 +129,11 @@ export class ChatGateway
       expiry.unref();
       client.once("disconnect", () => clearTimeout(expiry));
       client.use(async (_packet, next) => {
-        if (await this.verifyToken(token)) next();
+        const current = await this.verifyToken(token);
+        if (current && client.user && this.getSenderTypeFromRole(current.role) === client.user.type && current.sub === client.user.id) {
+          client.user.role = current.role;
+          next();
+        }
         else { next(new Error("Session has ended")); client.disconnect(true); }
       });
 
@@ -225,11 +231,12 @@ export class ChatGateway
     if (!client.user) {
       return { success: false, error: "Not authenticated" };
     }
+    if (client.user.role === "viewer") return { success: false, error: "Viewers have read-only access" };
 
     try {
       // Get channel info to include channel type
       const channel = await this.chatService.findChannel(payload.channelId);
-      
+
       // Create message
       const message = await this.chatService.createMessage({
         channelId: payload.channelId,
@@ -269,7 +276,7 @@ export class ChatGateway
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() payload: TypingPayload
   ) {
-    if (!client.user || !await this.chatService.isChannelMember(payload.channelId, client.user.id, client.user.type)) return;
+    if (!client.user || client.user.role === "viewer" || !await this.chatService.isChannelMember(payload.channelId, client.user.id, client.user.type)) return;
 
     const event = payload.isTyping ? "typing_started" : "typing_stopped";
     client.to(`channel:${payload.channelId}`).emit(event, {
@@ -359,7 +366,7 @@ export class ChatGateway
   async emitNewMessage(channelId: string, message: any) {
     // Get channel info to include channel type
     const channel = await this.chatService.findChannel(channelId);
-    
+
     this.server.to(`channel:${channelId}`).emit("new_message", {
       channelId,
       channelType: channel?.type,

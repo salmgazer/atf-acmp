@@ -1,6 +1,6 @@
 /** @type {import('jest').Config} */
 module.exports = {
-  moduleFileExtensions: ["js", "json", "ts"],
+  moduleFileExtensions: ["ts", "js", "json"],
   rootDir: ".",
   testRegex: ".*\\.spec\\.ts$",
   transform: {
@@ -26,6 +26,7 @@ module.exports = {
   roots: ["<rootDir>/src/", "<rootDir>/test/"],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
+    "^@acmp/shared$": "<rootDir>/../../packages/shared/src",
   },
   setupFilesAfterEnv: ["<rootDir>/test/setup.ts"],
   coverageThreshold: {

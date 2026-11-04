@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Res, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Res, UseInterceptors } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import { Response } from "express";
 import { CurrentUser } from "@/common/decorators/current-user.decorator";
@@ -7,6 +7,9 @@ import { AuditInterceptor } from "@/common/interceptors/audit.interceptor";
 import { AuditAction } from "@/database/entities/audit-log.entity";
 import { BriefEventsService, EventActor } from "./brief-events.service";
 import { CreateBriefEventDto, UpdateBriefEventDto } from "./dto/brief-event.dto";
+import { BriefEventCalendarQueryDto } from "./dto/brief-event-calendar.dto";
+import { Roles } from "@/common/decorators/roles.decorator";
+import { Role } from "@/database/entities/user.entity";
 
 @ApiTags("brief-events")
 @ApiBearerAuth()
@@ -14,6 +17,10 @@ import { CreateBriefEventDto, UpdateBriefEventDto } from "./dto/brief-event.dto"
 @UseInterceptors(AuditInterceptor)
 export class BriefEventsController {
   constructor(private readonly events: BriefEventsService) {}
+
+  @Get("calendar")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
+  staffCalendar(@Query() query: BriefEventCalendarQueryDto, @CurrentUser() actor: EventActor) { return this.events.staffCalendar(query, actor); }
 
   @Get("brief/:briefId")
   list(@Param("briefId", ParseUUIDPipe) id: string, @CurrentUser() actor: EventActor) { return this.events.list(id, actor); }

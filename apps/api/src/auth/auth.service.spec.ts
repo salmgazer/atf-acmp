@@ -348,11 +348,20 @@ describe("AuthService", () => {
       expect(refreshTokenRepository.save).not.toHaveBeenCalled();
     });
     it("activates an imported mentor on the first valid login", async () => {
-      mentorRepository.findOne.mockResolvedValue({ status: "imported", cohort: { status: "active" } });
+      mentorRepository.findOne.mockResolvedValue({ id: "mentor", status: "imported", cohort: { status: "active" } });
+      mentorRepository.update.mockResolvedValue({ affected: 1 } as any);
       refreshTokenRepository.create.mockReturnValue({ id: "session", token: "refresh-token" });
       refreshTokenRepository.save.mockResolvedValue({ id: "session", token: "refresh-token" });
       await service.generateTokens({ ...mockUser, role: Role.MENTOR });
-      expect(mentorRepository.save).toHaveBeenCalledWith(expect.objectContaining({ status: "active" }));
+      expect(mentorRepository.update).toHaveBeenCalledWith({ id: "mentor", email: mockUser.email.toLowerCase(), status: "imported" }, { status: "active" });
+      expect(mentorRepository.save).not.toHaveBeenCalled();
+    });
+    it("does not restore an old mentor email after a concurrent staff correction", async () => {
+      mentorRepository.findOne.mockResolvedValue({ id: "mentor", status: "imported", cohort: { status: "active" } });
+      mentorRepository.update.mockResolvedValue({ affected: 0 } as any);
+      await expect(service.generateTokens({ ...mockUser, role: Role.MENTOR })).rejects.toThrow("account changed");
+      expect(mentorRepository.save).not.toHaveBeenCalled();
+      expect(refreshTokenRepository.save).not.toHaveBeenCalled();
     });
     it("does not issue mentor tokens for an archived cohort", async () => {
       mentorRepository.findOne.mockResolvedValue({ status: "active", cohort: { status: "archived" } });

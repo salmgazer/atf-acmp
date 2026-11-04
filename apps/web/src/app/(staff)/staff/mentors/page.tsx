@@ -1,5 +1,9 @@
 "use client";
 
+import { StaffOnly, useStaffPermission } from "@/components/auth/staff-only";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useAuthStore } from "@/lib/stores/auth-store";
+import { isAxiosError } from "axios";
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { StaffLayout } from "@/components/layouts";
@@ -17,6 +21,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -35,6 +41,10 @@ import {
   useAllScheduledSessions,
   useDeleteMentor,
   useRestoreMentor,
+  useResendMentorInvite,
+  useResendMentorInvites,
+  useMentorInviteBatch,
+  type MentorBulkInviteRequest,
   type Mentor,
   type MentorStatus,
   type ScheduledSession,
@@ -106,17 +116,24 @@ const statusTabs: { value: MentorStatus | "all" | "deleted"; label: string }[] =
   { value: "deleted", label: "Deleted" },
 ];
 
-function MentorRow({ 
-  mentor, 
+function MentorRow({
+  mentor,
   isDeleted,
   onDelete,
   onRestore,
-}: { 
+  selected,
+  onSelect,
+  bulkBusy,
+}: {
   mentor: Mentor;
   isDeleted?: boolean;
   onDelete: (mentor: Mentor) => void;
   onRestore: (mentor: Mentor) => void;
+  selected: boolean;
+  onSelect: (checked: boolean) => void;
+  bulkBusy: boolean;
 }) {
+  const resendInvite = useResendMentorInvite();
   const config = isDeleted ? statusConfig.deleted : statusConfig[mentor.status];
   const StatusIcon = config.icon;
   const confirmedSessions = mentor.confirmedSessions || 0;
@@ -135,6 +152,10 @@ function MentorRow({
 
   return (
     <tr className={`border-b border-border/50 hover:bg-muted transition-colors ${isDeleted ? "opacity-60" : ""}`}>
+      <StaffOnly permission="manage"><td className="p-4">
+        <Checkbox aria-label={`Select ${mentor.firstName} ${mentor.lastName}`} checked={selected}
+          disabled={bulkBusy || isDeleted || mentor.status !== "imported"} onCheckedChange={checked => onSelect(checked === true)} />
+      </td></StaffOnly>
       <td className="p-4">
         <div className="flex items-center gap-3">
           {mentor.profileImageUrl ? (
@@ -236,16 +257,16 @@ function MentorRow({
       <td className="p-4">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${mentor.firstName} ${mentor.lastName}`}>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {isDeleted ? (
-              <DropdownMenuItem onClick={() => onRestore(mentor)}>
+              <StaffOnly permission="manage"><DropdownMenuItem onClick={() => onRestore(mentor)}>
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Restore
-              </DropdownMenuItem>
+              </DropdownMenuItem></StaffOnly>
             ) : (
               <>
                 <DropdownMenuItem asChild>
@@ -254,20 +275,25 @@ function MentorRow({
                     View
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
+                <StaffOnly permission="manage"><DropdownMenuItem asChild>
                   <Link href={`/staff/mentors/${mentor.id}/edit`}>
                     <Pencil className="mr-2 h-4 w-4" />
                     Edit
                   </Link>
-                </DropdownMenuItem>
+                </DropdownMenuItem></StaffOnly>
+                {mentor.status === "imported" && <StaffOnly permission="manage"><DropdownMenuItem
+                  disabled={bulkBusy || resendInvite.isPending} onClick={() => resendInvite.mutate(mentor.id)}>
+                  {resendInvite.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                  Resend Invite
+                </DropdownMenuItem></StaffOnly>}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem 
+                <StaffOnly permission="manage"><DropdownMenuItem
                   onClick={() => onDelete(mentor)}
                   className="text-destructive focus:text-destructive"
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
                   Delete
-                </DropdownMenuItem>
+                </DropdownMenuItem></StaffOnly>
               </>
             )}
           </DropdownMenuContent>
@@ -428,7 +454,7 @@ function CalendarView({
     const calendarStart = startOfWeek(monthStart);
     const calendarEnd = endOfWeek(monthEnd);
     const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
-    
+
     // Group days into weeks (arrays of 7)
     const weeksArray: Date[][] = [];
     for (let i = 0; i < days.length; i += 7) {
@@ -562,6 +588,30 @@ function CalendarView({
 }
 
 function MentorsContent() {
+  const canManage = useStaffPermission("manage");
+  const userId = useAuthStore(state => state.user?.id);
+  const batchStorageKey = userId ? `acmp-mentor-invite-batch:${userId}` : null;
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [confirmation, setConfirmation] = useState<"selected" | "imported" | null>(null);
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const resendBulk = useResendMentorInvites();
+  const { data: batch, isError: batchError, error: batchFailure, refetch: refreshBatch } = useMentorInviteBatch(canManage ? batchId : null);
+  const bulkBusy = resendBulk.isPending || (!!batchId && (!batch || ["queued", "active"].includes(batch.state)));
+
+  useEffect(() => {
+    if (!canManage || !batchStorageKey) return;
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(batchStorageKey) || "null");
+      if (saved?.id && saved.createdAt > Date.now() - 86400000) setBatchId(saved.id);
+      else sessionStorage.removeItem(batchStorageKey);
+    } catch { /* Optional progress cache. */ }
+  }, [canManage, batchStorageKey]);
+  useEffect(() => {
+    if (isAxiosError(batchFailure) && batchFailure.response?.status === 404) {
+      setBatchId(null);
+      if (batchStorageKey) try { sessionStorage.removeItem(batchStorageKey); } catch { /* Optional cache. */ }
+    }
+  }, [batchFailure, batchStorageKey]);
   const [view, setView] = useState<"list" | "calendar">("list");
   const [statusFilter, setStatusFilter] = useState<MentorStatus | "all" | "deleted">("all");
   const [search, setSearch] = useState("");
@@ -575,7 +625,7 @@ function MentorsContent() {
   const [mentorToRestore, setMentorToRestore] = useState<Mentor | null>(null);
 
   const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
-  
+
   const { data: cohortsData } = useCohorts({ limit: 100 });
   const cohorts = cohortsData?.data || [];
 
@@ -612,6 +662,30 @@ function MentorsContent() {
 
   const mentors = mentorsData?.data || [];
   const totalPages = mentorsData?.totalPages || 1;
+  const selectable = isShowingDeleted ? [] : mentors.filter(mentor => mentor.status === "imported");
+  const allSelected = selectable.length > 0 && selectable.every(mentor => selectedIds.includes(mentor.id));
+  const someSelected = selectable.some(mentor => selectedIds.includes(mentor.id));
+  const cohortName = cohorts.find(cohort => cohort.id === effectiveCohortId)?.name;
+
+  useEffect(() => { setSelectedIds([]); setConfirmation(null); }, [page, effectiveCohortId, statusFilter, search, capacityFilter, view, canManage]);
+
+  const queueInvites = async (request: MentorBulkInviteRequest) => {
+    try {
+      const queued = await resendBulk.mutateAsync(request);
+      setBatchId(queued.id);
+      if (batchStorageKey) try { sessionStorage.setItem(batchStorageKey, JSON.stringify({ id: queued.id, createdAt: Date.now() })); } catch { /* Optional progress cache. */ }
+      setSelectedIds([]);
+      setConfirmation(null);
+    } catch { /* The mutation displays the error; preserve selection for correction. */ }
+  };
+  const confirmResend = () => {
+    if (confirmation === "selected") return queueInvites({ mode: "selected", mentorIds: selectedIds });
+    if (confirmation === "imported" && effectiveCohortId && !isShowingDeleted) return queueInvites({ mode: "imported", filters: {
+      cohortId: effectiveCohortId, search: search || undefined,
+      status: statusFilter === "all" ? undefined : statusFilter,
+      hasCapacity: capacityFilter === "all" ? undefined : capacityFilter === "available",
+    } });
+  };
 
   const activeFilterCount = [
     statusFilter !== "all",
@@ -816,11 +890,19 @@ function MentorsContent() {
           </div>
         </div>
 
+        <StaffOnly permission="manage">{batchId && <div role="status" aria-live="polite" className="space-y-2 rounded-xl border border-border p-4">
+          <p className="font-medium">{batch?.state === "completed" ? "Mentor invitation resend complete" : batch?.state === "failed" ? "Mentor invitation resend stopped" : "Resending mentor invitations"}</p>
+          {batch && <p className="text-sm text-muted-foreground">{batch.processed} of {batch.total} processed · {batch.sent} sent · {batch.failed} failed · {batch.skipped} skipped</p>}
+          {batch?.error && <p className="text-sm text-destructive">{batch.error}</p>}
+          {!!batch?.failed && <p className="text-sm text-destructive">Failed mentors: {batch.failures.map(failure => failure.email).join(", ")}{batch.failed > batch.failures.length ? " (first 100 shown)" : ""}</p>}
+          {batchError && <div className="flex items-center gap-3"><p className="text-sm text-destructive">Could not load progress.</p><Button size="sm" variant="outline" onClick={() => refreshBatch()}>Refresh progress</Button></div>}
+        </div>}</StaffOnly>
+
         {/* List View */}
         {view === "list" && (
           <>
             {/* Search and Filter Toggle */}
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <input
@@ -862,21 +944,30 @@ function MentorsContent() {
                 )}
                 Export CSV
               </button>
-              <Link
+              <StaffOnly permission="manage"><Link
                 href="/staff/mentors/import"
                 className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-border text-muted-foreground hover:bg-muted"
               >
                 <Upload className="h-4 w-4" />
                 Import
-              </Link>
-              <Link
+              </Link></StaffOnly>
+              <StaffOnly permission="manage"><Button variant="outline"
+                disabled={!effectiveCohortId || bulkBusy || (statusFilter !== "all" && statusFilter !== "imported")}
+                onClick={() => setConfirmation("imported")}><Mail className="mr-2 h-4 w-4" />Resend imported invites</Button></StaffOnly>
+              <StaffOnly permission="manage"><Link
                 href="/staff/mentors/new"
                 className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-zinc-900 text-white hover:bg-zinc-800"
               >
                 <UserPlus className="h-4 w-4" />
                 Add Mentor
-              </Link>
+              </Link></StaffOnly>
             </div>
+
+            <StaffOnly permission="manage">{selectedIds.length > 0 && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border p-4">
+              <span className="text-sm font-medium">{selectedIds.length} selected on this page</span>
+              <Button size="sm" disabled={bulkBusy} onClick={() => setConfirmation("selected")}><Mail className="mr-2 h-4 w-4" />Resend selected invites</Button>
+              <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={() => setSelectedIds([])}>Clear selection</Button>
+            </div>}</StaffOnly>
 
             {/* Collapsible Filter Row */}
             {showFilters && (
@@ -963,26 +1054,30 @@ function MentorsContent() {
                     : "Import or add mentors to get started."}
                 </p>
                 <div className="mt-4 flex justify-center gap-2">
-                  <Link
+                  <StaffOnly permission="manage"><Link
                     href="/staff/mentors/import"
                     className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-border text-muted-foreground hover:bg-muted"
                   >
                     Import CSV
-                  </Link>
-                  <Link
+                  </Link></StaffOnly>
+                  <StaffOnly permission="manage"><Link
                     href="/staff/mentors/new"
                     className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-zinc-900 text-white hover:bg-zinc-800"
                   >
                     Add Mentor
-                  </Link>
+                  </Link></StaffOnly>
                 </div>
               </div>
             ) : (
               <>
-                <div className="rounded-xl border border-border bg-card overflow-hidden">
+                <div className="rounded-xl border border-border bg-card overflow-x-auto">
                   <table className="w-full">
                     <thead className="bg-muted">
                       <tr>
+                        <StaffOnly permission="manage"><th className="p-4 w-12">
+                          <Checkbox aria-label="Select all imported mentors on this page" checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                            disabled={bulkBusy || !selectable.length} onCheckedChange={checked => setSelectedIds(checked === true ? selectable.map(mentor => mentor.id) : [])} />
+                        </th></StaffOnly>
                         <th className="text-left p-4 text-sm font-medium text-muted-foreground">Mentor</th>
                         <th className="text-left p-4 text-sm font-medium text-muted-foreground">Partner</th>
                         <th className="text-left p-4 text-sm font-medium text-muted-foreground">Expertise</th>
@@ -995,12 +1090,14 @@ function MentorsContent() {
                     </thead>
                     <tbody>
                       {mentors.map((mentor) => (
-                        <MentorRow 
-                          key={mentor.id} 
-                          mentor={mentor} 
+                        <MentorRow
+                          key={mentor.id}
+                          mentor={mentor}
                           isDeleted={isShowingDeleted}
                           onDelete={setMentorToDelete}
                           onRestore={setMentorToRestore}
+                          selected={selectedIds.includes(mentor.id)} bulkBusy={bulkBusy}
+                          onSelect={checked => setSelectedIds(ids => checked ? [...new Set([...ids, mentor.id])] : ids.filter(id => id !== mentor.id))}
                         />
                       ))}
                     </tbody>
@@ -1042,8 +1139,21 @@ function MentorsContent() {
         )}
       </div>
 
+      <StaffOnly permission="manage"><Dialog open={confirmation !== null} onOpenChange={open => { if (!open && !resendBulk.isPending) setConfirmation(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{confirmation === "selected" ? "Resend selected mentor invites?" : "Resend imported mentor invites?"}</DialogTitle>
+            <DialogDescription>{confirmation === "selected" ? `Send invitations to ${selectedIds.length} selected imported mentor${selectedIds.length === 1 ? "" : "s"}?`
+              : `Send invitations to all imported mentors in ${cohortName || "the selected cohort"} matching the current filters, across all pages?`}</DialogDescription></DialogHeader>
+          <p className="text-sm text-muted-foreground">Only imported, non-deleted mentors receive invitations. Each invitation uses the mentor’s current email address.</p>
+          <DialogFooter><Button variant="outline" disabled={resendBulk.isPending} onClick={() => setConfirmation(null)}>Cancel</Button>
+            <Button disabled={bulkBusy || (confirmation === "selected" && !selectedIds.length)} onClick={confirmResend}>
+              {resendBulk.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Send invitations
+            </Button></DialogFooter>
+        </DialogContent>
+      </Dialog></StaffOnly>
+
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!mentorToDelete} onOpenChange={() => setMentorToDelete(null)}>
+      <StaffOnly permission="manage"><AlertDialog open={!!mentorToDelete} onOpenChange={() => setMentorToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Mentor</AlertDialogTitle>
@@ -1069,10 +1179,10 @@ function MentorsContent() {
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
-      </AlertDialog>
+      </AlertDialog></StaffOnly>
 
       {/* Restore Confirmation Dialog */}
-      <AlertDialog open={!!mentorToRestore} onOpenChange={() => setMentorToRestore(null)}>
+      <StaffOnly permission="manage"><AlertDialog open={!!mentorToRestore} onOpenChange={() => setMentorToRestore(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Restore Mentor</AlertDialogTitle>
@@ -1097,7 +1207,7 @@ function MentorsContent() {
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
-      </AlertDialog>
+      </AlertDialog></StaffOnly>
     </StaffLayout>
   );
 }

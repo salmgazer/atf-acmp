@@ -14,6 +14,7 @@ import { ZoomService } from "@/modules/calendar/zoom.service";
 import { NotificationsService } from "@/modules/notifications/notifications.service";
 import { OneSignalService } from "@/modules/notifications/onesignal.service";
 import { CreateBriefEventDto, UpdateBriefEventDto } from "./dto/brief-event.dto";
+import { BriefEventCalendarQueryDto } from "./dto/brief-event-calendar.dto";
 import { calendarInvitation, escapeHtml } from "./calendar-invitation";
 
 export interface EventActor { id: string; role: string; email?: string; cohortId?: string }
@@ -99,6 +100,31 @@ export class BriefEventsService {
     const access = await this.access(brief, actor);
     const events = access.canView ? await this.db.getRepository(BriefEvent).find({ where: { briefId }, order: { startAt: "DESC" } }) : [];
     return { events: await Promise.all(events.map(event => this.response(event, access.canManage))), canManage: access.canManage, zoomConfigured: access.canManage && this.zoom.isReady() };
+  }
+
+  async staffCalendar(query: BriefEventCalendarQueryDto, actor: EventActor) {
+    if (!staff.includes(actor.role)) throw new ForbiddenException("Only staff can view the partner event calendar");
+    const startAt = new Date(query.startAt), endAt = new Date(query.endAt);
+    if (![query.startAt, query.endAt].every(value => /(Z|[+-]\d{2}:\d{2})$/i.test(value))
+      || !Number.isFinite(startAt.getTime()) || !Number.isFinite(endAt.getTime())
+      || endAt <= startAt || endAt.getTime() - startAt.getTime() > 62 * 86400000) {
+      throw new BadRequestException("Choose a calendar range of up to 62 days with timezone offsets");
+    }
+    const events = this.db.getRepository(BriefEvent).createQueryBuilder("event")
+      .innerJoinAndSelect("event.brief", "brief")
+      .innerJoinAndSelect("brief.organization", "organization")
+      .select(["event.id", "event.briefId", "event.title", "event.description", "event.startAt", "event.endAt", "event.timezone", "event.durationMinutes", "event.status", "event.zoomJoinUrl", "event.revision", "brief.id", "brief.title", "organization.id", "organization.name"])
+      .where("brief.cohortId = :cohortId", { cohortId: query.cohortId })
+      .andWhere("event.startAt < :endAt AND event.endAt > :startAt", { startAt, endAt })
+      .orderBy("event.startAt", "ASC").addOrderBy("event.id", "ASC");
+    if (query.search) events.andWhere("organization.name ILIKE :search", { search: `%${query.search}%` });
+    return { events: (await events.getMany()).map(event => ({
+      id: event.id, briefId: event.briefId, title: event.title, description: event.description,
+      startAt: event.startAt, endAt: event.endAt, timezone: event.timezone, durationMinutes: event.durationMinutes,
+      status: event.status, zoomJoinUrl: event.status === "scheduled" ? event.zoomJoinUrl : null, revision: event.revision,
+      brief: { id: event.brief.id, title: event.brief.title },
+      organization: { id: event.brief.organization.id, name: event.brief.organization.name },
+    })) };
   }
 
   async create(briefId: string, dto: CreateBriefEventDto, actor: EventActor) {

@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
 import Link from "next/link";
 import { format } from "date-fns";
 import { MoreHorizontal, Copy, Trash2, Eye, Pencil, AlertTriangle, Settings } from "lucide-react";
@@ -57,10 +58,10 @@ export function CohortsTable({ cohorts, onDuplicate, onDelete }: CohortsTablePro
         <tbody className="divide-y">
           {cohorts.map((cohort) => {
             const hasNoStages = (cohort.stageCount ?? 0) === 0;
-            
+
             return (
-              <tr 
-                key={cohort.id} 
+              <tr
+                key={cohort.id}
                 className={`hover:bg-muted/50 transition-colors ${hasNoStages ? "bg-amber-50/30 dark:bg-amber-950/10" : ""}`}
               >
                 <td className="px-4 py-3 w-80 max-w-80">
@@ -113,35 +114,35 @@ export function CohortsTable({ cohorts, onDuplicate, onDelete }: CohortsTablePro
                           View
                         </Link>
                       </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
+                      <StaffOnly permission="manage"><DropdownMenuItem asChild>
                         <Link href={`/staff/cohorts/${cohort.id}/edit`}>
                           <Pencil className="mr-2 h-4 w-4" />
                           Edit
                         </Link>
-                      </DropdownMenuItem>
+                      </DropdownMenuItem></StaffOnly>
                       {hasNoStages && (
-                        <DropdownMenuItem asChild>
+                        <StaffOnly permission="manage"><DropdownMenuItem asChild>
                           <Link href={`/staff/cohorts/${cohort.id}/stages`}>
                             <Settings className="mr-2 h-4 w-4" />
                             Configure Stages
                           </Link>
-                        </DropdownMenuItem>
+                        </DropdownMenuItem></StaffOnly>
                       )}
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => onDuplicate?.(cohort)}>
+                      <StaffOnly permission="manage"><DropdownMenuItem onClick={() => onDuplicate?.(cohort)}>
                         <Copy className="mr-2 h-4 w-4" />
                         Duplicate
-                      </DropdownMenuItem>
+                      </DropdownMenuItem></StaffOnly>
                       {cohort.status === "draft" && (
                         <>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem
+                          <StaffOnly permission="admin"><DropdownMenuItem
                             onClick={() => onDelete?.(cohort)}
                             className="text-destructive"
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
                             Delete
-                          </DropdownMenuItem>
+                          </DropdownMenuItem></StaffOnly>
                         </>
                       )}
                     </DropdownMenuContent>

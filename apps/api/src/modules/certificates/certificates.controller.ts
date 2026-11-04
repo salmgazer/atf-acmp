@@ -108,18 +108,21 @@ export class AdminCertificatesController {
     return this.certificatesService.generateCertificates(dto, user.id);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get()
   @ApiOperation({ summary: "List all certificates" })
   async getCertificates(@Query() query: CertificateQueryDto) {
     return this.certificatesService.getCertificates(query);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("stats/:cohortId")
   @ApiOperation({ summary: "Get certificate statistics for a cohort" })
   async getCohortStats(@Param("cohortId", ParseUUIDPipe) cohortId: string) {
     return this.certificatesService.getCohortCertificateStats(cohortId);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get(":id")
   @ApiOperation({ summary: "Get a specific certificate" })
   async getCertificate(@Param("id", ParseUUIDPipe) id: string) {

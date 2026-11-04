@@ -56,6 +56,7 @@ function EditMentorContent({ id }: { id: string }) {
   useEffect(() => {
     if (mentor && !isInitialized) {
       setFormData({
+        email: mentor.status === "imported" ? mentor.email : undefined,
         firstName: mentor.firstName,
         lastName: mentor.lastName,
         phone: mentor.phone || "",
@@ -127,7 +128,11 @@ function EditMentorContent({ id }: { id: string }) {
     }
 
     try {
-      await updateMutation.mutateAsync({ id, dto: formData });
+      const { email, ...changes } = formData;
+      await updateMutation.mutateAsync({ id, dto: {
+        ...changes,
+        ...(mentor?.status === "imported" && email?.trim().toLowerCase() !== mentor.email.toLowerCase() ? { email: email?.trim().toLowerCase() } : {}),
+      } });
       toast.success("Mentor updated successfully");
       router.push(`/staff/mentors/${id}`);
     } catch (error: any) {
@@ -291,10 +296,14 @@ function EditMentorContent({ id }: { id: string }) {
                 />
               </div>
               <div className="space-y-2 sm:col-span-2">
-                <Label>Email</Label>
-                <Input value={mentor.email} disabled className="bg-muted" />
+                <Label htmlFor="mentor-email">Email</Label>
+                <Input id="mentor-email" type="email" required
+                  value={mentor.status === "imported" ? formData.email ?? mentor.email : mentor.email}
+                  disabled={mentor.status !== "imported"}
+                  className={mentor.status === "imported" ? "" : "bg-muted"}
+                  onChange={event => setFormData(value => ({ ...value, email: event.target.value }))} />
                 <p className="text-xs text-muted-foreground">
-                  Email cannot be changed
+                  {mentor.status === "imported" ? "Correct the email before the mentor signs in. Save changes before resending their invitation." : "Email can only be changed while the mentor is imported."}
                 </p>
               </div>
               <div className="space-y-2">
@@ -311,7 +320,7 @@ function EditMentorContent({ id }: { id: string }) {
                 <Select
                   value={String(formData.maxTeams || 3)}
                   onValueChange={(v) =>
-                    setFormData((f) => ({ ...f, maxTeams: parseInt(v) }))
+                    v && setFormData((f) => ({ ...f, maxTeams: parseInt(v) }))
                   }
                 >
                   <SelectTrigger>
@@ -350,7 +359,7 @@ function EditMentorContent({ id }: { id: string }) {
                 <Select
                   value={formData.status || "active"}
                   onValueChange={(v) =>
-                    setFormData((f) => ({ ...f, status: v as MentorStatus }))
+                    v && setFormData((f) => ({ ...f, status: v as MentorStatus }))
                   }
                 >
                   <SelectTrigger>

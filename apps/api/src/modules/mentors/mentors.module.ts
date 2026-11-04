@@ -40,9 +40,22 @@ import { Stage, Submission } from "@/database/entities/stage.entity";
 import { ChatModule } from "@/modules/chat/chat.module";
 import { NotificationsModule } from "@/modules/notifications/notifications.module";
 import { EmailModule } from "@/email/email.module";
+import { AuthModule } from "@/auth/auth.module";
+import { BullModule } from "@nestjs/bullmq";
+import { ConfigModule, ConfigService } from "@nestjs/config";
+import { MentorInvitesService, MENTOR_INVITES_QUEUE } from "./mentor-invites.service";
+import { MentorInvitesProcessor } from "./mentor-invites.processor";
 
 @Module({
   imports: [
+    AuthModule,
+    BullModule.forRootAsync({
+      imports: [ConfigModule], inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({ connection: {
+        host: config.get<string>("REDIS_HOST", "localhost"), port: config.get<number>("REDIS_PORT", 6379), password: config.get<string>("REDIS_PASSWORD"),
+      } }),
+    }),
+    BullModule.registerQueue({ name: MENTOR_INVITES_QUEUE }),
     TypeOrmModule.forFeature([
       Mentor,
       MentorAssignment,
@@ -77,7 +90,7 @@ import { EmailModule } from "@/email/email.module";
     MentorPaymentsController,
     AdminMentorSessionsController,
   ],
-  providers: [MentorsService, MentorClaimsService, MentorClaimsSchedulerService, MentorAvailabilityService, MentorPaymentsService],
+  providers: [MentorsService, MentorInvitesService, MentorInvitesProcessor, MentorClaimsService, MentorClaimsSchedulerService, MentorAvailabilityService, MentorPaymentsService],
   exports: [MentorsService, MentorClaimsService, MentorAvailabilityService, MentorPaymentsService],
 })
 export class MentorsModule {}

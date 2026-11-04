@@ -27,6 +27,10 @@ export class ResourceAccessGuard implements CanActivate {
     const params = req.params || {};
     const body = req.body || {};
     const query = req.query || {};
+    // Read-only staff may update their own account, notification preferences and read receipts.
+    // Deny all business mutations by default, including routes with missing role metadata.
+    if (user.role === "viewer" && !read && !["auth", "notifications"].includes(base)
+      && !(base === "chat/channels" && route === ":id/read")) return this.deny();
     Object.defineProperty(req, "query", { value: query, writable: true, configurable: true });
     if (!read) for (const key of ["actorId", "approvedBy", "reviewedBy", "resolvedBy", "disqualifiedBy", "confirmedBy", "declinedBy", "requestedBy", "invitedBy", "cancelledBy"]) {
       if (key in body) body[key] = user.id;

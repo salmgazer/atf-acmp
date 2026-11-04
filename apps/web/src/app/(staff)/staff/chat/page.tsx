@@ -1,4 +1,5 @@
 "use client";
+import { StaffOnly } from "@/components/auth/staff-only";
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { StaffLayout } from "@/components/layouts";
@@ -407,7 +408,7 @@ function ChatView({
       </div>
 
       {/* Fixed Input Area - Embedded send button */}
-      <div className="flex-shrink-0 p-3 border-t border-border/50 bg-card">
+      <StaffOnly permission="communicate"><div className="flex-shrink-0 p-3 border-t border-border/50 bg-card">
         <div className="flex items-center gap-2 bg-muted/50 rounded-full border px-4 py-1.5">
           <input
             type="text"
@@ -432,7 +433,7 @@ function ChatView({
             )}
           </button>
         </div>
-      </div>
+      </div></StaffOnly>
     </div>
   );
 }
@@ -456,35 +457,35 @@ function ChatContent() {
   const [selectedChannel, setSelectedChannel] = useState<ChatChannel | null>(null);
   const [mobileShowChat, setMobileShowChat] = useState(false);
   const { setActiveChannelId } = useChatContext();
-  
+
   // Get global cohort from store
   const { globalCohortId, globalCohort, cohorts } = useStaffCohortStore();
-  
+
   // Local cohort override - initialized from global
   const [localCohortId, setLocalCohortId] = useState<string | undefined>(undefined);
-  
+
   // Initialize local cohort from global when component mounts or global changes
   useEffect(() => {
     if (globalCohortId && localCohortId === undefined) {
       setLocalCohortId(globalCohortId);
     }
   }, [globalCohortId, localCohortId]);
-  
+
   // Use local cohort for filtering (falls back to global if not set)
   const effectiveCohortId = localCohortId || globalCohortId || undefined;
-  
+
   const { data: channels, isLoading } = useMyChannels(effectiveCohortId);
 
   // Update active channel in context when selected channel changes
   useEffect(() => {
     setActiveChannelId(selectedChannel?.id || null);
-    
+
     // Clear active channel when component unmounts
     return () => {
       setActiveChannelId(null);
     };
   }, [selectedChannel?.id, setActiveChannelId]);
-  
+
   // Reset selected channel when cohort changes
   useEffect(() => {
     setSelectedChannel(null);
@@ -522,7 +523,7 @@ function ChatContent() {
           </SelectContent>
         </Select>
       </div>
-      
+
       <div className="h-[calc(90vh-12rem)] flex rounded-xl border border-border/50 bg-card overflow-hidden">
         {/* Sidebar */}
         <div
