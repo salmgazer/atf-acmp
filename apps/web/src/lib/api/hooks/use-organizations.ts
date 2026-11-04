@@ -23,6 +23,7 @@ export interface PartnerCohort {
 }
 
 export interface Partner {
+  canManage?: boolean;
   id: string;
   name: string;
   email: string;
@@ -233,6 +234,18 @@ export function useApprovePartner() {
     onError: (error: Error) => {
       toast.error(error.message || "Failed to approve organization");
     },
+  });
+}
+
+export function useBulkApprovePartners() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (organizationIds: string[]) => api.post<{ approvedCount: number; organizationIds: string[] }>("/organizations/bulk-approve", { organizationIds }),
+    onSuccess: result => {
+      queryClient.invalidateQueries({ queryKey: organizationKeys.all });
+      toast.success(`${result.approvedCount} partner${result.approvedCount === 1 ? "" : "s"} approved`);
+    },
+    onError: (error: Error) => toast.error(error.message || "Failed to approve partners"),
   });
 }
 

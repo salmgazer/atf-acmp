@@ -5,9 +5,11 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import helmet from "helmet";
 import { AppModule } from "./app.module";
 import { RedisSocketAdapter } from "./common/services/redis-socket.adapter";
+import { configureBodyParsers } from "./common/configure-body-parsers";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  configureBodyParsers(app);
   const configService = app.get(ConfigService);
   const sockets = new RedisSocketAdapter(app, configService);
   await sockets.connect();

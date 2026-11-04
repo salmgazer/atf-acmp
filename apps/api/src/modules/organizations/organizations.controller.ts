@@ -34,6 +34,7 @@ import {
   BulkImportOrganizationsDto,
   SendInviteDto,
   BulkSendInvitesDto,
+  BulkApproveOrganizationsDto,
 } from "./dto/organization.dto";
 import { CurrentUser } from "@/common/decorators/current-user.decorator";
 import { UploadService } from "@/common/services/upload.service";
@@ -47,6 +48,8 @@ import { Role } from "@/database/entities/user.entity";
 import { BulkThrottle } from "@/common/decorators/throttle.decorator";
 import { PartnerInvitesService } from "./partner-invites.service";
 import { ResendPartnerInvitesDto, ResendEligiblePartnerInvitesDto } from "./dto/partner-invites.dto";
+import { SubmissionImportService } from "./submission-import.service";
+import { SubmissionImportDto, ApplySubmissionImportDto } from "./dto/submission-import.dto";
 
 @ApiTags("organizations")
 @Controller("organizations")
@@ -58,7 +61,28 @@ export class OrganizationsController {
     private readonly organizationsService: OrganizationsService,
     private readonly uploadService: UploadService,
     private readonly invites: PartnerInvitesService,
+    private readonly submissions: SubmissionImportService,
   ) {}
+
+  @Post("bulk-approve")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @BulkThrottle()
+  @HttpCode(HttpStatus.OK)
+  @Audit({ action: AuditAction.STATUS_CHANGE, entityType: "Organization", getDescription: result => `Bulk approved ${result?.approvedCount} partners: ${result?.organizationIds?.join(", ")}` })
+  bulkApprove(@Body() dto: BulkApproveOrganizationsDto, @CurrentUser("id") actor: string) {
+    return this.organizationsService.bulkApprove(dto.organizationIds, actor);
+  }
+
+  @Post("submission-import/preview")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @HttpCode(HttpStatus.OK)
+  previewSubmissions(@Body() dto: SubmissionImportDto, @CurrentUser() actor: { id: string; role: string; email?: string }) { return this.submissions.preview(dto, actor); }
+
+  @Post("submission-import/apply")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @BulkThrottle()
+  @HttpCode(HttpStatus.OK)
+  applySubmissions(@Body() dto: ApplySubmissionImportDto, @CurrentUser() actor: { id: string; role: string; email?: string }) { return this.submissions.apply(dto, actor); }
 
   @Post("resend-invites")
   @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
@@ -89,7 +113,8 @@ export class OrganizationsController {
     if (!org) {
       throw new Error("Organization not found");
     }
-    return org;
+    const membership = org.users.find(link => link.userId === user.id);
+    return { ...org, canManage: !membership || ["owner", "admin"].includes(membership.role) };
   }
 
   @Get("me/verticals")

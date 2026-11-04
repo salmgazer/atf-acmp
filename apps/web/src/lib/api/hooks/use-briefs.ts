@@ -85,6 +85,7 @@ export interface Brief {
   dataDescription?: string;
   dataAccess?: string;
   secondaryContact?: SecondaryContact;
+  contacts?: { id: string; name: string; email: string; role?: string; phone?: string; isPrimary: boolean; isSubmitter: boolean }[];
   scoringAnswers?: ScoringAnswers;
   // Scoring results
   fitScore?: number;
@@ -326,6 +327,9 @@ export function useUpdateBrief() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: briefKeys.lists() });
       queryClient.setQueryData(briefKeys.detail(data.id), data);
+      queryClient.invalidateQueries({ queryKey: briefKeys.detail(data.id) });
+      queryClient.invalidateQueries({ queryKey: ["brief-events", data.id] });
+      queryClient.invalidateQueries({ queryKey: ["partner-event-calendar"] });
       toast.success("Brief updated successfully");
     },
     onError: (error: Error) => {
@@ -514,6 +518,9 @@ export function useStaffUpdateBrief() {
       queryClient.invalidateQueries({ queryKey: briefKeys.lists() });
       queryClient.invalidateQueries({ queryKey: briefKeys.revisions(data.id) });
       queryClient.setQueryData(briefKeys.detail(data.id), data);
+      queryClient.invalidateQueries({ queryKey: briefKeys.detail(data.id) });
+      queryClient.invalidateQueries({ queryKey: ["brief-events", data.id] });
+      queryClient.invalidateQueries({ queryKey: ["partner-event-calendar"] });
       toast.success("Brief updated successfully");
     },
     onError: (error: Error) => {
@@ -551,6 +558,9 @@ export function useRestoreBriefRevision() {
       queryClient.invalidateQueries({ queryKey: briefKeys.lists() });
       queryClient.invalidateQueries({ queryKey: briefKeys.revisions(data.id) });
       queryClient.setQueryData(briefKeys.detail(data.id), data);
+      queryClient.invalidateQueries({ queryKey: briefKeys.detail(data.id) });
+      queryClient.invalidateQueries({ queryKey: ["brief-events", data.id] });
+      queryClient.invalidateQueries({ queryKey: ["partner-event-calendar"] });
       toast.success("Brief restored to previous version");
     },
     onError: (error: Error) => {

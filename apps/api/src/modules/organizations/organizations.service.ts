@@ -6,7 +6,8 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, ILike } from "typeorm";
+import { Repository, ILike, In } from "typeorm";
+import { ensurePartnerContactLogin } from "@/common/services/brief-contacts";
 import {
   Organization,
   OrganizationStatus,
@@ -196,6 +197,30 @@ export class OrganizationsService {
     organization.rejectionReason = undefined;
 
     return this.organizationRepository.save(organization);
+  }
+
+  async bulkApprove(organizationIds: string[], approvedBy: string): Promise<{ approvedCount: number; organizationIds: string[] }> {
+    if (!organizationIds.length || organizationIds.length > 500 || new Set(organizationIds).size !== organizationIds.length) {
+      throw new BadRequestException("Select between 1 and 500 unique partners to approve");
+    }
+    return this.organizationRepository.manager.transaction(async manager => {
+      const organizations = await manager.find(Organization, {
+        where: { id: In(organizationIds) }, order: { id: "ASC" }, lock: { mode: "pessimistic_write" },
+      });
+      if (organizations.length !== organizationIds.length || organizations.some(org => org.status !== OrganizationStatus.PENDING || !org.isActive)) {
+        throw new BadRequestException("Only pending, active, non-deleted partners can be bulk approved. Refresh the table and review your selection.");
+      }
+      // Provision the same partner access as individual approval without changing
+      // credentials. A conflicting account rolls back the entire selection.
+      for (const org of organizations) {
+        await ensurePartnerContactLogin(manager, org.id, { name: org.contactPerson || org.name, email: org.email }, true);
+      }
+      await manager.update(Organization, { id: In(organizationIds) }, {
+        status: OrganizationStatus.APPROVED, approvedAt: new Date(), approvedBy,
+        rejectionReason: () => "NULL",
+      });
+      return { approvedCount: organizations.length, organizationIds };
+    });
   }
 
   async reject(id: string, dto: RejectOrganizationDto): Promise<Organization> {

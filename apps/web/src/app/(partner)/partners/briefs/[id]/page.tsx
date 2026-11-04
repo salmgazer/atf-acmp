@@ -1,5 +1,7 @@
 "use client";
 
+import { useCurrentPartner } from "@/lib/api/hooks/use-organizations";
+import { BriefContacts } from "@/components/briefs/brief-contacts";
 import { BriefEvents } from "@/components/briefs/brief-events";
 
 import { SafeHtml } from "@/components/ui/safe-html";
@@ -67,6 +69,7 @@ const statusConfig: Record<BriefStatus, { label: string; variant: "default" | "s
 
 function BriefDetailContent({ id }: { id: string }) {
   const router = useRouter();
+  const { data: currentPartner } = useCurrentPartner();
   const { data: brief, isLoading, error } = useBrief(id);
   const submitMutation = useSubmitBrief();
   const deleteMutation = useDeleteBrief();
@@ -112,9 +115,9 @@ function BriefDetailContent({ id }: { id: string }) {
 
   const config = statusConfig[brief.status];
   const StatusIcon = config.icon;
-  const canEdit = ["draft", "revision_requested"].includes(brief.status);
-  const canSubmit = ["draft", "revision_requested"].includes(brief.status);
-  const canDelete = brief.status === "draft";
+  const canEdit = currentPartner?.canManage === true && ["draft", "revision_requested"].includes(brief.status);
+  const canSubmit = currentPartner?.canManage === true && ["draft", "revision_requested"].includes(brief.status);
+  const canDelete = currentPartner?.canManage === true && brief.status === "draft";
 
   const handleSubmit = async () => {
     await submitMutation.mutateAsync({ id });
@@ -427,6 +430,7 @@ function BriefDetailContent({ id }: { id: string }) {
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
+            <BriefContacts brief={brief} />
             <BriefEvents briefId={id} />
             <div className="rounded-lg border bg-card p-6">
               <h2 className="text-lg font-semibold mb-4">Description</h2>

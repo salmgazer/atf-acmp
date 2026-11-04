@@ -85,6 +85,7 @@ export function PartnerEventsCalendar({ cohortId }: { cohortId?: string }) {
             <dl className="grid gap-3 text-sm">
               <div><dt className="text-muted-foreground">Partner</dt><dd><Link className="font-medium hover:underline" href={`/staff/partners/${selected.organization.id}`}>{selected.organization.name}</Link></dd></div>
               <div><dt className="text-muted-foreground">Brief</dt><dd><Link className="font-medium hover:underline" href={`/staff/briefs/${selected.brief.id}`}>{selected.brief.title}</Link></dd></div>
+              {selected.host && <div><dt className="text-muted-foreground">Event host ({selected.host.source === "brief" ? "brief main contact" : "partner main contact"})</dt><dd>{selected.host.name} · {selected.host.email}</dd></div>}
               <div><dt className="text-muted-foreground">Date and time ({timezone})</dt><dd>{format(parseISO(selected.startAt), "EEEE, MMMM d, yyyy 'at' h:mm a")} – {format(parseISO(selected.endAt), "MMM d, h:mm a")} · {selected.durationMinutes} minutes</dd></div>
               <div><dt className="text-muted-foreground">Event timezone</dt><dd>{new Intl.DateTimeFormat("en", { timeZone: selected.timezone, dateStyle: "medium", timeStyle: "short" }).format(parseISO(selected.startAt))} ({selected.timezone})</dd></div>
               <div><dt className="text-muted-foreground">Discussion agenda</dt><dd className="whitespace-pre-wrap break-words">{selected.description}</dd></div>

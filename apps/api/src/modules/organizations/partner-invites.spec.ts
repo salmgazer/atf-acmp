@@ -10,6 +10,7 @@ import { validate } from "class-validator";
 import { PartnerInvitesService } from "./partner-invites.service";
 import { PartnerInvitesProcessor } from "./partner-invites.processor";
 import { ResendPartnerInvitesDto, ResendEligiblePartnerInvitesDto } from "./dto/partner-invites.dto";
+import { BulkApproveOrganizationsDto } from "./dto/organization.dto";
 
 const first = "928a4553-643f-4f48-99bb-470744e99d77", second = "e0df3577-87a6-41e2-926b-e41929ee20ca";
 function fixture(ids = [first]) {
@@ -119,16 +120,29 @@ describe("Partner bulk invitation worker", () => {
 
 describe("Partner invitation staff boundaries", () => {
   it.each(["viewer", "evaluator", "mentor", "organization", "participant"])("denies %s access to invitation resends", role => {
-    for (const method of ["sendInvite", "resendInvites", "bulkSendInvites", "resendEligibleInvites", "inviteResendStatus"] as const) {
+    for (const method of ["bulkApprove", "sendInvite", "resendInvites", "bulkSendInvites", "resendEligibleInvites", "inviteResendStatus"] as const) {
       const context = { getClass: () => OrganizationsController, getHandler: () => OrganizationsController.prototype[method], switchToHttp: () => ({ getRequest: () => ({ user: { id: "u", role } }) }) } as any;
       expect(() => new RolesGuard(new Reflector()).canActivate(context)).toThrow(ForbiddenException);
     }
   });
   it.each(["super_admin", "program_manager"])("allows %s to resend partner invitations", async role => {
-    for (const method of ["sendInvite", "resendInvites", "bulkSendInvites", "resendEligibleInvites", "inviteResendStatus"] as const) {
+    for (const method of ["bulkApprove", "sendInvite", "resendInvites", "bulkSendInvites", "resendEligibleInvites", "inviteResendStatus"] as const) {
       const context = { getClass: () => OrganizationsController, getHandler: () => OrganizationsController.prototype[method], switchToHttp: () => ({ getRequest: () => ({ user: { id: "u", role }, method: method === "inviteResendStatus" ? "GET" : "POST", body: {}, query: {}, params: { id: "partner" } }) }) } as any;
       expect(new RolesGuard(new Reflector()).canActivate(context)).toBe(true);
       await expect(new ResourceAccessGuard(new Reflector(), {} as any).canActivate(context)).resolves.toBe(true);
     }
+  });
+});
+
+describe("Partner bulk approval requests", () => {
+  it.each([[], [first, first], ["invalid-id"], Array.from({ length: 501 }, () => first)].map(ids => [ids]))("rejects empty, duplicate, malformed or oversized selections", async ids => {
+    expect((await validate(plainToInstance(BulkApproveOrganizationsDto, { organizationIds: ids }))).length).toBeGreaterThan(0);
+  });
+  it("validates a selected partner list and passes the authenticated staff identity", async () => {
+    expect(await validate(plainToInstance(BulkApproveOrganizationsDto, { organizationIds: [first, second] }))).toHaveLength(0);
+    const service = { bulkApprove: jest.fn(async () => ({ approvedCount: 2 })) };
+    const controller = new OrganizationsController(service as any, {} as any, {} as any, {} as any);
+    await controller.bulkApprove({ organizationIds: [first, second] }, "authenticated-manager");
+    expect(service.bulkApprove).toHaveBeenCalledWith([first, second], "authenticated-manager");
   });
 });
