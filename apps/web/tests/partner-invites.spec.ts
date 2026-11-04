@@ -17,6 +17,7 @@ async function setup(page: Page, context: BrowserContext, role = "program_manage
     localStorage.setItem("acmp-staff-cohort-store", JSON.stringify({ state: { globalCohortId: cohortId }, version: 0 }));
   }, { user, cohortId });
   const sent: { path: string; body: any }[] = [];
+  const currentPartners = partners.map(partner => ({ ...partner }));
   await page.route("**/api/**", async route => {
     const url = new URL(route.request().url()), path = url.pathname.replace(/^\/api/, "");
     let data: unknown = [];
@@ -24,8 +25,13 @@ async function setup(page: Page, context: BrowserContext, role = "program_manage
     else if (path === "/cohorts") data = { data: [{ id: cohortId, name: "Bulk partner cohort" }], total: 1 };
     else if (path === "/organizations") {
       const status = url.searchParams.get("status");
-      data = { data: status ? partners.filter(p => p.status === status) : partners, total: 40, totalPages: 2 };
+      data = { data: status ? currentPartners.filter(p => p.status === status) : currentPartners, total: 40, totalPages: 2 };
     } else if (path === "/organizations/statistics") data = {};
+    else if (route.request().method() === "POST" && path === "/organizations/bulk-approve") {
+      const body = route.request().postDataJSON(); sent.push({ path, body });
+      for (const partner of currentPartners) if (body.organizationIds.includes(partner.id)) partner.status = "approved";
+      data = { approvedCount: body.organizationIds.length, organizationIds: body.organizationIds };
+    }
     else if (route.request().method() === "POST" && path.endsWith("/send-invite")) {
       sent.push({ path, body: route.request().postDataJSON() });
       data = { organizationId: partners[0].id, email: partners[0].email, success: true };
@@ -45,15 +51,15 @@ async function setup(page: Page, context: BrowserContext, role = "program_manage
   return sent;
 }
 
-test("partner bulk selection includes only approved rows and sends selected IDs after confirmation", async ({ page, context }) => {
+test("mixed partner selection resends only approved rows after confirmation", async ({ page, context }) => {
   const sent = await setup(page, context);
-  await expect(page.getByRole("checkbox", { name: "Select Pending Partner" })).toBeDisabled();
+  await expect(page.getByRole("checkbox", { name: "Select Pending Partner" })).toBeEnabled();
   await expect(page.getByRole("checkbox", { name: "Select Inactive Partner" })).toBeDisabled();
   await page.getByRole("checkbox", { name: "Select First Partner" }).check();
-  const all = page.getByRole("checkbox", { name: "Select all approved active partners on this page" });
+  const all = page.getByRole("checkbox", { name: "Select all pending and approved active partners on this page" });
   await expect(all).toHaveAttribute("aria-checked", "mixed");
   await all.check();
-  await expect(page.getByText("2 selected on this page")).toBeVisible();
+  await expect(page.getByText("3 selected on this page")).toBeVisible();
   await page.getByRole("button", { name: "Resend selected invites", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("2 selected approved, active partners");
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -79,6 +85,47 @@ test("all-approved resend respects cohort and search filters across all pages", 
   await expect(page.getByText("30 of 30 processed · 30 sent · 0 failed · 0 skipped")).toBeVisible();
 });
 
+test("bulk approval confirms only pending partners in a mixed selection and refreshes their status", async ({ page, context }) => {
+  const sent = await setup(page, context);
+  await page.getByRole("checkbox", { name: "Select all pending and approved active partners on this page" }).check();
+  await page.getByRole("button", { name: "Approve selected (1)", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("Approve 1 selected pending, active partner?");
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(sent).toHaveLength(0);
+  await page.getByRole("button", { name: "Approve selected (1)", exact: true }).click();
+  await page.getByRole("button", { name: "Approve partners", exact: true }).click();
+  await expect.poll(() => sent.length).toBe(1);
+  expect(sent[0]).toEqual({ path: "/organizations/bulk-approve", body: { organizationIds: [partners[2].id] } });
+  await expect(page.getByRole("row").filter({ hasText: "Pending Partner" })).toContainText("Approved");
+  await expect(page.getByText("1 partner approved", { exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText("2 selected on this page")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Approve selected/ })).toHaveCount(0);
+});
+
+test("bulk approval errors preserve selection and can be retried without duplicate requests", async ({ page, context }) => {
+  const sent = await setup(page, context);
+  await page.route("**/organizations/bulk-approve", route => route.fulfill({ status: 400, json: { message: "Only pending, active, non-deleted partners can be bulk approved." } }));
+  await page.getByRole("checkbox", { name: "Select Pending Partner" }).check();
+  await expect(page.getByRole("button", { name: "Resend selected invites", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Approve selected (1)", exact: true }).click();
+  await page.getByRole("button", { name: "Approve partners", exact: true }).click();
+  await expect(page.getByText("Only pending, active, non-deleted partners can be bulk approved.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: "Select Pending Partner" })).toBeChecked();
+  await page.unroute("**/organizations/bulk-approve");
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/organizations/bulk-approve", async route => { await gate; await route.fallback(); });
+  await page.getByRole("button", { name: "Approve selected (1)", exact: true }).click();
+  await page.getByRole("button", { name: "Approve partners", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Approve partners", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
+  release();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(sent).toHaveLength(1);
+});
+
 test("selection clears on pagination and filters; pending and rejected views cannot resend all", async ({ page, context }) => {
   await setup(page, context);
   await page.getByRole("checkbox", { name: "Select First Partner" }).check();
@@ -89,7 +136,7 @@ test("selection clears on pagination and filters; pending and rejected views can
   await page.getByRole("button", { name: "Pending", exact: true }).click();
   await expect(page.getByRole("button", { name: "Resend selected invites" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Resend approved invites" })).toBeDisabled();
-  await expect(page.getByRole("checkbox", { name: "Select Pending Partner" })).toBeDisabled();
+  await expect(page.getByRole("checkbox", { name: "Select Pending Partner" })).toBeEnabled();
   await page.getByRole("button", { name: "Rejected", exact: true }).click();
   await expect(page.getByRole("button", { name: "Resend approved invites" })).toBeDisabled();
 });
@@ -99,12 +146,13 @@ for (const role of ["viewer", "evaluator"]) test(`${role} cannot select or bulk-
   await expect(page.getByRole("checkbox")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Resend approved invites" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Resend selected invites" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Approve selected/ })).toHaveCount(0);
 });
 
 test("partner bulk failures and progress survive a page reload", async ({ page, context }) => {
   const sent = await setup(page, context);
   await page.route(`**/organizations/invite-resends/${batchId}`, route => route.fulfill({ json: { id: batchId, state: "completed", total: 2, processed: 2, sent: 1, failed: 1, skipped: 0, failures: [{ organizationId: partners[1].id, email: partners[1].email, message: "Email delivery failed" }] } }));
-  await page.getByRole("checkbox", { name: "Select all approved active partners on this page" }).check();
+  await page.getByRole("checkbox", { name: "Select all pending and approved active partners on this page" }).check();
   await page.getByRole("button", { name: "Resend selected invites", exact: true }).click();
   await page.getByRole("button", { name: "Send invitations", exact: true }).click();
   await expect(page.getByText(`Failed partners: ${partners[1].email}`)).toBeVisible();

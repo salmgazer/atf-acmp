@@ -1,6 +1,7 @@
 "use client";
 
 import { StaffOnly } from "@/components/auth/staff-only";
+import { BriefContacts } from "@/components/briefs/brief-contacts";
 import { BriefEvents } from "@/components/briefs/brief-events";
 
 import { SafeHtml } from "@/components/ui/safe-html";
@@ -261,6 +262,7 @@ function BriefReviewContent({ id }: { id: string }) {
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
+            <BriefContacts brief={brief} />
             <BriefEvents briefId={id} />
             <div className="rounded-lg border bg-card p-6">
               <h2 className="text-lg font-semibold mb-4">Description</h2>

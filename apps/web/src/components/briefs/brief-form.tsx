@@ -115,10 +115,10 @@ const scoringAnswersSchema = z.object({
 });
 
 const briefFormSchema = z.object({
-  title: z.string().min(5, "Title must be at least 5 characters").max(200),
-  description: z.string().min(50, "Description must be at least 50 characters").max(5000),
-  problemStatement: z.string().min(50, "Problem statement must be at least 50 characters").max(5000),
-  expectedOutcomes: z.string().min(50, "Expected outcomes must be at least 50 characters").max(3000),
+  title: z.string().min(5, "Title must be at least 5 characters").max(255),
+  description: z.string().min(20, "Description must be at least 20 characters").max(100000),
+  problemStatement: z.string().min(20, "Problem statement must be at least 20 characters").max(100000),
+  expectedOutcomes: z.string().min(1, "Expected outcomes are required").max(100000),
   verticalId: z.string().optional(),
   tags: z.array(z.string()).optional(),
   resources: z.array(z.object({
@@ -128,9 +128,9 @@ const briefFormSchema = z.object({
   })).optional(),
   maxTeams: z.coerce.number().min(1).max(100).optional(),
   // New fields from onboard-organization form
-  whatChanges: z.string().max(5000).optional(),
-  affectedCount: z.string().max(100).optional(),
-  dataDescription: z.string().max(5000).optional(),
+  whatChanges: z.string().max(100000).optional(),
+  affectedCount: z.string().max(10000).optional(),
+  dataDescription: z.string().max(100000).optional(),
   dataAccess: z.string().max(1000).optional(),
   secondaryContact: secondaryContactSchema.optional(),
   scoringAnswers: scoringAnswersSchema.optional(),
@@ -408,7 +408,7 @@ export function BriefForm({
         role: data.secondaryContact?.role?.trim() || undefined,
         email: data.secondaryContact?.email?.trim() || undefined,
         phone: data.secondaryContact?.phone?.trim() || undefined,
-      } : undefined,
+      } : {},
     };
     
     if (brief) {
@@ -504,7 +504,7 @@ export function BriefForm({
               )}
             />
             <p className="text-xs text-muted-foreground">
-              {stripHtml(watch("description") || "").length}/5000 characters (min 50)
+              {stripHtml(watch("description") || "").length}/100000 characters (min 20)
             </p>
             {errors.description && (
               <p className="text-sm text-destructive">{errors.description.message}</p>
@@ -539,7 +539,7 @@ export function BriefForm({
               )}
             />
             <p className="text-xs text-muted-foreground">
-              {stripHtml(watch("problemStatement") || "").length}/5000 characters (min 50)
+              {stripHtml(watch("problemStatement") || "").length}/100000 characters (min 20)
             </p>
             {errors.problemStatement && (
               <p className="text-sm text-destructive">{errors.problemStatement.message}</p>
@@ -561,7 +561,7 @@ export function BriefForm({
               )}
             />
             <p className="text-xs text-muted-foreground">
-              {stripHtml(watch("expectedOutcomes") || "").length}/3000 characters (min 50)
+              {stripHtml(watch("expectedOutcomes") || "").length}/100000 characters (required)
             </p>
             {errors.expectedOutcomes && (
               <p className="text-sm text-destructive">{errors.expectedOutcomes.message}</p>
@@ -653,14 +653,14 @@ export function BriefForm({
         </div>
       </div>
 
-      {/* Secondary Contact */}
+      {/* Brief Main Contact */}
       <div className="space-y-4">
         <div className="flex items-center gap-2">
           <UserPlus className="h-5 w-5 text-blue-600" />
           <div>
-            <h3 className="text-lg font-medium">Secondary Contact (Optional)</h3>
+            <h3 className="text-lg font-medium">Brief Main Contact (Optional)</h3>
             <p className="text-sm text-muted-foreground">
-              Add another person who can speak to this opportunity.
+              This person hosts events for this brief. Leave blank to use the partner’s main contact.
             </p>
           </div>
         </div>

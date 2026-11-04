@@ -10,6 +10,8 @@ import { Repository, ILike, In } from "typeorm";
 import { Brief, BriefStatus, BriefRevision, BriefRevisionAction, BriefRevisionActorType, calculateBriefScores, ScoringAnswers } from "@/database/entities/brief.entity";
 import { Vertical } from "@/database/entities/vertical.entity";
 import { BriefEvent } from "@/database/entities/brief-event.entity";
+import { saveBriefContacts } from "@/common/services/brief-contacts";
+import { BriefContact } from "@/database/entities/brief-contact.entity";
 import { EmailService } from "@/email/email.service";
 import { NotificationTriggersService } from "@/modules/notifications/notification-triggers.service";
 import { UsersService } from "@/modules/users/users.service";
@@ -81,7 +83,11 @@ export class BriefsService {
       status: BriefStatus.DRAFT,
     });
 
-    return this.briefRepository.save(brief);
+    return this.briefRepository.manager.transaction(async manager => {
+      const saved = await manager.save(Brief, brief);
+      if (dto.secondaryContact !== undefined) await saveBriefContacts(manager, saved, dto.secondaryContact);
+      return saved;
+    });
   }
 
   async findAll(query: BriefQueryDto): Promise<PaginatedBriefsDto> {
@@ -193,7 +199,7 @@ export class BriefsService {
       throw new NotFoundException("Brief not found");
     }
 
-    return brief;
+    return Object.assign(brief, { contacts: await this.briefRepository.manager.find(BriefContact, { where: { briefId: id }, order: { isPrimary: "DESC", createdAt: "ASC" } }) });
   }
 
   async update(id: string, dto: UpdateBriefDto, actorId?: string, actorName?: string): Promise<Brief> {
@@ -233,6 +239,7 @@ export class BriefsService {
       tags: Array.isArray(brief.tags) ? brief.tags : [],
       resources: brief.resources,
       maxTeams: brief.maxTeams,
+      secondaryContact: brief.secondaryContact || {},
     };
 
     // Calculate scores if scoringAnswers provided
@@ -257,7 +264,11 @@ export class BriefsService {
     brief.currentVersion = newVersion;
 
     Object.assign(brief, dto, scoringData);
-    const updated = await this.briefRepository.save(brief);
+    const updated = await this.briefRepository.manager.transaction(async manager => {
+      const saved = await manager.save(Brief, brief);
+      if (dto.secondaryContact !== undefined) await saveBriefContacts(manager, saved, dto.secondaryContact);
+      return saved;
+    });
 
     // Create revision record with actor info
     await this.createRevision(
@@ -643,6 +654,7 @@ export class BriefsService {
       tags: Array.isArray(brief.tags) ? brief.tags : [],
       resources: brief.resources,
       maxTeams: brief.maxTeams,
+      secondaryContact: brief.secondaryContact || {},
     };
 
     // Handle vertical change - check new vertical capacity if needed
@@ -664,7 +676,7 @@ export class BriefsService {
     }
 
     // Apply restored data
-    const restorableFields = ['title', 'description', 'problemStatement', 'expectedOutcomes', 'verticalId', 'tags', 'resources', 'maxTeams'];
+    const restorableFields = ['title', 'description', 'problemStatement', 'expectedOutcomes', 'verticalId', 'tags', 'resources', 'maxTeams', 'secondaryContact'];
     const previousData = revision.previousData!;
     restorableFields.forEach(field => {
       if (previousData[field] !== undefined) {
@@ -683,7 +695,11 @@ export class BriefsService {
     const newVersion = brief.currentVersion + 1;
     brief.currentVersion = newVersion;
 
-    const restored = await this.briefRepository.save(brief);
+    const restored = await this.briefRepository.manager.transaction(async manager => {
+      const saved = await manager.save(Brief, brief);
+      if (previousData.secondaryContact !== undefined) await saveBriefContacts(manager, saved, brief.secondaryContact);
+      return saved;
+    });
 
     // Create revision record for the restore action
     await this.createRevision(
@@ -764,6 +780,7 @@ export class BriefsService {
       tags: Array.isArray(brief.tags) ? brief.tags : [],
       resources: brief.resources,
       maxTeams: brief.maxTeams,
+      secondaryContact: brief.secondaryContact || {},
     };
 
     // Calculate scores if scoringAnswers provided
@@ -790,7 +807,11 @@ export class BriefsService {
     // Apply updates (excluding editComment from being saved to brief)
     const { editComment, ...updateData } = dto;
     Object.assign(brief, updateData, scoringData);
-    const updated = await this.briefRepository.save(brief);
+    const updated = await this.briefRepository.manager.transaction(async manager => {
+      const saved = await manager.save(Brief, brief);
+      if (dto.secondaryContact !== undefined) await saveBriefContacts(manager, saved, dto.secondaryContact);
+      return saved;
+    });
 
     // Create revision record with staff actor info
     await this.createRevision(

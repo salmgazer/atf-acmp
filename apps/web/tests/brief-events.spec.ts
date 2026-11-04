@@ -3,7 +3,7 @@ import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 const event = { id: "event-1", briefId: "event-brief", title: "Partner discussion", description: "Discuss team questions and next steps", startAt: "2030-06-01T10:00:00Z", endAt: "2030-06-01T11:00:00Z", timezone: "Africa/Accra", durationMinutes: 60, status: "scheduled", zoomJoinUrl: "https://zoom.us/j/123", revision: 0, attendeeCount: 4, deliveryPending: false };
 const brief = { id: "event-brief", title: "Event testing brief", description: "Brief description", problemStatement: "Problem", expectedOutcomes: "Outcomes", status: "approved", cohortId: "cohort-1", organizationId: "org-1", organization: { name: "Partner organization" }, maxTeams: 3, teamsCount: 1, revisionCount: 0, tags: [], createdAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-01T00:00:00Z" };
 
-async function setup(context: BrowserContext, page: Page, options: { participant?: boolean; empty?: boolean; configured?: boolean } = {}) {
+async function setup(context: BrowserContext, page: Page, options: { participant?: boolean; empty?: boolean; configured?: boolean; contact?: boolean } = {}) {
   const portal = options.participant ? "participant" : "partner";
   const user = { id: "test-user", email: "user@example.test", firstName: "Test", lastName: "User", role: options.participant ? "participant" : "organization", onboardingComplete: true };
   const events = options.empty ? [] : [{ ...event }];
@@ -24,7 +24,7 @@ async function setup(context: BrowserContext, page: Page, options: { participant
     else if (path.endsWith("/teams")) data = { data: [], total: 0, totalPages: 1 };
     else if (path.endsWith("/brief-events/brief/event-brief")) {
       if (method === "POST") { const created = { ...event, ...body }; events.push(created); data = created; }
-      else data = { events, canManage: !options.participant, zoomConfigured: !options.participant && options.configured !== false };
+      else data = { events, canManage: !options.participant && !options.contact, host: { name: "Designated Brief Contact", email: "host@example.test", source: "brief" }, canHost: !options.participant, zoomConfigured: !options.participant && options.configured !== false };
     } else if (path.endsWith("/brief-events/event-1") && method === "PATCH") { Object.assign(events[0], body); data = events[0]; }
     else if (path.endsWith("/brief-events/event-1/cancel")) { Object.assign(events[0], { status: "cancelled", zoomJoinUrl: null }); data = events[0]; }
     else if (path.endsWith("/brief-events/event-1/start")) data = { startUrl: "https://zoom.us/s/123?zak=protected-host-token" };
@@ -92,4 +92,13 @@ test("event scheduling explains when shared Zoom configuration is missing", asyn
   const section = page.getByRole("region", { name: "Brief events", exact: true });
   await expect(section.getByRole("button", { name: "Schedule event" })).toBeDisabled();
   await expect(section.getByText(/once staff connects the shared ATF Zoom account/)).toBeVisible();
+});
+
+test("a designated brief contact can host without scheduling, editing or cancelling events", async ({ context, page }) => {
+  await setup(context, page, { contact: true });
+  await page.goto("/partners/briefs/event-brief");
+  const section = page.getByRole("region", { name: "Brief events", exact: true });
+  await expect(section.getByText("Event host: Designated Brief Contact (brief main contact)")).toBeVisible();
+  await expect(section.getByRole("button", { name: "Host event", exact: true })).toBeVisible();
+  for (const action of ["Schedule event", "Edit event", "Cancel event"]) await expect(section.getByRole("button", { name: action, exact: true })).toHaveCount(0);
 });

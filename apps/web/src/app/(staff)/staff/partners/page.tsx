@@ -13,6 +13,7 @@ import {
   usePartners,
   usePartnerStatistics,
   useApprovePartner,
+  useBulkApprovePartners,
   useRejectPartner,
   useSendPartnerInvite,
   useResendPartnerInvites,
@@ -107,7 +108,7 @@ function PartnerRow({
     <tr className="border-b border-border/50 hover:bg-muted transition-colors">
       <StaffOnly permission="manage"><td className="p-4">
         <Checkbox aria-label={`Select ${organization.name}`} checked={selected}
-          disabled={bulkBusy || !organization.isActive || organization.status !== "approved"} onCheckedChange={checked => onSelect(checked === true)} />
+          disabled={bulkBusy || !organization.isActive || organization.status === "rejected"} onCheckedChange={checked => onSelect(checked === true)} />
       </td></StaffOnly>
       <td className="p-4">
         <div className="flex items-center gap-3">
@@ -178,11 +179,11 @@ function PartnerRow({
             {organization.status === "pending" && (
               <>
                 <DropdownMenuSeparator />
-                <StaffOnly permission="manage"><DropdownMenuItem onClick={() => onApprove(organization)} className="text-emerald-600">
+                <StaffOnly permission="manage"><DropdownMenuItem disabled={bulkBusy} onClick={() => onApprove(organization)} className="text-emerald-600">
                   <ThumbsUp className="mr-2 h-4 w-4" />
                   Approve
                 </DropdownMenuItem></StaffOnly>
-                <StaffOnly permission="manage"><DropdownMenuItem onClick={() => onReject(organization)} className="text-destructive">
+                <StaffOnly permission="manage"><DropdownMenuItem disabled={bulkBusy} onClick={() => onReject(organization)} className="text-destructive">
                   <ThumbsDown className="mr-2 h-4 w-4" />
                   Reject
                 </DropdownMenuItem></StaffOnly>
@@ -201,10 +202,12 @@ function PartnersContent() {
   const batchStorageKey = userId ? `acmp-partner-invite-batch:${userId}` : null;
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [confirmation, setConfirmation] = useState<"selected" | "eligible" | null>(null);
+  const [approveConfirmation, setApproveConfirmation] = useState(false);
+  const bulkApprove = useBulkApprovePartners();
   const [batchId, setBatchId] = useState<string | null>(null);
   const resendBulk = useResendPartnerInvites();
   const { data: batch, isError: batchError, error: batchFailure, refetch: refreshBatch } = usePartnerInviteBatch(canManage ? batchId : null);
-  const bulkBusy = resendBulk.isPending || (!!batchId && (!batch || ["queued", "active"].includes(batch.state)));
+  const bulkBusy = bulkApprove.isPending || resendBulk.isPending || (!!batchId && (!batch || ["queued", "active"].includes(batch.state)));
 
   useEffect(() => {
     if (!canManage || !batchStorageKey) return;
@@ -265,12 +268,14 @@ function PartnersContent() {
 
   const organizations = orgsData?.data || [];
   const totalPages = orgsData?.totalPages || 1;
-  const selectable = organizations.filter(org => org.status === "approved" && org.isActive);
+  const selectable = organizations.filter(org => org.status !== "rejected" && org.isActive);
+  const selectedPendingIds = selectable.filter(org => org.status === "pending" && selectedIds.includes(org.id)).map(org => org.id);
+  const selectedApprovedIds = selectable.filter(org => org.status === "approved" && selectedIds.includes(org.id)).map(org => org.id);
   const allSelected = selectable.length > 0 && selectable.every(org => selectedIds.includes(org.id));
   const someSelected = selectable.some(org => selectedIds.includes(org.id));
   const cohortName = cohorts.find(cohort => cohort.id === effectiveCohortId)?.name;
 
-  useEffect(() => { setSelectedIds([]); setConfirmation(null); }, [page, effectiveCohortId, statusFilter, search, canManage, view]);
+  useEffect(() => { setSelectedIds([]); setConfirmation(null); setApproveConfirmation(false); }, [page, effectiveCohortId, statusFilter, search, canManage, view]);
   useEffect(() => { setPage(1); }, [effectiveCohortId]);
 
   const queueInvites = async (request: PartnerBulkInviteRequest) => {
@@ -278,15 +283,23 @@ function PartnersContent() {
       const queued = await resendBulk.mutateAsync(request);
       setBatchId(queued.id);
       if (batchStorageKey) try { sessionStorage.setItem(batchStorageKey, JSON.stringify({ id: queued.id, createdAt: Date.now() })); } catch { /* Optional progress cache. */ }
-      setSelectedIds([]);
+      setSelectedIds(ids => request.mode === "selected" ? ids.filter(id => !request.organizationIds.includes(id)) : []);
       setConfirmation(null);
     } catch { /* The mutation displays the error; preserve selection for correction. */ }
   };
   const confirmResend = () => {
-    if (confirmation === "selected") return queueInvites({ mode: "selected", organizationIds: selectedIds });
+    if (confirmation === "selected") return queueInvites({ mode: "selected", organizationIds: selectedApprovedIds });
     if (confirmation === "eligible" && effectiveCohortId && (statusFilter === "all" || statusFilter === "approved")) return queueInvites({ mode: "eligible", filters: {
       cohortId: effectiveCohortId, search: search || undefined, status: statusFilter === "all" ? undefined : statusFilter,
     } });
+  };
+
+  const confirmApproval = async () => {
+    try {
+      const result = await bulkApprove.mutateAsync(selectedPendingIds);
+      setSelectedIds(ids => ids.filter(id => !result.organizationIds.includes(id)));
+      setApproveConfirmation(false);
+    } catch { /* Keep the selection and confirmation available after an error. */ }
   };
 
   const hasActiveFilters = statusFilter !== "all" || (selectedCohortId !== null && selectedCohortId !== globalCohortId);
@@ -519,7 +532,9 @@ function PartnersContent() {
 
             <StaffOnly permission="manage">{selectedIds.length > 0 && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border p-4">
               <span className="text-sm font-medium">{selectedIds.length} selected on this page</span>
-              <Button size="sm" disabled={bulkBusy} onClick={() => setConfirmation("selected")}><Mail className="mr-2 h-4 w-4" />Resend selected invites</Button>
+              {selectedPendingIds.length > 0 && <Button size="sm" disabled={bulkBusy || approveMutation.isPending || rejectMutation.isPending} onClick={() => setApproveConfirmation(true)}><ThumbsUp className="mr-2 h-4 w-4" />Approve selected ({selectedPendingIds.length})</Button>}
+              {selectedApprovedIds.length > 0 && <Button size="sm" disabled={bulkBusy} onClick={() => setConfirmation("selected")}><Mail className="mr-2 h-4 w-4" />Resend selected invites</Button>}
+              {selectedPendingIds.length > 0 && selectedApprovedIds.length > 0 && <span className="text-sm text-muted-foreground">{selectedPendingIds.length} pending for approval · {selectedApprovedIds.length} approved for invitations</span>}
               <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={() => setSelectedIds([])}>Clear selection</Button>
             </div>}</StaffOnly>
 
@@ -611,7 +626,7 @@ function PartnersContent() {
               <thead className="bg-muted">
                 <tr>
                   <StaffOnly permission="manage"><th className="p-4 w-12">
-                    <Checkbox aria-label="Select all approved active partners on this page" checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                    <Checkbox aria-label="Select all pending and approved active partners on this page" checked={allSelected ? true : someSelected ? "indeterminate" : false}
                       disabled={bulkBusy || !selectable.length} onCheckedChange={checked => setSelectedIds(checked === true ? selectable.map(org => org.id) : [])} />
                   </th></StaffOnly>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Partner</th>
@@ -631,7 +646,7 @@ function PartnersContent() {
                     onReject={handleRejectClick}
                     onSendInvite={handleSendInvite}
                     onEdit={handleEditClick}
-                    selected={selectedIds.includes(org.id)} bulkBusy={bulkBusy || sendInviteMutation.isPending}
+                    selected={selectedIds.includes(org.id)} bulkBusy={bulkBusy || sendInviteMutation.isPending || approveMutation.isPending || rejectMutation.isPending}
                     onSelect={checked => setSelectedIds(ids => checked ? [...new Set([...ids, org.id])] : ids.filter(id => id !== org.id))}
                   />
                 ))}
@@ -663,12 +678,24 @@ function PartnersContent() {
       <StaffOnly permission="manage"><Dialog open={confirmation !== null} onOpenChange={open => { if (!open && !resendBulk.isPending) setConfirmation(null); }}>
         <DialogContent>
           <DialogHeader><DialogTitle>{confirmation === "selected" ? "Resend selected partner invites?" : "Resend approved partner invites?"}</DialogTitle>
-            <DialogDescription>{confirmation === "selected" ? `Send invitations to ${selectedIds.length} selected approved, active partner${selectedIds.length === 1 ? "" : "s"}?`
+            <DialogDescription>{confirmation === "selected" ? `Send invitations to ${selectedApprovedIds.length} selected approved, active partner${selectedApprovedIds.length === 1 ? "" : "s"}?`
               : `Send invitations to all approved, active partners in ${cohortName || "the selected cohort"} matching the current filters, across all pages?`}</DialogDescription></DialogHeader>
           <p className="text-sm text-muted-foreground">Only approved, active, non-deleted partners receive invitations. Each invitation uses the partner’s current email address.</p>
           <DialogFooter><Button variant="outline" disabled={resendBulk.isPending} onClick={() => setConfirmation(null)}>Cancel</Button>
-            <Button disabled={bulkBusy || (confirmation === "selected" && !selectedIds.length)} onClick={confirmResend}>
+            <Button disabled={bulkBusy || (confirmation === "selected" && !selectedApprovedIds.length)} onClick={confirmResend}>
               {resendBulk.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Send invitations
+            </Button></DialogFooter>
+        </DialogContent>
+      </Dialog></StaffOnly>
+
+      <StaffOnly permission="manage"><Dialog open={approveConfirmation} onOpenChange={open => { if (!bulkApprove.isPending) setApproveConfirmation(open); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Approve selected partners?</DialogTitle>
+            <DialogDescription>Approve {selectedPendingIds.length} selected pending, active partner{selectedPendingIds.length === 1 ? "" : "s"}? Already approved partners in your selection will be left unchanged.</DialogDescription></DialogHeader>
+          <p className="text-sm text-muted-foreground">This grants partner portal access. Invitations are sent separately using Resend selected invites.</p>
+          <DialogFooter><Button variant="outline" disabled={bulkApprove.isPending} onClick={() => setApproveConfirmation(false)}>Cancel</Button>
+            <Button disabled={bulkBusy || !selectedPendingIds.length} onClick={confirmApproval}>
+              {bulkApprove.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Approve partners
             </Button></DialogFooter>
         </DialogContent>
       </Dialog></StaffOnly>
