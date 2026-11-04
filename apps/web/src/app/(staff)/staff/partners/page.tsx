@@ -1,5 +1,9 @@
 "use client";
 
+import { StaffOnly, useStaffPermission } from "@/components/auth/staff-only";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useAuthStore } from "@/lib/stores/auth-store";
+import { isAxiosError } from "axios";
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { StaffLayout } from "@/components/layouts";
@@ -11,12 +15,15 @@ import {
   useApprovePartner,
   useRejectPartner,
   useSendPartnerInvite,
-  useBulkSendInvites,
+  useResendPartnerInvites,
+  usePartnerInviteBatch,
+  type PartnerBulkInviteRequest,
   type Partner,
   type PartnerStatus,
 } from "@/lib/api/hooks/use-organizations";
 import { useCohorts } from "@/lib/api/hooks/use-cohorts";
 import { useStaffCohortStore } from "@/lib/stores/staff-cohort-store";
+import { PartnerEventsCalendar } from "@/components/partners/partner-events-calendar";
 import { PartnerFormDialog } from "@/components/partners/partner-form-dialog";
 import {
   Dialog,
@@ -54,6 +61,8 @@ import {
   MoreHorizontal,
   Plus,
   Pencil,
+  Calendar,
+  List,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api/client";
@@ -72,24 +81,34 @@ const statusTabs: { value: PartnerStatus | "all"; label: string }[] = [
   { value: "rejected", label: "Rejected" },
 ];
 
-function PartnerRow({ 
+function PartnerRow({
   organization,
   onApprove,
   onReject,
   onSendInvite,
   onEdit,
-}: { 
+  selected,
+  onSelect,
+  bulkBusy,
+}: {
   organization: Partner;
   onApprove: (org: Partner) => void;
   onReject: (org: Partner) => void;
   onSendInvite: (org: Partner) => void;
   onEdit: (org: Partner) => void;
+  selected: boolean;
+  onSelect: (checked: boolean) => void;
+  bulkBusy: boolean;
 }) {
   const config = statusConfig[organization.status];
   const StatusIcon = config.icon;
 
   return (
     <tr className="border-b border-border/50 hover:bg-muted transition-colors">
+      <StaffOnly permission="manage"><td className="p-4">
+        <Checkbox aria-label={`Select ${organization.name}`} checked={selected}
+          disabled={bulkBusy || !organization.isActive || organization.status !== "approved"} onCheckedChange={checked => onSelect(checked === true)} />
+      </td></StaffOnly>
       <td className="p-4">
         <div className="flex items-center gap-3">
           {organization.logoUrl ? (
@@ -137,7 +156,7 @@ function PartnerRow({
       <td className="p-4">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${organization.name}`}>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -148,25 +167,25 @@ function PartnerRow({
                 View
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onEdit(organization)}>
+            <StaffOnly permission="manage"><DropdownMenuItem onClick={() => onEdit(organization)}>
               <Pencil className="mr-2 h-4 w-4" />
               Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onSendInvite(organization)}>
+            </DropdownMenuItem></StaffOnly>
+            {organization.status === "approved" && organization.isActive && <StaffOnly permission="manage"><DropdownMenuItem disabled={bulkBusy} onClick={() => onSendInvite(organization)}>
               <Mail className="mr-2 h-4 w-4" />
-              Send Invite
-            </DropdownMenuItem>
+              Resend Invite
+            </DropdownMenuItem></StaffOnly>}
             {organization.status === "pending" && (
               <>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => onApprove(organization)} className="text-emerald-600">
+                <StaffOnly permission="manage"><DropdownMenuItem onClick={() => onApprove(organization)} className="text-emerald-600">
                   <ThumbsUp className="mr-2 h-4 w-4" />
                   Approve
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onReject(organization)} className="text-destructive">
+                </DropdownMenuItem></StaffOnly>
+                <StaffOnly permission="manage"><DropdownMenuItem onClick={() => onReject(organization)} className="text-destructive">
                   <ThumbsDown className="mr-2 h-4 w-4" />
                   Reject
-                </DropdownMenuItem>
+                </DropdownMenuItem></StaffOnly>
               </>
             )}
           </DropdownMenuContent>
@@ -177,6 +196,32 @@ function PartnerRow({
 }
 
 function PartnersContent() {
+  const canManage = useStaffPermission("manage");
+  const userId = useAuthStore(state => state.user?.id);
+  const batchStorageKey = userId ? `acmp-partner-invite-batch:${userId}` : null;
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [confirmation, setConfirmation] = useState<"selected" | "eligible" | null>(null);
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const resendBulk = useResendPartnerInvites();
+  const { data: batch, isError: batchError, error: batchFailure, refetch: refreshBatch } = usePartnerInviteBatch(canManage ? batchId : null);
+  const bulkBusy = resendBulk.isPending || (!!batchId && (!batch || ["queued", "active"].includes(batch.state)));
+
+  useEffect(() => {
+    if (!canManage || !batchStorageKey) return;
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(batchStorageKey) || "null");
+      if (saved?.id && saved.createdAt > Date.now() - 86400000) setBatchId(saved.id);
+      else sessionStorage.removeItem(batchStorageKey);
+    } catch { /* Optional progress cache. */ }
+  }, [canManage, batchStorageKey]);
+  useEffect(() => {
+    if (isAxiosError(batchFailure) && batchFailure.response?.status === 404) {
+      setBatchId(null);
+      if (batchStorageKey) try { sessionStorage.removeItem(batchStorageKey); } catch { /* Optional cache. */ }
+    }
+  }, [batchFailure, batchStorageKey]);
+  const [view, setView] = useState<"list" | "calendar">("list");
+  const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<PartnerStatus | "all">("all");
   const [selectedCohortId, setSelectedCohortId] = useState<string | null>(null);
   const [hasInitialized, setHasInitialized] = useState(false);
@@ -191,10 +236,10 @@ function PartnersContent() {
 
   // Get global cohort from store (set by sidebar)
   const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
-  
+
   const { data: cohortsData } = useCohorts({ limit: 100 });
   const cohorts = cohortsData?.data || [];
-  
+
   // Initialize local cohort from global when component mounts or global changes (if not yet set locally)
   useEffect(() => {
     if (globalCohortId && !hasInitialized) {
@@ -210,7 +255,8 @@ function PartnersContent() {
     status: statusFilter === "all" ? undefined : statusFilter,
     cohortId: effectiveCohortId,
     search: search || undefined,
-    limit: 100,
+    page,
+    limit: 20,
   });
   const { data: stats } = usePartnerStatistics();
   const approveMutation = useApprovePartner();
@@ -218,6 +264,31 @@ function PartnersContent() {
   const sendInviteMutation = useSendPartnerInvite();
 
   const organizations = orgsData?.data || [];
+  const totalPages = orgsData?.totalPages || 1;
+  const selectable = organizations.filter(org => org.status === "approved" && org.isActive);
+  const allSelected = selectable.length > 0 && selectable.every(org => selectedIds.includes(org.id));
+  const someSelected = selectable.some(org => selectedIds.includes(org.id));
+  const cohortName = cohorts.find(cohort => cohort.id === effectiveCohortId)?.name;
+
+  useEffect(() => { setSelectedIds([]); setConfirmation(null); }, [page, effectiveCohortId, statusFilter, search, canManage, view]);
+  useEffect(() => { setPage(1); }, [effectiveCohortId]);
+
+  const queueInvites = async (request: PartnerBulkInviteRequest) => {
+    try {
+      const queued = await resendBulk.mutateAsync(request);
+      setBatchId(queued.id);
+      if (batchStorageKey) try { sessionStorage.setItem(batchStorageKey, JSON.stringify({ id: queued.id, createdAt: Date.now() })); } catch { /* Optional progress cache. */ }
+      setSelectedIds([]);
+      setConfirmation(null);
+    } catch { /* The mutation displays the error; preserve selection for correction. */ }
+  };
+  const confirmResend = () => {
+    if (confirmation === "selected") return queueInvites({ mode: "selected", organizationIds: selectedIds });
+    if (confirmation === "eligible" && effectiveCohortId && (statusFilter === "all" || statusFilter === "approved")) return queueInvites({ mode: "eligible", filters: {
+      cohortId: effectiveCohortId, search: search || undefined, status: statusFilter === "all" ? undefined : statusFilter,
+    } });
+  };
+
   const hasActiveFilters = statusFilter !== "all" || (selectedCohortId !== null && selectedCohortId !== globalCohortId);
 
   const handleApprove = async (org: Partner) => {
@@ -238,7 +309,7 @@ function PartnersContent() {
   };
 
   const handleSendInvite = async (org: Partner) => {
-    await sendInviteMutation.mutateAsync({ id: org.id });
+    try { await sendInviteMutation.mutateAsync({ id: org.id }); } catch { /* The mutation displays the delivery error. */ }
   };
 
   const handleAddClick = () => {
@@ -342,6 +413,16 @@ function PartnersContent() {
               Manage partner registrations and approvals
             </p>
           </div>
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-muted p-1" role="group" aria-label="Partners view">
+            <button onClick={() => setView("list")} aria-pressed={view === "list"}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${view === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+              <List className="h-4 w-4" />List
+            </button>
+            <button onClick={() => setView("calendar")} aria-pressed={view === "calendar"}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${view === "calendar" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+              <Calendar className="h-4 w-4" />Calendar
+            </button>
+          </div>
         </div>
 
         {/* Stats */}
@@ -370,15 +451,24 @@ function PartnersContent() {
           </div>
         </div>
 
+        <StaffOnly permission="manage">{batchId && <div role="status" aria-live="polite" className="space-y-2 rounded-xl border border-border p-4">
+          <p className="font-medium">{batch?.state === "completed" ? "Partner invitation resend complete" : batch?.state === "failed" ? "Partner invitation resend stopped" : "Resending partner invitations"}</p>
+          {batch && <p className="text-sm text-muted-foreground">{batch.processed} of {batch.total} processed · {batch.sent} sent · {batch.failed} failed · {batch.skipped} skipped</p>}
+          {batch?.error && <p className="text-sm text-destructive">{batch.error}</p>}
+          {!!batch?.failed && <p className="text-sm text-destructive">Failed partners: {batch.failures.map(failure => failure.email).join(", ")}{batch.failed > batch.failures.length ? " (first 100 shown)" : ""}</p>}
+          {batchError && <div className="flex items-center gap-3"><p className="text-sm text-destructive">Could not load progress.</p><Button size="sm" variant="outline" onClick={() => refreshBatch()}>Refresh progress</Button></div>}
+        </div>}</StaffOnly>
+
+        {view === "list" && <>
         {/* Search and Filter Toggle */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
               placeholder="Search partners..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               className="w-full h-10 pl-11 pr-4 text-sm bg-transparent border border-border rounded-full focus:border-zinc-400 focus:outline-none placeholder:text-muted-foreground"
             />
           </div>
@@ -398,7 +488,7 @@ function PartnersContent() {
               </span>
             )}
           </button>
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="flex flex-wrap items-center gap-2 ml-auto">
             <button
               onClick={handleExport}
               disabled={isExporting}
@@ -411,18 +501,27 @@ function PartnersContent() {
               )}
               Export CSV
             </button>
-            <Button variant="outline" onClick={handleAddClick} className="gap-2">
+            <StaffOnly permission="manage"><Button variant="outline" onClick={handleAddClick} className="gap-2">
               <Plus className="h-4 w-4" />
               Add
-            </Button>
-            <Link href="/staff/partners/import">
+            </Button></StaffOnly>
+            <StaffOnly permission="manage"><Link href="/staff/partners/import">
               <Button className="gap-2">
                 <Upload className="h-4 w-4" />
                 Import
               </Button>
-            </Link>
+            </Link></StaffOnly>
+            <StaffOnly permission="manage"><Button variant="outline"
+              disabled={!effectiveCohortId || bulkBusy || sendInviteMutation.isPending || (statusFilter !== "all" && statusFilter !== "approved")}
+              onClick={() => setConfirmation("eligible")}><Mail className="mr-2 h-4 w-4" />Resend approved invites</Button></StaffOnly>
           </div>
         </div>
+
+            <StaffOnly permission="manage">{selectedIds.length > 0 && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border p-4">
+              <span className="text-sm font-medium">{selectedIds.length} selected on this page</span>
+              <Button size="sm" disabled={bulkBusy} onClick={() => setConfirmation("selected")}><Mail className="mr-2 h-4 w-4" />Resend selected invites</Button>
+              <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={() => setSelectedIds([])}>Clear selection</Button>
+            </div>}</StaffOnly>
 
         {/* Collapsible Filter Row */}
         {showFilters && (
@@ -433,7 +532,7 @@ function PartnersContent() {
                 {statusTabs.map((tab) => (
                   <button
                     key={tab.value}
-                    onClick={() => setStatusFilter(tab.value)}
+                    onClick={() => { setStatusFilter(tab.value); setPage(1); }}
                     className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
                       statusFilter === tab.value
                         ? "bg-zinc-900 text-white"
@@ -457,7 +556,7 @@ function PartnersContent() {
                 {cohorts.map((cohort) => (
                   <button
                     key={cohort.id}
-                    onClick={() => setSelectedCohortId(cohort.id === globalCohortId ? null : cohort.id)}
+                    onClick={() => { setSelectedCohortId(cohort.id === globalCohortId ? null : cohort.id); setPage(1); }}
                     className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
                       (selectedCohortId ?? globalCohortId) === cohort.id
                         ? "bg-zinc-900 text-white"
@@ -476,6 +575,7 @@ function PartnersContent() {
             {hasActiveFilters && (
               <button
                 onClick={() => {
+                  setPage(1);
                   setStatusFilter("all");
                   setSelectedCohortId(null);
                 }}
@@ -506,10 +606,14 @@ function PartnersContent() {
             </p>
           </div>
         ) : (
-          <div className="rounded-xl border border-border bg-card overflow-hidden">
+          <div className="rounded-xl border border-border bg-card overflow-x-auto">
             <table className="w-full">
               <thead className="bg-muted">
                 <tr>
+                  <StaffOnly permission="manage"><th className="p-4 w-12">
+                    <Checkbox aria-label="Select all approved active partners on this page" checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                      disabled={bulkBusy || !selectable.length} onCheckedChange={checked => setSelectedIds(checked === true ? selectable.map(org => org.id) : [])} />
+                  </th></StaffOnly>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Partner</th>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Location</th>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Industry</th>
@@ -527,16 +631,50 @@ function PartnersContent() {
                     onReject={handleRejectClick}
                     onSendInvite={handleSendInvite}
                     onEdit={handleEditClick}
+                    selected={selectedIds.includes(org.id)} bulkBusy={bulkBusy || sendInviteMutation.isPending}
+                    onSelect={checked => setSelectedIds(ids => checked ? [...new Set([...ids, org.id])] : ids.filter(id => id !== org.id))}
                   />
                 ))}
               </tbody>
             </table>
           </div>
         )}
+        {totalPages > 1 && <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">Page {page} of {totalPages} ({orgsData?.total} total)</p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Previous</Button>
+            <Button variant="outline" size="sm" disabled={page === totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}>Next</Button>
+          </div>
+        </div>}
+        </>}
+        {view === "calendar" && <>
+          <div className="flex items-center gap-2">
+            <label htmlFor="partner-calendar-cohort" className="text-sm font-medium text-muted-foreground">Cohort</label>
+            <select id="partner-calendar-cohort" value={effectiveCohortId || ""} onChange={event => setSelectedCohortId(event.target.value || null)}
+              className="h-9 rounded-lg border border-border bg-card px-3 text-sm">
+              {!effectiveCohortId && <option value="">Select a cohort</option>}
+              {cohorts.map(cohort => <option key={cohort.id} value={cohort.id}>{cohort.name}</option>)}
+            </select>
+          </div>
+          <PartnerEventsCalendar cohortId={effectiveCohortId} />
+        </>}
       </div>
 
+      <StaffOnly permission="manage"><Dialog open={confirmation !== null} onOpenChange={open => { if (!open && !resendBulk.isPending) setConfirmation(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{confirmation === "selected" ? "Resend selected partner invites?" : "Resend approved partner invites?"}</DialogTitle>
+            <DialogDescription>{confirmation === "selected" ? `Send invitations to ${selectedIds.length} selected approved, active partner${selectedIds.length === 1 ? "" : "s"}?`
+              : `Send invitations to all approved, active partners in ${cohortName || "the selected cohort"} matching the current filters, across all pages?`}</DialogDescription></DialogHeader>
+          <p className="text-sm text-muted-foreground">Only approved, active, non-deleted partners receive invitations. Each invitation uses the partner’s current email address.</p>
+          <DialogFooter><Button variant="outline" disabled={resendBulk.isPending} onClick={() => setConfirmation(null)}>Cancel</Button>
+            <Button disabled={bulkBusy || (confirmation === "selected" && !selectedIds.length)} onClick={confirmResend}>
+              {resendBulk.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Send invitations
+            </Button></DialogFooter>
+        </DialogContent>
+      </Dialog></StaffOnly>
+
       {/* Reject Dialog */}
-      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+      <StaffOnly permission="manage"><Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
         <DialogContent className="rounded-xl">
           <DialogHeader>
             <DialogTitle className="text-foreground">Reject Partner</DialogTitle>
@@ -570,14 +708,14 @@ function PartnersContent() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Add/Edit Partner Dialog */}
-      <PartnerFormDialog
+      <StaffOnly permission="manage"><PartnerFormDialog
         open={showFormDialog}
         onOpenChange={handleFormDialogClose}
         organization={editingOrg}
-      />
+      /></StaffOnly>
     </StaffLayout>
   );
 }

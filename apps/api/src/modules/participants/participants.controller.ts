@@ -47,7 +47,9 @@ import { ParticipantStatus } from "@/database/entities/participant.entity";
 import { JwtAuthGuard } from "@/auth/guards/jwt-auth.guard";
 import { CurrentUser } from "@/common/decorators/current-user.decorator";
 import { UploadService } from "@/common/services/upload.service";
-import { UploadThrottle } from "@/common/decorators/throttle.decorator";
+import { UploadThrottle, BulkThrottle } from "@/common/decorators/throttle.decorator";
+import { ParticipantInvitesService } from "./participant-invites.service";
+import { ResendParticipantInvitesDto, ResendPendingParticipantInvitesDto } from "./dto/participant-invites.dto";
 import { Audit } from "@/common/decorators/audit.decorator";
 import { AuditInterceptor } from "@/common/interceptors/audit.interceptor";
 import { AuditAction } from "@/database/entities/audit-log.entity";
@@ -59,6 +61,7 @@ export class ParticipantsController {
   constructor(
     private readonly participantsService: ParticipantsService,
     private readonly uploadService: UploadService,
+    private readonly invites: ParticipantInvitesService,
   ) {}
 
   // ============ Current Participant Endpoint ============
@@ -128,6 +131,37 @@ export class ParticipantsController {
   }
 
   // ============ Admin/Staff Endpoints ============
+
+  @Post("resend-invites")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @BulkThrottle()
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Audit({ action: AuditAction.UPDATE, entityType: "ParticipantInviteBatch", getEntityId: result => result?.id, getDescription: result => `Queued ${result?.total} participant invitations` })
+  async resendInvites(@Body() dto: ResendParticipantInvitesDto, @CurrentUser("id") actor: string) {
+    return this.invites.resendSelected(dto.participantIds, actor);
+  }
+
+  @Post("resend-pending-invites")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @BulkThrottle()
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Audit({ action: AuditAction.UPDATE, entityType: "ParticipantInviteBatch", getEntityId: result => result?.id, getDescription: result => `Queued ${result?.total} pending participant invitations` })
+  async resendPendingInvites(@Body() dto: ResendPendingParticipantInvitesDto, @CurrentUser("id") actor: string) {
+    return this.invites.resendPending(dto, actor);
+  }
+
+  @Get("invite-resends/:jobId")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  async inviteResendStatus(@Param("jobId", ParseUUIDPipe) id: string) { return this.invites.status(id); }
+
+  @Post(":id/resend-invite")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @BulkThrottle()
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Audit({ action: AuditAction.UPDATE, entityType: "ParticipantInviteBatch", getEntityId: result => result?.id, getDescription: () => "Queued a participant invitation" })
+  async resendInvite(@Param("id", ParseUUIDPipe) id: string, @CurrentUser("id") actor: string) {
+    return this.invites.resendSelected([id], actor);
+  }
 
   @Post()
   @Audit({

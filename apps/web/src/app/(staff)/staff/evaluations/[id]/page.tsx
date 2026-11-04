@@ -1,5 +1,7 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
+
 import { use } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Edit, Loader2, AlertCircle } from "lucide-react";
@@ -41,10 +43,10 @@ export default function EvaluationDetailPage({ params }: PageProps) {
               </div>
             </div>
             {evaluation && (
-              <Button onClick={() => router.push(`/staff/evaluations/${id}/score`)}>
+              <StaffOnly permission="review"><Button onClick={() => router.push(`/staff/evaluations/${id}/score`)}>
                 <Edit className="mr-2 h-4 w-4" />
                 Human Score
-              </Button>
+              </Button></StaffOnly>
             )}
           </div>
 

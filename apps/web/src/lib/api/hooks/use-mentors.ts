@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, apiClient } from "@/lib/api/client";
+import { toast } from "sonner";
 
 // Types
 export type MentorStatus = "imported" | "active" | "inactive";
@@ -167,6 +168,7 @@ export interface CreateMentorDto {
 }
 
 export interface UpdateMentorDto {
+  email?: string;
   firstName?: string;
   lastName?: string;
   phone?: string;
@@ -378,6 +380,53 @@ export function useUpdateMentor() {
       queryClient.invalidateQueries({ queryKey: mentorKeys.detail(data.id) });
       queryClient.invalidateQueries({ queryKey: mentorKeys.lists() });
     },
+  });
+}
+
+export function useResendMentorInvite() {
+  return useMutation({
+    mutationFn: (id: string) => api.post<{ message: string }>(`/mentors/${id}/resend-invite`),
+    onSuccess: () => toast.success("Mentor invitation sent"),
+    onError: (error: Error) => toast.error(error.message || "Could not resend mentor invitation"),
+  });
+}
+
+export interface MentorInviteBatch {
+  id: string;
+  state: "queued" | "active" | "completed" | "failed";
+  total: number;
+  processed: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  failures: { mentorId: string; email: string; message: string }[];
+  error?: string;
+}
+
+export type MentorBulkInviteRequest = { mode: "selected"; mentorIds: string[] }
+  | { mode: "imported"; filters: { cohortId: string; search?: string; status?: MentorStatus; hasCapacity?: boolean } };
+
+export function useResendMentorInvites() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (request: MentorBulkInviteRequest) => request.mode === "selected"
+      ? api.post<MentorInviteBatch>("/mentors/resend-invites", { mentorIds: request.mentorIds })
+      : api.post<MentorInviteBatch>("/mentors/resend-imported-invites", request.filters),
+    onSuccess: batch => {
+      cache.setQueryData(["mentor-invite-batch", batch.id], batch);
+      toast.success(`${batch.total} mentor invitation${batch.total === 1 ? "" : "s"} queued`);
+    },
+    onError: (error: Error) => toast.error(error.message || "Could not resend mentor invitations"),
+  });
+}
+
+export function useMentorInviteBatch(id: string | null) {
+  return useQuery({
+    queryKey: ["mentor-invite-batch", id],
+    queryFn: () => api.get<MentorInviteBatch>(`/mentors/invite-resends/${id}`),
+    enabled: !!id,
+    refetchInterval: query => ["queued", "active"].includes(query.state.data?.state || "queued") ? 1500 : false,
+    retry: false,
   });
 }
 

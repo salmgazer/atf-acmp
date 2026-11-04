@@ -53,12 +53,14 @@ export class AdminAnnouncementsController {
     return this.announcementsService.create(dto, user.id);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get()
   @ApiOperation({ summary: "List all announcements" })
   async findAll(@Query() query: AnnouncementQueryDto) {
     return this.announcementsService.findAll(query);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get(":id")
   @ApiOperation({ summary: "Get an announcement by ID" })
   async findOne(@Param("id", ParseUUIDPipe) id: string) {

@@ -13,6 +13,7 @@ import {
   UseGuards,
   UploadedFile,
   BadRequestException,
+  ParseUUIDPipe,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import {
@@ -43,6 +44,9 @@ import { JwtAuthGuard } from "@/auth/guards/jwt-auth.guard";
 import { RolesGuard } from "@/auth/guards/roles.guard";
 import { Roles } from "@/common/decorators/roles.decorator";
 import { Role } from "@/database/entities/user.entity";
+import { BulkThrottle } from "@/common/decorators/throttle.decorator";
+import { PartnerInvitesService } from "./partner-invites.service";
+import { ResendPartnerInvitesDto, ResendEligiblePartnerInvitesDto } from "./dto/partner-invites.dto";
 
 @ApiTags("organizations")
 @Controller("organizations")
@@ -53,7 +57,26 @@ export class OrganizationsController {
   constructor(
     private readonly organizationsService: OrganizationsService,
     private readonly uploadService: UploadService,
+    private readonly invites: PartnerInvitesService,
   ) {}
+
+  @Post("resend-invites")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @BulkThrottle()
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Audit({ action: AuditAction.UPDATE, entityType: "PartnerInviteBatch", getEntityId: result => result?.id, getDescription: result => `Queued ${result?.total} partner invitations` })
+  async resendInvites(@Body() dto: ResendPartnerInvitesDto, @CurrentUser("id") actor: string) { return this.invites.resendSelected(dto.organizationIds, actor); }
+
+  @Post("resend-eligible-invites")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @BulkThrottle()
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Audit({ action: AuditAction.UPDATE, entityType: "PartnerInviteBatch", getEntityId: result => result?.id, getDescription: result => `Queued ${result?.total} approved partner invitations` })
+  async resendEligibleInvites(@Body() dto: ResendEligiblePartnerInvitesDto, @CurrentUser("id") actor: string) { return this.invites.resendEligible(dto, actor); }
+
+  @Get("invite-resends/:jobId")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  async inviteResendStatus(@Param("jobId", ParseUUIDPipe) id: string) { return this.invites.status(id); }
 
   @Get("me")
   @ApiOperation({ summary: "Get the current organization (for logged-in org users)" })
@@ -256,16 +279,22 @@ export class OrganizationsController {
   // ============ Invite Emails ============
 
   @Post(":id/send-invite")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @BulkThrottle()
+  @Audit({ action: AuditAction.UPDATE, entityType: "Organization", getDescription: () => "Resent partner invitation" })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Send invite email to an organization" })
   @ApiParam({ name: "id", description: "Organization ID" })
   @ApiResponse({ status: 200, description: "Invite sent" })
   @ApiResponse({ status: 404, description: "Organization not found" })
-  sendInvite(@Param("id") id: string, @Body() dto: SendInviteDto) {
+  sendInvite(@Param("id", ParseUUIDPipe) id: string, @Body() dto: SendInviteDto) {
     return this.organizationsService.sendInvite(id, dto.customMessage);
   }
 
   @Post("bulk-send-invites")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @BulkThrottle()
+  @Audit({ action: AuditAction.UPDATE, entityType: "Organization", getDescription: result => `Sent ${result?.successCount} partner invitations` })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: "Send invite emails to multiple organizations" })
   @ApiResponse({ status: 200, description: "Bulk invite results" })

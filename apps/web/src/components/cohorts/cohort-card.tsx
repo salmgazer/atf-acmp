@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
 import Link from "next/link";
 import { format } from "date-fns";
 import { MoreHorizontal, Layers, Users, Calendar, ArrowRight, Copy, Trash2, AlertTriangle } from "lucide-react";
@@ -81,33 +82,33 @@ export function CohortCard({ cohort, onDuplicate, onDelete }: CohortCardProps) {
                     View Details
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
+                <StaffOnly permission="manage"><DropdownMenuItem asChild>
                   <Link href={`/staff/cohorts/${cohort.id}/edit`}>
                     Edit
                   </Link>
-                </DropdownMenuItem>
+                </DropdownMenuItem></StaffOnly>
                 {hasNoStages && (
-                  <DropdownMenuItem asChild>
+                  <StaffOnly permission="manage"><DropdownMenuItem asChild>
                     <Link href={`/staff/cohorts/${cohort.id}/stages`}>
                       Configure Stages
                     </Link>
-                  </DropdownMenuItem>
+                  </DropdownMenuItem></StaffOnly>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => onDuplicate?.(cohort)}>
+                <StaffOnly permission="manage"><DropdownMenuItem onClick={() => onDuplicate?.(cohort)}>
                   <Copy className="mr-2 h-4 w-4" />
                   Duplicate
-                </DropdownMenuItem>
+                </DropdownMenuItem></StaffOnly>
                 {cohort.status === "draft" && (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem
+                    <StaffOnly permission="admin"><DropdownMenuItem
                       onClick={() => onDelete?.(cohort)}
                       className="text-red-600"
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
                       Delete
-                    </DropdownMenuItem>
+                    </DropdownMenuItem></StaffOnly>
                   </>
                 )}
               </DropdownMenuContent>

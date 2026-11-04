@@ -6,7 +6,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, ILike, In } from "typeorm";
+import { Repository, ILike } from "typeorm";
 import {
   Organization,
   OrganizationStatus,
@@ -375,10 +375,15 @@ export class OrganizationsService {
   ): Promise<InviteResultDto> {
     const organization = await this.findOne(organizationId);
 
+    if (organization.status !== OrganizationStatus.APPROVED || !organization.isActive) {
+      throw new BadRequestException("Invitations can only be sent to approved, active partners");
+    }
+
     const success = await this.emailService.sendOrganizationInvite(
       organization.name,
       organization.email,
-      customMessage
+      customMessage,
+      true
     );
 
     return {
@@ -393,37 +398,13 @@ export class OrganizationsService {
     organizationIds: string[],
     customMessage?: string
   ): Promise<BulkInviteResultDto> {
-    const organizations = await this.organizationRepository.find({
-      where: { id: In(organizationIds) },
-    });
-
+    if (!organizationIds.length || organizationIds.length > 500) throw new BadRequestException("Select between 1 and 500 partners");
     const results: InviteResultDto[] = [];
-
-    for (const org of organizations) {
-      const success = await this.emailService.sendOrganizationInvite(
-        org.name,
-        org.email,
-        customMessage
-      );
-
-      results.push({
-        organizationId: org.id,
-        email: org.email,
-        success,
-        error: success ? undefined : "Failed to send email",
-      });
-    }
-
-    // Add results for any IDs not found
-    const foundIds = new Set(organizations.map((o) => o.id));
-    for (const id of organizationIds) {
-      if (!foundIds.has(id)) {
-        results.push({
-          organizationId: id,
-          email: "",
-          success: false,
-          error: "Organization not found",
-        });
+    for (const id of new Set(organizationIds)) {
+      try {
+        results.push(await this.sendInvite(id, customMessage));
+      } catch {
+        results.push({ organizationId: id, email: "", success: false, error: "Partner is not eligible or email delivery failed" });
       }
     }
 

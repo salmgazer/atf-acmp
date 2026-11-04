@@ -359,3 +359,42 @@ export function useBulkSendInvites() {
     },
   });
 }
+
+export interface PartnerInviteBatch {
+  id: string;
+  state: "queued" | "active" | "completed" | "failed";
+  total: number;
+  processed: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  failures: { organizationId: string; email: string; message: string }[];
+  error?: string;
+}
+
+export type PartnerBulkInviteRequest = { mode: "selected"; organizationIds: string[] }
+  | { mode: "eligible"; filters: { cohortId: string; search?: string; status?: PartnerStatus; country?: string } };
+
+export function useResendPartnerInvites() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (request: PartnerBulkInviteRequest) => request.mode === "selected"
+      ? api.post<PartnerInviteBatch>("/organizations/resend-invites", { organizationIds: request.organizationIds })
+      : api.post<PartnerInviteBatch>("/organizations/resend-eligible-invites", request.filters),
+    onSuccess: batch => {
+      cache.setQueryData(["partner-invite-batch", batch.id], batch);
+      toast.success(`${batch.total} partner invitation${batch.total === 1 ? "" : "s"} queued`);
+    },
+    onError: (error: Error) => toast.error(error.message || "Could not resend partner invitations"),
+  });
+}
+
+export function usePartnerInviteBatch(id: string | null) {
+  return useQuery({
+    queryKey: ["partner-invite-batch", id],
+    queryFn: () => api.get<PartnerInviteBatch>(`/organizations/invite-resends/${id}`),
+    enabled: !!id,
+    refetchInterval: query => ["queued", "active"].includes(query.state.data?.state || "queued") ? 1500 : false,
+    retry: false,
+  });
+}
