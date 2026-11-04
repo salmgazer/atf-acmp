@@ -56,12 +56,14 @@ export class LeaderboardController {
 export class AdminLeaderboardController {
   constructor(private readonly leaderboardService: LeaderboardService) {}
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get()
   @ApiOperation({ summary: "Get full leaderboard (admin)" })
   async getAdminLeaderboard(@Query() query: LeaderboardQueryDto) {
     return this.leaderboardService.getLeaderboard(query, true);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("export")
   @ApiOperation({ summary: "Export leaderboard to CSV" })
   async exportLeaderboard(@Query() query: LeaderboardQueryDto, @Res() res: Response) {
@@ -99,6 +101,7 @@ export class AdminLeaderboardController {
     res.send(csv);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("config/:cohortId")
   @ApiOperation({ summary: "Get leaderboard configuration" })
   async getConfig(@Param("cohortId", ParseUUIDPipe) cohortId: string) {

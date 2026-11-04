@@ -148,6 +148,7 @@ export class JournalsController {
 export class AdminJournalsController {
   constructor(private readonly journalsService: JournalsService) {}
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get()
   @ApiOperation({ summary: "Get all journal entries with filters" })
   @ApiResponse({ status: 200, description: "Paginated journal entries" })
@@ -163,6 +164,7 @@ export class AdminJournalsController {
     };
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("team/:teamId")
   @ApiOperation({ summary: "Get all journal entries for a team" })
   @ApiParam({ name: "teamId", description: "Team ID" })
@@ -176,6 +178,7 @@ export class AdminJournalsController {
     }));
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("cohort/:cohortId/week/:weekNumber/summary")
   @ApiOperation({ summary: "Get journal submission summary for a cohort week" })
   @ApiParam({ name: "cohortId", description: "Cohort ID" })
@@ -188,6 +191,7 @@ export class AdminJournalsController {
     return this.journalsService.getCohortWeekSummary(cohortId, weekNumber);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get(":id")
   @ApiOperation({ summary: "Get a journal entry by ID (admin)" })
   @ApiParam({ name: "id", description: "Journal entry ID" })

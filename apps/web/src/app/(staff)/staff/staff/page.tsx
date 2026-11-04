@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -177,31 +178,31 @@ function StaffRow({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onEdit(staff)}>
+              <StaffOnly permission="admin"><DropdownMenuItem onClick={() => onEdit(staff)}>
                 <Pencil className="mr-2 h-4 w-4" />
                 Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onResendInvite(staff)}>
+              </DropdownMenuItem></StaffOnly>
+              <StaffOnly permission="admin"><DropdownMenuItem onClick={() => onResendInvite(staff)}>
                 <Send className="mr-2 h-4 w-4" />
                 Resend Invite
-              </DropdownMenuItem>
+              </DropdownMenuItem></StaffOnly>
               <DropdownMenuSeparator />
               {staff.isActive ? (
-                <DropdownMenuItem
+                <StaffOnly permission="admin"><DropdownMenuItem
                   onClick={() => onDeactivate(staff)}
                   className="text-destructive"
                 >
                   <UserX className="mr-2 h-4 w-4" />
                   Deactivate
-                </DropdownMenuItem>
+                </DropdownMenuItem></StaffOnly>
               ) : (
-                <DropdownMenuItem
+                <StaffOnly permission="admin"><DropdownMenuItem
                   onClick={() => onActivate(staff)}
                   className="text-emerald-600"
                 >
                   <UserCheck className="mr-2 h-4 w-4" />
                   Activate
-                </DropdownMenuItem>
+                </DropdownMenuItem></StaffOnly>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -517,7 +518,7 @@ function StaffContent() {
         </div>
 
         {/* Stats */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StaffOnly permission="manage"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
@@ -564,7 +565,7 @@ function StaffContent() {
               </div>
             </div>
           </div>
-        </div>
+        </div></StaffOnly>
 
         {/* Search and Filters */}
         <div className="flex flex-wrap items-center gap-3">
@@ -595,10 +596,10 @@ function StaffContent() {
             </SelectContent>
           </Select>
           {isSuperAdmin && (
-            <Button onClick={() => setShowCreateDialog(true)} className="gap-2">
+            <StaffOnly permission="admin"><Button onClick={() => setShowCreateDialog(true)} className="gap-2">
               <UserPlus className="h-4 w-4" />
               Add Staff
-            </Button>
+            </Button></StaffOnly>
           )}
         </div>
 
@@ -662,15 +663,15 @@ function StaffContent() {
       </div>
 
       {/* Dialogs */}
-      <CreateStaffDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />
-      <EditStaffDialog
+      <StaffOnly permission="admin"><CreateStaffDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} /></StaffOnly>
+      <StaffOnly permission="admin"><EditStaffDialog
         staff={editingStaff}
         open={showEditDialog}
         onOpenChange={(open) => {
           setShowEditDialog(open);
           if (!open) setEditingStaff(null);
         }}
-      />
+      /></StaffOnly>
     </StaffLayout>
   );
 }

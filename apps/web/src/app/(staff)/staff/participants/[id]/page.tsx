@@ -1,4 +1,6 @@
 "use client";
+
+import { StaffOnly } from "@/components/auth/staff-only";
 import { ParticipantGroupEditor } from "@/components/cohorts/participant-group-editor";
 
 import { use, useState } from "react";
@@ -203,7 +205,7 @@ function ParticipantDetailContent({ id }: { id: string }) {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button
+            <StaffOnly permission="manage"><Button
               variant="outline"
               onClick={() => {
                 setNewStatus(participant.status);
@@ -212,15 +214,15 @@ function ParticipantDetailContent({ id }: { id: string }) {
             >
               <Settings className="mr-2 h-4 w-4" />
               Change Status
-            </Button>
-            <Button
+            </Button></StaffOnly>
+            <StaffOnly permission="manage"><Button
               variant="outline"
               className="text-destructive"
               onClick={() => setShowDeleteDialog(true)}
             >
               <Trash2 className="mr-2 h-4 w-4" />
               Delete
-            </Button>
+            </Button></StaffOnly>
           </div>
         </div>
 
@@ -494,7 +496,7 @@ function ParticipantDetailContent({ id }: { id: string }) {
       </div>
 
       {/* Status Dialog */}
-      <Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
+      <StaffOnly permission="manage"><Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Change Participant Status</DialogTitle>
@@ -532,10 +534,10 @@ function ParticipantDetailContent({ id }: { id: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Delete Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+      <StaffOnly permission="manage"><Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Participant</DialogTitle>
@@ -560,7 +562,7 @@ function ParticipantDetailContent({ id }: { id: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
     </StaffLayout>
   );
 }

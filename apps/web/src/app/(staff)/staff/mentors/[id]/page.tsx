@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
 import { use, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -205,20 +206,20 @@ function MentorDetailContent({ id }: { id: string }) {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button asChild variant="outline">
+            <StaffOnly permission="manage"><Button asChild variant="outline">
               <Link href={`/staff/mentors/${id}/edit`}>
                 <Edit2 className="mr-2 h-4 w-4" />
                 Edit
               </Link>
-            </Button>
-            <Button
+            </Button></StaffOnly>
+            <StaffOnly permission="manage"><Button
               variant="outline"
               className="text-destructive"
               onClick={() => setShowDeleteDialog(true)}
             >
               <Trash2 className="mr-2 h-4 w-4" />
               Delete
-            </Button>
+            </Button></StaffOnly>
           </div>
         </div>
 
@@ -545,7 +546,7 @@ function MentorDetailContent({ id }: { id: string }) {
       </div>
 
       {/* Status Dialog */}
-      <Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
+      <StaffOnly permission="manage"><Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Change Mentor Status</DialogTitle>
@@ -577,10 +578,10 @@ function MentorDetailContent({ id }: { id: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Delete Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+      <StaffOnly permission="manage"><Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Mentor</DialogTitle>
@@ -605,7 +606,7 @@ function MentorDetailContent({ id }: { id: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
     </StaffLayout>
   );
 }

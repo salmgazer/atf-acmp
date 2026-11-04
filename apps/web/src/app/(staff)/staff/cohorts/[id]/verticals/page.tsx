@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
 import { use, useState, useCallback } from "react";
 import Link from "next/link";
 import { StaffLayout } from "@/components/layouts";
@@ -66,8 +67,8 @@ function VerticalItem({
   isDragging,
   isDropTarget,
 }: VerticalItemProps) {
-  const capacityPercentage = vertical.briefCap > 0 
-    ? Math.round((vertical.briefCount / vertical.briefCap) * 100) 
+  const capacityPercentage = vertical.briefCap > 0
+    ? Math.round((vertical.briefCount / vertical.briefCap) * 100)
     : 0;
 
   return (
@@ -126,15 +127,15 @@ function VerticalItem({
         </div>
 
         <div className="flex items-center gap-1">
-          <Button
+          <StaffOnly permission="manage"><Button
             variant="ghost"
             size="icon"
             onClick={() => onEdit(vertical)}
             className="h-8 w-8"
           >
             <Pencil className="h-4 w-4" />
-          </Button>
-          <Button
+          </Button></StaffOnly>
+          <StaffOnly permission="manage"><Button
             variant="ghost"
             size="icon"
             onClick={() => onDeactivate(vertical)}
@@ -147,8 +148,8 @@ function VerticalItem({
             ) : (
               <Power className="h-4 w-4" />
             )}
-          </Button>
-          <Button
+          </Button></StaffOnly>
+          <StaffOnly permission="admin"><Button
             variant="ghost"
             size="icon"
             onClick={() => onDelete(vertical)}
@@ -157,7 +158,7 @@ function VerticalItem({
             title={vertical.briefCount > 0 ? "Cannot delete - has briefs" : "Delete"}
           >
             <Trash2 className="h-4 w-4" />
-          </Button>
+          </Button></StaffOnly>
         </div>
       </div>
     </div>
@@ -178,7 +179,7 @@ function VerticalsContent({ cohortId }: { cohortId: string }) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [selectedVertical, setSelectedVertical] = useState<Vertical | null>(null);
   const [formData, setFormData] = useState({ name: "", description: "", briefCap: 50 });
-  
+
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
 
@@ -197,11 +198,11 @@ function VerticalsContent({ cohortId }: { cohortId: string }) {
       const newOrder = [...verticals];
       const draggedIndex = newOrder.findIndex(v => v.id === draggedId);
       const dropIndex = newOrder.findIndex(v => v.id === dropTargetId);
-      
+
       if (draggedIndex !== -1 && dropIndex !== -1) {
         const [removed] = newOrder.splice(draggedIndex, 1);
         newOrder.splice(dropIndex, 0, removed);
-        
+
         reorderMutation.mutate({
           cohortId,
           verticalIds: newOrder.map(v => v.id),
@@ -307,10 +308,10 @@ function VerticalsContent({ cohortId }: { cohortId: string }) {
               <p className="text-muted-foreground">{cohort.name}</p>
             </div>
           </div>
-          <Button onClick={handleAdd}>
+          <StaffOnly permission="manage"><Button onClick={handleAdd}>
             <Plus className="mr-2 h-4 w-4" />
             Add Vertical
-          </Button>
+          </Button></StaffOnly>
         </div>
 
         {/* Summary */}
@@ -370,10 +371,10 @@ function VerticalsContent({ cohortId }: { cohortId: string }) {
               <p className="mt-2 text-sm text-muted-foreground">
                 Add verticals to organize briefs by industry or focus area.
               </p>
-              <Button className="mt-4" onClick={handleAdd}>
+              <StaffOnly permission="manage"><Button className="mt-4" onClick={handleAdd}>
                 <Plus className="mr-2 h-4 w-4" />
                 Add First Vertical
-              </Button>
+              </Button></StaffOnly>
             </div>
           ) : (
             <div className="space-y-2 p-4">
@@ -397,7 +398,7 @@ function VerticalsContent({ cohortId }: { cohortId: string }) {
       </div>
 
       {/* Add Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      <StaffOnly permission="manage"><Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Vertical</DialogTitle>
@@ -454,10 +455,10 @@ function VerticalsContent({ cohortId }: { cohortId: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Edit Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+      <StaffOnly permission="manage"><Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Vertical</DialogTitle>
@@ -514,10 +515,10 @@ function VerticalsContent({ cohortId }: { cohortId: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Delete Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+      <StaffOnly permission="admin"><Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Vertical</DialogTitle>
@@ -541,7 +542,7 @@ function VerticalsContent({ cohortId }: { cohortId: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
     </StaffLayout>
   );
 }

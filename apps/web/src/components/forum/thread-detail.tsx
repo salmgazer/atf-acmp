@@ -1,4 +1,6 @@
 "use client";
+import { useAuthStore } from "@/lib/stores/auth-store";
+import { hasStaffPermission } from "@acmp/shared";
 
 import { SafeHtml } from "@/components/ui/safe-html";
 
@@ -55,6 +57,9 @@ export function ThreadDetail({
   currentUserType,
   isStaff = false,
 }: ThreadDetailProps) {
+  const role = useAuthStore(state => state.user?.role);
+  const canWrite = role !== "viewer";
+  const canModerate = isStaff && hasStaffPermission(role, "manage");
   const { data: thread, isLoading, error } = useForumThread(threadId);
   const [replyContent, setReplyContent] = useState("");
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -119,7 +124,7 @@ export function ThreadDetail({
   };
 
   const canMarkSolution =
-    thread.authorId === currentUserId || isStaff;
+    canWrite && (thread.authorId === currentUserId || canModerate);
 
   return (
     <div className="space-y-6">
@@ -206,7 +211,7 @@ export function ThreadDetail({
             reply={reply}
             currentUserId={currentUserId}
             currentUserType={currentUserType}
-            isStaff={isStaff}
+            isStaff={canModerate}
             canMarkSolution={canMarkSolution}
             onReply={() => setReplyingTo(reply.id)}
             onDelete={() => handleDeleteReply(reply.id)}
@@ -222,7 +227,7 @@ export function ThreadDetail({
       </div>
 
       {/* Reply Form */}
-      {!thread.isLocked && (
+      {canWrite && !thread.isLocked && (
         <div className="rounded-lg border bg-card p-4">
           {replyingTo && (
             <div className="mb-3 p-2 rounded bg-muted flex items-center justify-between">
@@ -289,9 +294,10 @@ function ReplyCard({
   onDelete: () => void;
   onMarkSolution: () => void;
 }) {
+  const canWrite = useAuthStore(state => state.user?.role) !== "viewer";
   const isOwn =
     reply.authorId === currentUserId && reply.authorType === currentUserType;
-  const canDelete = isOwn || isStaff;
+  const canDelete = canWrite && (isOwn || isStaff);
 
   return (
     <div
@@ -331,10 +337,10 @@ function ReplyCard({
           </div>
 
           <div className="mt-3 flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={onReply}>
+            {canWrite && <Button variant="ghost" size="sm" onClick={onReply}>
               <Reply className="h-4 w-4 mr-1" />
               Reply
-            </Button>
+            </Button>}
             {canMarkSolution && !reply.isSolution && (
               <Button variant="ghost" size="sm" onClick={onMarkSolution}>
                 <Check className="h-4 w-4 mr-1" />

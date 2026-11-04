@@ -324,6 +324,18 @@ jobs:
             fi
           done
 
+      - name: Validate email sender configuration
+        env:
+          RESEND_FROM_EMAIL: ${{ vars.RESEND_FROM_EMAIL }}
+          RESEND_FROM_NAME: ${{ vars.RESEND_FROM_NAME }}
+        run: |
+          for name in RESEND_FROM_EMAIL RESEND_FROM_NAME; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is required for invitation emails"
+              exit 1
+            fi
+          done
+
       - name: Build and push API image
         uses: docker/build-push-action@v6
         with:
@@ -373,8 +385,8 @@ jobs:
               {"name": "SMTP_SECURE", "value": "${{ vars.SMTP_SECURE }}"},
               {"name": "SMTP_FROM_EMAIL", "value": "${{ vars.SMTP_FROM_EMAIL }}"},
               {"name": "SMTP_FROM_NAME", "value": "${{ vars.SMTP_FROM_NAME }}"},
-              {"name": "RESEND_FROM_EMAIL", "value": "${{ vars.RESEND_FROM_EMAIL }}"},
-              {"name": "RESEND_FROM_NAME", "value": "${{ vars.RESEND_FROM_NAME }}"},
+              {"name": "RESEND_FROM_EMAIL", "value": ${{ toJSON(vars.RESEND_FROM_EMAIL) }}},
+              {"name": "RESEND_FROM_NAME", "value": ${{ toJSON(vars.RESEND_FROM_NAME) }}},
               {"name": "RESEND_API_KEY", "value": "${{ secrets.RESEND_API_KEY }}"},
               {"name": "REDIS_HOST", "value": "${{ vars.REDIS_HOST }}"},
               {"name": "REDIS_PORT", "value": "6379"},

@@ -99,6 +99,7 @@ export class EvaluationsController {
 
   // ============ Job Management ============
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("jobs")
   @ApiOperation({ summary: "Get evaluation jobs with filters" })
   @ApiResponse({ status: 200, description: "List of jobs" })
@@ -106,6 +107,7 @@ export class EvaluationsController {
     return this.evaluationsService.getJobs(query);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("jobs/:id")
   @ApiOperation({ summary: "Get a specific evaluation job" })
   @ApiParam({ name: "id", description: "Job ID" })
@@ -133,6 +135,7 @@ export class EvaluationsController {
 
   // ============ Evaluation Results ============
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get()
   @ApiOperation({ summary: "Get evaluations with filters" })
   @ApiResponse({ status: 200, description: "List of evaluations" })
@@ -140,6 +143,7 @@ export class EvaluationsController {
     return this.evaluationsService.getEvaluations(query);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("stats/:cohortId/:stageId")
   @ApiOperation({ summary: "Get statistics for a cohort stage evaluations" })
   @ApiParam({ name: "cohortId", description: "Cohort ID" })
@@ -152,6 +156,7 @@ export class EvaluationsController {
     return this.evaluationsService.getStageStats(cohortId, stageId);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get(":id")
   @ApiOperation({ summary: "Get a specific evaluation" })
   @ApiParam({ name: "id", description: "Evaluation ID" })
@@ -163,6 +168,7 @@ export class EvaluationsController {
 
   // ============ Human Scoring ============
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR)
   @Post(":id/human-score")
   @Audit({
     action: AuditAction.UPDATE,
@@ -248,7 +254,7 @@ export class ParticipantEvaluationsController {
     }
 
     const evaluation = await this.evaluationsService.getEvaluationForTeam(teamId, stageId);
-    
+
     // Only return if published
     if (!evaluation || !evaluation.isPublished) {
       return null;

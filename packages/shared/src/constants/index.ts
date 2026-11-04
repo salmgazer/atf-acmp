@@ -1,5 +1,7 @@
 // Skills and interests
 export * from "./skills";
+export { hasStaffPermission } from "./staff-permissions";
+export type { StaffPermission } from "./staff-permissions";
 
 // Countries supported in ATF AI Challenge
 export const SUPPORTED_COUNTRIES = ["GH", "NG", "KE", "ZA"] as const;

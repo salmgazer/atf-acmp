@@ -1,5 +1,13 @@
 "use client";
 
+import { StaffOnly, useStaffPermission } from "@/components/auth/staff-only";
+import { useAuthStore } from "@/lib/stores/auth-store";
+import { isAxiosError } from "axios";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
 import { useState, useEffect } from "react";
 import { GroupFilter } from "@/components/cohorts/group-filter";
 import Link from "next/link";
@@ -8,6 +16,10 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import {
   useParticipants,
   useParticipantStatistics,
+  useResendParticipantInvites,
+  useParticipantInviteBatch,
+  canResendParticipantInvite,
+  type ParticipantInviteRequest,
   type Participant,
   type ParticipantStatus,
 } from "@/lib/api/hooks/use-participants";
@@ -22,6 +34,8 @@ import {
   UserCheck,
   UserX,
   Eye,
+  MoreHorizontal,
+  Send,
   Loader2,
   Upload,
   Download,
@@ -55,12 +69,22 @@ const statusTabs: { value: ParticipantStatus | "all"; label: string }[] = [
   { value: "assigned", label: "Assigned" },
 ];
 
-function ParticipantRow({ participant }: { participant: Participant }) {
+function ParticipantRow({ participant, selected, onSelect, onResend, busy }: {
+  participant: Participant;
+  selected: boolean;
+  onSelect: (checked: boolean) => void;
+  onResend: () => void;
+  busy: boolean;
+}) {
   const config = statusConfig[participant.status];
   const StatusIcon = config.icon;
 
   return (
     <tr className="border-b border-border/50 hover:bg-muted transition-colors">
+      <StaffOnly permission="manage"><td className="p-4">
+        <Checkbox aria-label={`Select ${participant.firstName} ${participant.lastName}`} checked={selected}
+          disabled={busy || !canResendParticipantInvite(participant)} onCheckedChange={checked => onSelect(checked === true)} />
+      </td></StaffOnly>
       <td className="p-4">
         <div>
           <Link
@@ -115,18 +139,26 @@ function ParticipantRow({ participant }: { participant: Participant }) {
         {format(new Date(participant.createdAt), "MMM d, yyyy")}
       </td>
       <td className="p-4">
-        <Link
-          href={`/staff/participants/${participant.id}`}
-          className="p-2 rounded-lg hover:bg-muted inline-flex text-muted-foreground hover:text-muted-foreground"
-        >
-          <Eye className="h-4 w-4" />
-        </Link>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label={`Actions for ${participant.firstName} ${participant.lastName}`}><MoreHorizontal className="h-4 w-4" /></Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild><Link href={`/staff/participants/${participant.id}`}><Eye className="mr-2 h-4 w-4" />View participant</Link></DropdownMenuItem>
+            <StaffOnly permission="manage"><DropdownMenuItem disabled={busy || !canResendParticipantInvite(participant)} onClick={onResend}>
+              <Send className="mr-2 h-4 w-4" />Resend invite
+            </DropdownMenuItem></StaffOnly>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </td>
     </tr>
   );
 }
 
 function ParticipantsContent() {
+  const canManage = useStaffPermission("manage");
+  const userId = useAuthStore(state => state.user?.id);
+  const batchStorageKey = userId ? `acmp-participant-invite-batch:${userId}` : null;
   const [statusFilter, setStatusFilter] = useState<ParticipantStatus | "all">("all");
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState("all");
@@ -136,10 +168,32 @@ function ParticipantsContent() {
   const [pageSize, setPageSize] = useState<PageSize>(25);
   const [showFilters, setShowFilters] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [confirmation, setConfirmation] = useState<"selected" | "pending" | null>(null);
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const resend = useResendParticipantInvites();
+  const { data: batch, isError: batchError, error: batchFailure, refetch: refreshBatch } = useParticipantInviteBatch(canManage ? batchId : null);
+  const sending = resend.isPending || (!!batchId && (!batch || batch.state === "queued" || batch.state === "active"));
+
+  useEffect(() => {
+    if (!canManage || !batchStorageKey) return;
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(batchStorageKey) || "null");
+      if (saved?.id && saved.createdAt > Date.now() - 86400000) setBatchId(saved.id);
+      else sessionStorage.removeItem(batchStorageKey);
+    } catch { /* Progress remains available for the current page when storage is unavailable. */ }
+  }, [canManage, batchStorageKey]);
+
+  useEffect(() => {
+    if (isAxiosError(batchFailure) && batchFailure.response?.status === 404) {
+      setBatchId(null);
+      if (batchStorageKey) try { sessionStorage.removeItem(batchStorageKey); } catch { /* Optional cache. */ }
+    }
+  }, [batchFailure, batchStorageKey]);
 
   // Get global cohort from store (set by sidebar)
   const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
-  
+
   const { data: cohortsData } = useCohorts({ limit: 100 });
   const cohorts = cohortsData?.data || [];
 
@@ -170,6 +224,33 @@ function ParticipantsContent() {
   const participants = participantsData?.data || [];
   const totalPages = participantsData?.totalPages || 1;
   const totalItems = participantsData?.total || 0;
+  const selectable = participants.filter(canResendParticipantInvite);
+  const allSelected = selectable.length > 0 && selectable.every(participant => selectedIds.includes(participant.id));
+  const someSelected = selectable.some(participant => selectedIds.includes(participant.id));
+  const cohortName = cohorts.find(cohort => cohort.id === effectiveCohortId)?.name;
+
+  useEffect(() => { setSelectedIds([]); setConfirmation(null); }, [page, pageSize, effectiveCohortId, statusFilter, search, groupFilter, canManage]);
+
+  const queueInvites = async (request: ParticipantInviteRequest) => {
+    try {
+      const queued = await resend.mutateAsync(request);
+      setBatchId(queued.id);
+      if (batchStorageKey) try { sessionStorage.setItem(batchStorageKey, JSON.stringify({ id: queued.id, createdAt: Date.now() })); } catch { /* Optional progress cache. */ }
+      setSelectedIds([]);
+      setConfirmation(null);
+    } catch { /* The mutation displays the request error; keep the selection for correction. */ }
+  };
+
+  const confirmResend = () => {
+    if (confirmation === "selected") return queueInvites({ mode: "selected", participantIds: selectedIds });
+    if (confirmation === "pending" && effectiveCohortId) return queueInvites({ mode: "pending", filters: {
+      cohortId: effectiveCohortId,
+      group: groupFilter.startsWith("group:") ? groupFilter.slice(6) : undefined,
+      ungrouped: groupFilter === "ungrouped" || undefined,
+      status: statusFilter === "all" ? undefined : statusFilter,
+      search: search || undefined,
+    } });
+  };
 
   const activeFilterCount = [
     groupFilter !== "all",
@@ -327,7 +408,7 @@ function ParticipantsContent() {
         </div>
 
         {/* Search and Filter Toggle */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
@@ -369,13 +450,16 @@ function ParticipantsContent() {
             )}
             Export CSV
           </button>
-          <Link
+          <StaffOnly permission="manage"><Link
             href="/staff/participants/import"
             className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-zinc-900 text-white hover:bg-zinc-800"
           >
             <Upload className="h-4 w-4" />
             Bulk Import
-          </Link>
+          </Link></StaffOnly>
+          <StaffOnly permission="manage"><Button variant="outline" disabled={!effectiveCohortId || sending} onClick={() => setConfirmation("pending")}>
+            <Send className="mr-2 h-4 w-4" />Resend pending invites
+          </Button></StaffOnly>
         </div>
 
         {/* Collapsible Filter Row */}
@@ -432,6 +516,21 @@ function ParticipantsContent() {
           </div>
         )}
 
+        <StaffOnly permission="manage">
+          {batchId && <div role="status" aria-live="polite" className="space-y-2 rounded-xl border border-border p-4">
+            <p className="font-medium">{batch?.state === "completed" ? "Invitation resend complete" : batch?.state === "failed" ? "Invitation resend stopped" : "Resending invitations"}</p>
+            {batch && <p className="text-sm text-muted-foreground">{batch.processed} of {batch.total} processed · {batch.sent} sent · {batch.failed} failed · {batch.skipped} skipped</p>}
+            {batch?.error && <p className="text-sm text-destructive">{batch.error}</p>}
+            {!!batch?.failed && <p className="text-sm text-destructive">Failed participant IDs: {batch.failures.map(failure => failure.participantId).join(", ")}{batch.failed > batch.failures.length ? " (first 100 shown)" : ""}</p>}
+            {batchError && <div className="flex items-center gap-3"><p className="text-sm text-destructive">Could not load progress.</p><Button size="sm" variant="outline" onClick={() => refreshBatch()}>Refresh progress</Button></div>}
+          </div>}
+          {selectedIds.length > 0 && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border p-4">
+            <span className="text-sm font-medium">{selectedIds.length} selected on this page</span>
+            <Button size="sm" disabled={sending} onClick={() => setConfirmation("selected")}><Send className="mr-2 h-4 w-4" />Resend selected invites</Button>
+            <Button size="sm" variant="ghost" disabled={sending} onClick={() => setSelectedIds([])}>Clear selection</Button>
+          </div>}
+        </StaffOnly>
+
         {/* Table */}
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
@@ -448,20 +547,24 @@ function ParticipantsContent() {
                 ? "No participants match your search."
                 : "Import participants to get started."}
             </p>
-            <Link
+            <StaffOnly permission="manage"><Link
               href="/staff/participants/import"
               className="inline-flex items-center gap-2 mt-4 px-4 py-2 text-sm font-medium rounded-lg bg-zinc-900 text-white hover:bg-zinc-800"
             >
               <Upload className="h-4 w-4" />
               Bulk Import
-            </Link>
+            </Link></StaffOnly>
           </div>
         ) : (
           <>
-            <div className="rounded-xl border border-border bg-card overflow-hidden">
+            <div className="rounded-xl border border-border bg-card overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-muted">
                   <tr>
+                    <StaffOnly permission="manage"><th className="p-4 w-12">
+                      <Checkbox aria-label="Select all pending participants on this page" checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                        disabled={sending || !selectable.length} onCheckedChange={checked => setSelectedIds(checked === true ? selectable.map(participant => participant.id) : [])} />
+                    </th></StaffOnly>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Name</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Participant ID</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Country</th>
@@ -475,7 +578,9 @@ function ParticipantsContent() {
                 </thead>
                 <tbody>
                   {participants.map((participant) => (
-                    <ParticipantRow key={participant.id} participant={participant} />
+                    <ParticipantRow key={participant.id} participant={participant} selected={selectedIds.includes(participant.id)} busy={sending}
+                      onSelect={checked => setSelectedIds(ids => checked ? [...new Set([...ids, participant.id])] : ids.filter(id => id !== participant.id))}
+                      onResend={() => queueInvites({ mode: "single", participantId: participant.id })} />
                   ))}
                 </tbody>
               </table>
@@ -492,6 +597,20 @@ function ParticipantsContent() {
             />
           </>
         )}
+        <StaffOnly permission="manage"><Dialog open={confirmation !== null} onOpenChange={open => { if (!open && !resend.isPending) setConfirmation(null); }}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>{confirmation === "selected" ? "Resend selected invites?" : "Resend pending invites?"}</DialogTitle>
+              <DialogDescription>{confirmation === "selected"
+                ? `Send the invitation email again to ${selectedIds.length} selected participant${selectedIds.length === 1 ? "" : "s"}?`
+                : `Send invitations to all pending participants in ${cohortName || "the selected cohort"} matching the current filters, across all pages?`}
+              </DialogDescription></DialogHeader>
+            <p className="text-sm text-muted-foreground">Pending participants still need to change their initial password. Inactive accounts and participants who have already changed it are excluded.</p>
+            <DialogFooter><Button variant="outline" disabled={resend.isPending} onClick={() => setConfirmation(null)}>Cancel</Button>
+              <Button disabled={resend.isPending || sending || (confirmation === "selected" && selectedIds.length === 0)} onClick={confirmResend}>
+                {resend.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Send invitations
+              </Button></DialogFooter>
+          </DialogContent>
+        </Dialog></StaffOnly>
       </div>
     </StaffLayout>
   );

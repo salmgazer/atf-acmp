@@ -22,30 +22,35 @@ import {
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("overview")
   @ApiOperation({ summary: "Get overview metrics for a cohort" })
   async getOverview(@Query() query: DashboardQueryDto): Promise<OverviewMetrics> {
     return this.dashboardService.getOverview(query);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("teams")
   @ApiOperation({ summary: "Get team statistics with breakdowns" })
   async getTeamStatistics(@Query() query: DashboardQueryDto): Promise<TeamStatistics> {
     return this.dashboardService.getTeamStatistics(query);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("submissions")
   @ApiOperation({ summary: "Get submission statistics by stage" })
   async getSubmissionStatistics(@Query() query: DashboardQueryDto): Promise<SubmissionStatistics> {
     return this.dashboardService.getSubmissionStatistics(query);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("evaluations")
   @ApiOperation({ summary: "Get evaluation statistics and score distribution" })
   async getEvaluationStatistics(@Query() query: DashboardQueryDto): Promise<EvaluationStatistics> {
     return this.dashboardService.getEvaluationStatistics(query);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("heatmap")
   @ApiOperation({ summary: "Get performance heatmap by vertical and country" })
   async getPerformanceHeatmap(@Query() query: DashboardQueryDto): Promise<PerformanceHeatmap> {

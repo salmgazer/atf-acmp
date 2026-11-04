@@ -42,7 +42,7 @@ export class ResourcesController {
   @ApiResponse({ status: 200, description: "Paginated resources" })
   async getResources(@Request() req: any, @Query() query: ResourceQueryDto) {
     const user = req.user;
-    
+
     // If participant, use participant-specific filtering
     if (user.participantId && user.participant?.cohortId) {
       const result = await this.resourcesService.getResourcesForParticipant(
@@ -110,6 +110,7 @@ export class ResourcesController {
 export class AdminResourcesController {
   constructor(private readonly resourcesService: ResourcesService) {}
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get()
   @ApiOperation({ summary: "Get all resources (admin)" })
   @ApiResponse({ status: 200, description: "Paginated resources" })
@@ -124,6 +125,7 @@ export class AdminResourcesController {
     };
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("stats")
   @ApiOperation({ summary: "Get resource statistics" })
   @ApiQuery({ name: "cohortId", required: false, description: "Filter by cohort" })
@@ -143,6 +145,7 @@ export class AdminResourcesController {
     };
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get(":id")
   @ApiOperation({ summary: "Get a resource by ID (admin)" })
   @ApiParam({ name: "id", description: "Resource ID" })

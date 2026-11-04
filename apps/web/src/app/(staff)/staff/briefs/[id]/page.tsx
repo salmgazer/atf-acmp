@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
 import { BriefEvents } from "@/components/briefs/brief-events";
 
 import { SafeHtml } from "@/components/ui/safe-html";
@@ -174,7 +175,7 @@ function BriefReviewContent({ id }: { id: string }) {
 
   const handleRestore = async () => {
     if (!selectedRevision || !user) return;
-    
+
     await restoreMutation.mutateAsync({
       briefId: id,
       revisionId: selectedRevision.id,
@@ -215,7 +216,7 @@ function BriefReviewContent({ id }: { id: string }) {
           {canReview && (
             <div className="flex items-center gap-2">
               {brief.status === "submitted" && (
-                <Button
+                <StaffOnly permission="review"><Button
                   variant="outline"
                   onClick={handleStartReview}
                   disabled={startReviewMutation.isPending}
@@ -224,37 +225,37 @@ function BriefReviewContent({ id }: { id: string }) {
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   )}
                   Start Review
-                </Button>
+                </Button></StaffOnly>
               )}
-              <Button
+              <StaffOnly permission="review"><Button
                 variant="outline"
                 onClick={() => setShowRevisionDialog(true)}
               >
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Request Revision
-              </Button>
-              <Button
+              </Button></StaffOnly>
+              <StaffOnly permission="review"><Button
                 variant="outline"
                 className="text-destructive"
                 onClick={() => setShowRejectDialog(true)}
               >
                 <ThumbsDown className="mr-2 h-4 w-4" />
                 Reject
-              </Button>
-              <Button onClick={() => setShowApproveDialog(true)}>
+              </Button></StaffOnly>
+              <StaffOnly permission="review"><Button onClick={() => setShowApproveDialog(true)}>
                 <ThumbsUp className="mr-2 h-4 w-4" />
                 Approve
-              </Button>
+              </Button></StaffOnly>
             </div>
           )}
 
           {/* Edit button - always available for staff */}
-          <Button asChild variant="outline">
+          <StaffOnly permission="manage"><Button asChild variant="outline">
             <Link href={`/staff/briefs/${id}/edit`}>
               <Pencil className="mr-2 h-4 w-4" />
               Edit Brief
             </Link>
-          </Button>
+          </Button></StaffOnly>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">
@@ -392,7 +393,7 @@ function BriefReviewContent({ id }: { id: string }) {
                             <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
                               <ActorIcon className="h-3 w-3" />
                               <span>
-                                {revision.actorName || "Unknown"} 
+                                {revision.actorName || "Unknown"}
                                 {actorConf && <span className="text-muted-foreground/70"> ({actorConf.label})</span>}
                               </span>
                             </div>
@@ -412,14 +413,14 @@ function BriefReviewContent({ id }: { id: string }) {
                             </Button>
                           )}
                           {canRestore && (
-                            <Button
+                            <StaffOnly permission="manage"><Button
                               variant="ghost"
                               size="sm"
                               onClick={() => handleOpenRestoreDialog(revision)}
                               title="Restore to this version"
                             >
                               <RotateCcw className="h-4 w-4" />
-                            </Button>
+                            </Button></StaffOnly>
                           )}
                         </div>
                       </div>
@@ -577,7 +578,7 @@ function BriefReviewContent({ id }: { id: string }) {
       </div>
 
       {/* Approve Dialog */}
-      <Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
+      <StaffOnly permission="review"><Dialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Approve Brief</DialogTitle>
@@ -606,10 +607,10 @@ function BriefReviewContent({ id }: { id: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Reject Dialog */}
-      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+      <StaffOnly permission="review"><Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reject Brief</DialogTitle>
@@ -642,10 +643,10 @@ function BriefReviewContent({ id }: { id: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Request Revision Dialog */}
-      <Dialog open={showRevisionDialog} onOpenChange={setShowRevisionDialog}>
+      <StaffOnly permission="review"><Dialog open={showRevisionDialog} onOpenChange={setShowRevisionDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Request Revision</DialogTitle>
@@ -677,7 +678,7 @@ function BriefReviewContent({ id }: { id: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Revision Detail Dialog */}
       <Dialog open={showRevisionDetailDialog} onOpenChange={setShowRevisionDetailDialog}>
@@ -694,7 +695,7 @@ function BriefReviewContent({ id }: { id: string }) {
               {selectedRevision?.actorName && ` by ${selectedRevision.actorName}`}
             </DialogDescription>
           </DialogHeader>
-          
+
           {selectedRevision && (
             <div className="space-y-4 py-4">
               <div className="flex items-center gap-2">
@@ -796,7 +797,7 @@ function BriefReviewContent({ id }: { id: string }) {
               Close
             </Button>
             {selectedRevision?.previousData && Object.keys(selectedRevision.previousData).length > 0 && (
-              <Button
+              <StaffOnly permission="manage"><Button
                 variant="outline"
                 onClick={() => {
                   setShowRevisionDetailDialog(false);
@@ -805,14 +806,14 @@ function BriefReviewContent({ id }: { id: string }) {
               >
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Restore This Version
-              </Button>
+              </Button></StaffOnly>
             )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Restore Confirmation Dialog */}
-      <Dialog open={showRestoreDialog} onOpenChange={setShowRestoreDialog}>
+      <StaffOnly permission="manage"><Dialog open={showRestoreDialog} onOpenChange={setShowRestoreDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Restore Previous Version</DialogTitle>
@@ -855,7 +856,7 @@ function BriefReviewContent({ id }: { id: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Image Preview Modal */}
       <Dialog open={!!selectedImage} onOpenChange={(open) => !open && setSelectedImage(null)}>

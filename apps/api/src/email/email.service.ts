@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import * as nodemailer from "nodemailer";
 import { Resend } from "resend";
@@ -155,6 +155,20 @@ export class EmailService {
     await this.sendEmail(to, subject, html);
   }
 
+  requireDeliveryConfiguration(): void {
+    if (!this.resendClient && !this.smtpTransporter && !this.mailchimpApiKey) {
+      throw new ServiceUnavailableException("Invitation email delivery is not configured");
+    }
+  }
+
+  async sendParticipantInviteEmail(params: ParticipantWelcomeEmailParams): Promise<void> {
+    this.requireDeliveryConfiguration();
+    const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
+    const html = this.getParticipantWelcomeTemplate(escape(params.firstName), escape(params.participantId), escape(params.portalUrl));
+    const text = `Hi ${params.firstName},\n\nYou have been invited to the ATF AI Challenge. Sign in with your email address and your Participant ID as your initial password.\n\nYour Participant ID: ${params.participantId}\n\nLogin: ${params.portalUrl}\n\nYou will be asked to change your password and complete your profile.\n\nThe ATF Team`;
+    await this.sendEmail(params.to, "Your invitation to ATF AI Challenge", html, text, undefined, true);
+  }
+
   async sendTeamFormationEmail(params: TeamFormationEmailParams): Promise<void> {
     const { to, firstName, teamName, cohortName } = params;
     const teamUrl = `${this.frontendUrl}/participant/team`;
@@ -209,7 +223,7 @@ The ATF Team`;
     await this.sendEmail(to, subject, html, text, calendar);
   }
 
-  private async sendEmail(to: string, subject: string, html: string, text?: string, calendar?: { method: "REQUEST" | "CANCEL"; content: string }): Promise<void> {
+  private async sendEmail(to: string, subject: string, html: string, text?: string, calendar?: { method: "REQUEST" | "CANCEL"; content: string }, requireDelivery = false): Promise<void> {
     // Try Resend first (primary email provider)
     if (this.resendClient) {
       try {
@@ -261,7 +275,7 @@ The ATF Team`;
 
     // Fall back to Mailchimp
     if (!this.mailchimpApiKey) {
-      if (calendar) throw new Error("Calendar invitation email delivery is not configured");
+      if (calendar || requireDelivery) throw new Error("Invitation email delivery is not configured");
       this.logger.warn(`Email not sent (no API key configured): ${to} - ${subject}`);
       this.logger.debug(`Email content: ${html}`);
       return;
@@ -294,10 +308,10 @@ The ATF Team`;
         throw new Error(`Mailchimp API error: ${error}`);
       }
 
-      if (calendar) {
+      if (calendar || requireDelivery) {
         const recipients = await response.json();
-        if (!Array.isArray(recipients) || recipients.some(result => !["sent", "queued", "scheduled"].includes(result.status))) {
-          throw new Error("Calendar invitation email was rejected by the provider");
+        if (!Array.isArray(recipients) || !recipients.length || recipients.some(result => !["sent", "queued", "scheduled"].includes(result.status))) {
+          throw new Error("Invitation email was rejected by the provider");
         }
       }
 
@@ -636,9 +650,11 @@ The ATF Team`;
   async sendOrganizationInvite(
     organizationName: string,
     email: string,
-    customMessage?: string
+    customMessage?: string,
+    requireDelivery = false
   ): Promise<boolean> {
-    const portalUrl = this.frontendUrl;
+    if (requireDelivery) this.requireDeliveryConfiguration();
+    const portalUrl = this.frontendUrl.replace(/\/$/, "");
 
     const html = this.getOrganizationInviteTemplate(organizationName, email, portalUrl, customMessage);
     const text = `
@@ -660,10 +676,11 @@ The ATF Team
     `;
 
     try {
-      await this.sendEmail(email, "You're Invited to ATF AI Challenge", html, text);
+      await this.sendEmail(email, "You're Invited to ATF AI Challenge", html, text, undefined, requireDelivery);
       return true;
     } catch (error) {
       this.logger.error(`Failed to send invite to ${email}`, error);
+      if (requireDelivery) throw new ServiceUnavailableException("Could not send the partner invitation. Please try again.");
       return false;
     }
   }
@@ -771,6 +788,11 @@ The ATF Team
     portalUrl: string,
     customMessage?: string
   ): string {
+    const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
+    organizationName = escape(organizationName);
+    email = escape(email);
+    portalUrl = escape(portalUrl.replace(/\/$/, ""));
+    customMessage = customMessage ? escape(customMessage) : undefined;
     return `
       <!DOCTYPE html>
       <html>
@@ -828,7 +850,8 @@ The ATF Team
 
   // ============ Mentor Welcome Email ============
 
-  async sendMentorWelcomeEmail(params: MentorWelcomeEmailParams): Promise<boolean> {
+  async sendMentorWelcomeEmail(params: MentorWelcomeEmailParams, requireDelivery = false): Promise<boolean> {
+    if (requireDelivery) this.requireDeliveryConfiguration();
     const { to, firstName, lastName, cohortName, portalUrl } = params;
 
     const subject = "Welcome to ATF AI Challenge - Mentor Portal";
@@ -857,11 +880,12 @@ The ATF Team
     `;
 
     try {
-      await this.sendEmail(to, subject, html, text);
+      await this.sendEmail(to, subject, html, text, undefined, requireDelivery);
       this.logger.log(`Mentor welcome email sent to ${to}`);
       return true;
     } catch (error) {
       this.logger.error(`Failed to send mentor welcome email to ${to}`, error);
+      if (requireDelivery) throw new ServiceUnavailableException("Could not send the mentor invitation. Please try again.");
       return false;
     }
   }
@@ -872,6 +896,10 @@ The ATF Team
     cohortName: string | undefined,
     portalUrl: string
   ): string {
+    const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
+    firstName = escape(firstName);
+    cohortName = cohortName ? escape(cohortName) : undefined;
+    portalUrl = escape(portalUrl.replace(/\/$/, ""));
     return `
       <!DOCTYPE html>
       <html>

@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
 import { useState, useEffect } from "react";
 import { formatDistanceToNow, format } from "date-fns";
 import {
@@ -87,11 +88,11 @@ const audienceOptions: { value: AnnouncementAudience; label: string; icon: typeo
 export default function AdminAnnouncementsPage() {
   // Get global cohort from store (set by sidebar)
   const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
-  
+
   // Local cohort filter - initialized from global but can be overridden
   const [localCohortId, setLocalCohortId] = useState<string | null>(null);
   const [hasInitialized, setHasInitialized] = useState(false);
-  
+
   // Initialize local cohort from global when component mounts or global changes (if not yet set locally)
   useEffect(() => {
     if (globalCohortId && !hasInitialized) {
@@ -99,10 +100,10 @@ export default function AdminAnnouncementsPage() {
       setHasInitialized(true);
     }
   }, [globalCohortId, hasInitialized]);
-  
+
   // Use local cohort if set, otherwise fall back to global
   const selectedCohortId = localCohortId || globalCohortId || "";
-  
+
   const [statusFilter, setStatusFilter] = useState<AnnouncementStatus | "all">("all");
   const [page, setPage] = useState(0);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -121,7 +122,7 @@ export default function AdminAnnouncementsPage() {
   });
 
   const { data: cohortsData } = useCohorts();
-  
+
   // Handle local cohort change (doesn't affect global sidebar)
   const handleCohortChange = (cohortId: string) => {
     setLocalCohortId(cohortId);
@@ -212,7 +213,7 @@ export default function AdminAnnouncementsPage() {
             Create and manage announcements for participants
           </p>
         </div>
-        <Button
+        <StaffOnly permission="manage"><Button
           onClick={() => {
             resetForm();
             setCreateDialogOpen(true);
@@ -221,7 +222,7 @@ export default function AdminAnnouncementsPage() {
         >
           <Plus className="mr-2 h-4 w-4" />
           New Announcement
-        </Button>
+        </Button></StaffOnly>
       </div>
 
       {/* Cohort Selection */}
@@ -332,28 +333,28 @@ export default function AdminAnnouncementsPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openEditDialog(announcement)}>
+                            <StaffOnly permission="manage"><DropdownMenuItem onClick={() => openEditDialog(announcement)}>
                               <Edit className="mr-2 h-4 w-4" />
                               Edit
-                            </DropdownMenuItem>
+                            </DropdownMenuItem></StaffOnly>
                             {announcement.status === "draft" && (
-                              <DropdownMenuItem
+                              <StaffOnly permission="manage"><DropdownMenuItem
                                 onClick={() => handlePublish(announcement.id)}
                               >
                                 <Send className="mr-2 h-4 w-4" />
                                 Publish Now
-                              </DropdownMenuItem>
+                              </DropdownMenuItem></StaffOnly>
                             )}
                             {announcement.status === "published" && (
-                              <DropdownMenuItem
+                              <StaffOnly permission="manage"><DropdownMenuItem
                                 onClick={() => handleArchive(announcement.id)}
                               >
                                 <Archive className="mr-2 h-4 w-4" />
                                 Archive
-                              </DropdownMenuItem>
+                              </DropdownMenuItem></StaffOnly>
                             )}
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem
+                            <StaffOnly permission="manage"><DropdownMenuItem
                               className="text-destructive"
                               onClick={() => {
                                 setSelectedAnnouncement(announcement);
@@ -362,7 +363,7 @@ export default function AdminAnnouncementsPage() {
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
                               Delete
-                            </DropdownMenuItem>
+                            </DropdownMenuItem></StaffOnly>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -405,7 +406,7 @@ export default function AdminAnnouncementsPage() {
       )}
 
       {/* Create Dialog */}
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+      <StaffOnly permission="manage"><Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Create Announcement</DialogTitle>
@@ -511,10 +512,10 @@ export default function AdminAnnouncementsPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Edit Dialog */}
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+      <StaffOnly permission="manage"><Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Announcement</DialogTitle>
@@ -590,10 +591,10 @@ export default function AdminAnnouncementsPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <StaffOnly permission="manage"><Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Announcement</DialogTitle>
@@ -615,7 +616,7 @@ export default function AdminAnnouncementsPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
     </div>
   );
 }
