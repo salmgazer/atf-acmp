@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
 import { useState } from "react";
 import Link from "next/link";
 import { StaffLayout } from "@/components/layouts";
@@ -260,12 +261,12 @@ function CohortsContent() {
             )}
             Export CSV
           </button>
-          <Button asChild className="bg-zinc-900 text-white hover:bg-zinc-800">
+          <StaffOnly permission="manage"><Button asChild className="bg-zinc-900 text-white hover:bg-zinc-800">
             <Link href="/staff/cohorts/new">
               <Plus className="mr-2 h-4 w-4" />
               New Cohort
             </Link>
-          </Button>
+          </Button></StaffOnly>
         </div>
 
         {/* Collapsible Filter Row */}
@@ -324,12 +325,12 @@ function CohortsContent() {
                 : "No cohorts yet. Create your first cohort to get started."}
             </p>
             {!searchQuery && statusFilter === "all" && (
-              <Button asChild className="mt-4 bg-zinc-900 text-white hover:bg-zinc-800">
+              <StaffOnly permission="manage"><Button asChild className="mt-4 bg-zinc-900 text-white hover:bg-zinc-800">
                 <Link href="/staff/cohorts/new">
                   <Plus className="mr-2 h-4 w-4" />
                   Create Cohort
                 </Link>
-              </Button>
+              </Button></StaffOnly>
             )}
           </div>
         ) : viewMode === "grid" ? (
@@ -376,7 +377,7 @@ function CohortsContent() {
       </div>
 
       {/* Delete Dialog */}
-      <Dialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
+      <StaffOnly permission="admin"><Dialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
         <DialogContent className="rounded-xl">
           <DialogHeader>
             <DialogTitle className="text-foreground">Delete Cohort</DialogTitle>
@@ -401,10 +402,10 @@ function CohortsContent() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Duplicate Dialog */}
-      <Dialog open={!!duplicateDialog} onOpenChange={() => setDuplicateDialog(null)}>
+      <StaffOnly permission="manage"><Dialog open={!!duplicateDialog} onOpenChange={() => setDuplicateDialog(null)}>
         <DialogContent className="rounded-xl">
           <DialogHeader>
             <DialogTitle className="text-foreground">Duplicate Cohort</DialogTitle>
@@ -437,7 +438,7 @@ function CohortsContent() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
     </StaffLayout>
   );
 }

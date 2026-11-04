@@ -15,7 +15,7 @@ import {
   MinLength,
   MaxLength,
 } from "class-validator";
-import { Type } from "class-transformer";
+import { Type, Transform } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { MentorStatus, MentorPaymentStatus } from "@/database/entities/mentor.entity";
 
@@ -97,6 +97,12 @@ export class CreateMentorDto {
 }
 
 export class UpdateMentorDto {
+  @ApiPropertyOptional({ description: "Email can only be changed while the mentor is imported" })
+  @IsOptional()
+  @Transform(({ value }) => typeof value === "string" ? value.trim().toLowerCase() : value)
+  @IsEmail()
+  email?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()

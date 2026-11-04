@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
 import { use, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -121,7 +122,7 @@ function PartnerDetailContent({ id }: { id: string }) {
   };
 
   const handleSendInvite = async () => {
-    await sendInviteMutation.mutateAsync({ id });
+    try { await sendInviteMutation.mutateAsync({ id }); } catch { /* The mutation displays the delivery error. */ }
   };
 
   const handleEditSave = async () => {
@@ -178,40 +179,40 @@ function PartnerDetailContent({ id }: { id: string }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {organization.status === "approved" && (
-              <Button variant="outline" onClick={handleSendInvite} disabled={sendInviteMutation.isPending}>
+            {organization.status === "approved" && organization.isActive && (
+              <StaffOnly permission="manage"><Button variant="outline" onClick={handleSendInvite} disabled={sendInviteMutation.isPending}>
                 {sendInviteMutation.isPending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Send className="mr-2 h-4 w-4" />
                 )}
-                Send Invite
-              </Button>
+                Resend Invite
+              </Button></StaffOnly>
             )}
             {organization.status === "pending" && (
               <>
-                <Button variant="default" onClick={handleApprove} disabled={approveMutation.isPending}>
+                <StaffOnly permission="manage"><Button variant="default" onClick={handleApprove} disabled={approveMutation.isPending}>
                   {approveMutation.isPending ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
                     <ThumbsUp className="mr-2 h-4 w-4" />
                   )}
                   Approve
-                </Button>
-                <Button
+                </Button></StaffOnly>
+                <StaffOnly permission="manage"><Button
                   variant="outline"
                   className="text-destructive"
                   onClick={() => setShowRejectDialog(true)}
                 >
                   <ThumbsDown className="mr-2 h-4 w-4" />
                   Reject
-                </Button>
+                </Button></StaffOnly>
               </>
             )}
-            <Button variant="outline" onClick={openEditDialog}>
+            <StaffOnly permission="manage"><Button variant="outline" onClick={openEditDialog}>
               <Pencil className="mr-2 h-4 w-4" />
               Edit
-            </Button>
+            </Button></StaffOnly>
           </div>
         </div>
 
@@ -458,7 +459,7 @@ function PartnerDetailContent({ id }: { id: string }) {
       </div>
 
       {/* Reject Dialog */}
-      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+      <StaffOnly permission="manage"><Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reject Partner</DialogTitle>
@@ -491,10 +492,10 @@ function PartnerDetailContent({ id }: { id: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Edit Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+      <StaffOnly permission="manage"><Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Edit Partner</DialogTitle>
@@ -567,7 +568,7 @@ function PartnerDetailContent({ id }: { id: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
     </StaffLayout>
   );
 }

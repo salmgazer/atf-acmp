@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
 import { useState } from "react";
 import { format } from "date-fns";
 import Link from "next/link";
@@ -168,26 +169,26 @@ export function EvaluationDashboard({ cohortId, stages }: EvaluationDashboardPro
             Trigger AI evaluations and manage human scoring
           </p>
         </div>
-        <Button onClick={() => setShowTriggerDialog(true)}>
+        <StaffOnly permission="manage"><Button onClick={() => setShowTriggerDialog(true)}>
           <Play className="mr-2 h-4 w-4" />
           Trigger Evaluation
-        </Button>
+        </Button></StaffOnly>
       </div>
 
       {/* Queue Status */}
-      <QueueStatus />
+      <StaffOnly permission="manage"><QueueStatus /></StaffOnly>
 
       {/* Stage Filter */}
       <Card>
         <CardContent className="pt-6">
           <div className="flex items-center gap-4">
             <Label>Filter by Stage:</Label>
-            <Select value={selectedStageId} onValueChange={setSelectedStageId}>
+            <Select value={selectedStageId || "all"} onValueChange={value => setSelectedStageId(value === "all" ? "" : value)}>
               <SelectTrigger className="w-64">
                 <SelectValue placeholder="All Stages" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">All Stages</SelectItem>
+                <SelectItem value="all">All Stages</SelectItem>
                 {stages?.map((stage) => (
                   <SelectItem key={stage.id} value={stage.id}>
                     Stage {stage.number}: {stage.name}
@@ -253,11 +254,11 @@ export function EvaluationDashboard({ cohortId, stages }: EvaluationDashboardPro
               <span className="text-sm text-muted-foreground">
                 {selectedEvaluations.length} selected
               </span>
-              <Button size="sm" onClick={handlePublish} disabled={publishMutation.isPending}>
+              <StaffOnly permission="manage"><Button size="sm" onClick={handlePublish} disabled={publishMutation.isPending}>
                 {publishMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 <Send className="mr-2 h-4 w-4" />
                 Publish
-              </Button>
+              </Button></StaffOnly>
             </div>
           )}
 
@@ -280,7 +281,7 @@ export function EvaluationDashboard({ cohortId, stages }: EvaluationDashboardPro
       </Tabs>
 
       {/* Trigger Dialog */}
-      <Dialog open={showTriggerDialog} onOpenChange={setShowTriggerDialog}>
+      <StaffOnly permission="manage"><Dialog open={showTriggerDialog} onOpenChange={setShowTriggerDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Trigger AI Evaluation</DialogTitle>
@@ -313,7 +314,7 @@ export function EvaluationDashboard({ cohortId, stages }: EvaluationDashboardPro
                 <span className="font-medium">Code Evaluation Mode</span>
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Will evaluate all teams with a GitHub repository set, analyzing code quality, 
+                Will evaluate all teams with a GitHub repository set, analyzing code quality,
                 commit history, documentation, and technical implementation.
               </p>
             </div>
@@ -328,7 +329,7 @@ export function EvaluationDashboard({ cohortId, stages }: EvaluationDashboardPro
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
     </div>
   );
 }
@@ -387,14 +388,14 @@ function EvaluationsTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-12">
+            <StaffOnly permission="manage"><TableHead className="w-12">
               <input
                 type="checkbox"
                 checked={selectedIds.length === evaluations.length}
                 onChange={toggleAll}
                 className="rounded"
               />
-            </TableHead>
+            </TableHead></StaffOnly>
             <TableHead>Team</TableHead>
             <TableHead>Stage</TableHead>
             <TableHead>AI Score</TableHead>
@@ -408,14 +409,14 @@ function EvaluationsTable({
         <TableBody>
           {evaluations.map((evaluation) => (
             <TableRow key={evaluation.id}>
-              <TableCell>
+              <StaffOnly permission="manage"><TableCell>
                 <input
                   type="checkbox"
                   checked={selectedIds.includes(evaluation.id)}
                   onChange={() => toggleSelection(evaluation.id)}
                   className="rounded"
                 />
-              </TableCell>
+              </TableCell></StaffOnly>
               <TableCell className="font-medium">
                 {evaluation.team?.name || "Unknown"}
               </TableCell>
@@ -479,12 +480,12 @@ function EvaluationsTable({
                         View Details
                       </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
+                    <StaffOnly permission="review"><DropdownMenuItem asChild>
                       <Link href={`/staff/evaluations/${evaluation.id}/score`}>
                         <Edit className="mr-2 h-4 w-4" />
                         Human Score
                       </Link>
-                    </DropdownMenuItem>
+                    </DropdownMenuItem></StaffOnly>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>
@@ -632,7 +633,7 @@ function JobsTable({
                   </TableCell>
                   <TableCell>
                     {(job.status === "failed" || job.status === "pending") && (
-                      <DropdownMenu>
+                      <StaffOnly permission="manage"><DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
                             <MoreHorizontal className="h-4 w-4" />
@@ -640,19 +641,19 @@ function JobsTable({
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           {job.status === "failed" && job.attempts < job.maxAttempts && (
-                            <DropdownMenuItem onClick={() => onRetry(job.id)}>
+                            <StaffOnly permission="manage"><DropdownMenuItem onClick={() => onRetry(job.id)}>
                               <RefreshCw className="mr-2 h-4 w-4" />
                               Retry
-                            </DropdownMenuItem>
+                            </DropdownMenuItem></StaffOnly>
                           )}
                           {job.status === "pending" && (
-                            <DropdownMenuItem onClick={() => onCancel(job.id)}>
+                            <StaffOnly permission="manage"><DropdownMenuItem onClick={() => onCancel(job.id)}>
                               <XCircle className="mr-2 h-4 w-4" />
                               Cancel
-                            </DropdownMenuItem>
+                            </DropdownMenuItem></StaffOnly>
                           )}
                         </DropdownMenuContent>
-                      </DropdownMenu>
+                      </DropdownMenu></StaffOnly>
                     )}
                   </TableCell>
                 </TableRow>

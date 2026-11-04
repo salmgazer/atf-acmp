@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly, useStaffPermission } from "@/components/auth/staff-only";
 import { useState, useEffect } from "react";
 import { GroupFilter } from "@/components/cohorts/group-filter";
 import Link from "next/link";
@@ -135,6 +136,7 @@ function TeamRow({ team }: { team: Team }) {
 }
 
 function TeamsContent() {
+  const canManage = useStaffPermission("manage");
   const [statusFilter, setStatusFilter] = useState<TeamStatus | "all">("all");
   const [search, setSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState("all");
@@ -148,7 +150,7 @@ function TeamsContent() {
 
   // Get global cohort from store (set by sidebar)
   const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
-  
+
   const { data: cohortsData } = useCohorts({ limit: 100 });
   const cohorts = cohortsData?.data || [];
 
@@ -180,7 +182,7 @@ function TeamsContent() {
   const { data: participantStats } = useParticipantStatistics(effectiveCohortId);
 
   // Team Formation hooks
-  const { data: formationPreview, isLoading: formationLoading } = useTeamFormationPreview(effectiveCohortId ?? "");
+  const { data: formationPreview, isLoading: formationLoading } = useTeamFormationPreview(canManage ? effectiveCohortId ?? "" : "");
   const runFormationMutation = useRunTeamFormation();
   const finalizeFormationMutation = useFinalizeTeamFormation();
   const clearFormationMutation = useClearTeamFormationPreview();
@@ -319,7 +321,7 @@ function TeamsContent() {
           </p>
         </div>
 
-        <CreateTeamDialog key={effectiveCohortId || "none"} cohortId={effectiveCohortId} groups={groupOptions} />
+        <StaffOnly permission="manage" key={effectiveCohortId || "none"}><CreateTeamDialog cohortId={effectiveCohortId} groups={groupOptions} /></StaffOnly>
 
         {/* Stats */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -352,7 +354,7 @@ function TeamsContent() {
         </div>
 
         {/* Team Formation Section */}
-        {effectiveCohortId && (participantsReadyForTeams > 0 || formationPreview) && (
+        {canManage && effectiveCohortId && (participantsReadyForTeams > 0 || formationPreview) && (
           <div className="rounded-xl border border-border bg-card p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -372,14 +374,14 @@ function TeamsContent() {
               <div className="flex items-center gap-2">
                 {formationPreview && (
                   <>
-                    <Button
+                    <StaffOnly permission="manage"><Button
                       variant="outline"
                       size="sm"
                       onClick={handleClearFormation}
                       disabled={clearFormationMutation.isPending}
                     >
                       Clear Preview
-                    </Button>
+                    </Button></StaffOnly>
                     <Button
                       size="sm"
                       onClick={() => setShowFormationDialog(true)}
@@ -391,7 +393,7 @@ function TeamsContent() {
                   </>
                 )}
                 {!formationPreview && (
-                  <Button
+                  <StaffOnly permission="manage"><Button
                     onClick={handleRunFormation}
                     disabled={runFormationMutation.isPending || formationLoading}
                   >
@@ -401,7 +403,7 @@ function TeamsContent() {
                       <Wand2 className="mr-2 h-4 w-4" />
                     )}
                     Run Team Formation
-                  </Button>
+                  </Button></StaffOnly>
                 )}
               </div>
             </div>
@@ -432,7 +434,7 @@ function TeamsContent() {
                 {formationPreview.statistics?.backfillStats?.teamsToBackfillCount > 0 && (
                   <div className="rounded-md bg-blue-50 dark:bg-blue-950/20 p-3 text-sm">
                     <p className="text-blue-800 dark:text-blue-200">
-                      <strong>Backfill:</strong> {formationPreview.statistics.backfillStats.participantsToBackfillCount} participants 
+                      <strong>Backfill:</strong> {formationPreview.statistics.backfillStats.participantsToBackfillCount} participants
                       will be added to {formationPreview.statistics.backfillStats.teamsToBackfillCount} existing teams to reach optimal size.
                     </p>
                   </div>
@@ -466,7 +468,7 @@ function TeamsContent() {
 
         {/* Pending Removal Requests Alert */}
         {pendingRemovalCount > 0 && (
-          <Link
+          <StaffOnly permission="manage"><Link
             href="/staff/teams/removal-requests"
             className="flex items-center justify-between p-4 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
           >
@@ -486,7 +488,7 @@ function TeamsContent() {
             <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
               Review requests →
             </span>
-          </Link>
+          </Link></StaffOnly>
         )}
 
         {/* Search and Filter Toggle */}
@@ -672,16 +674,16 @@ function TeamsContent() {
       </div>
 
       {/* Team Formation Finalize Dialog */}
-      <Dialog open={showFormationDialog} onOpenChange={setShowFormationDialog}>
+      <StaffOnly permission="manage"><Dialog open={showFormationDialog} onOpenChange={setShowFormationDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Finalize Team Formation</DialogTitle>
             <DialogDescription>
-              This will create {formationPreview?.statistics?.proposedTeamCount ?? 0} new teams 
+              This will create {formationPreview?.statistics?.proposedTeamCount ?? 0} new teams
               with {formationPreview?.statistics?.totalEligibleParticipants ?? 0} participants.
               {formationPreview?.statistics?.backfillStats?.teamsToBackfillCount && formationPreview.statistics.backfillStats.teamsToBackfillCount > 0 && (
                 <span className="block mt-2">
-                  Additionally, {formationPreview.statistics.backfillStats.participantsToBackfillCount} participants 
+                  Additionally, {formationPreview.statistics.backfillStats.participantsToBackfillCount} participants
                   will be added to existing teams.
                 </span>
               )}
@@ -705,7 +707,7 @@ function TeamsContent() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
     </StaffLayout>
   );
 }

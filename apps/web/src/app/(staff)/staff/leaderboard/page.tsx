@@ -1,4 +1,5 @@
 "use client";
+import { StaffOnly } from "@/components/auth/staff-only";
 
 import { useState, useMemo } from "react";
 import { StaffLayout } from "@/components/layouts";
@@ -127,7 +128,7 @@ function LeaderboardContent() {
               )}
               Export CSV
             </Button>
-            <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+            <StaffOnly permission="manage"><Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
               <DialogTrigger asChild>
                 <Button variant="outline">
                   <Settings className="mr-2 h-4 w-4" />
@@ -186,7 +187,7 @@ function LeaderboardContent() {
                   </div>
                 </div>
               </DialogContent>
-            </Dialog>
+            </Dialog></StaffOnly>
           </div>
         </div>
 

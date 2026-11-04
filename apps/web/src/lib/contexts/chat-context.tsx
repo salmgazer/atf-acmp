@@ -6,7 +6,7 @@ import { io, Socket } from "socket.io-client";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
 // Staff roles that should exclude team channel notifications
-const STAFF_ROLES = ["admin", "super_admin", "program_manager", "reviewer", "evaluator"];
+const STAFF_ROLES = ["super_admin", "program_manager", "evaluator", "viewer"];
 
 interface ChatContextValue {
   isConnected: boolean;
@@ -45,7 +45,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
   const userIdRef = useRef(user?.id);
   const userRoleRef = useRef(user?.role);
   const activeChannelIdRef = useRef<string | null>(null);
-  
+
   tokenRef.current = token;
   userIdRef.current = user?.id;
   userRoleRef.current = user?.role;
@@ -75,13 +75,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
       );
       if (response.ok) {
         const channels = await response.json();
-        
+
         // For staff users, exclude team channels from the nav badge count
         const isUserStaff = userRoleRef.current && STAFF_ROLES.includes(userRoleRef.current.toLowerCase());
         const filteredChannels = isUserStaff
           ? channels.filter((c: any) => c.channel?.type !== "team")
           : channels;
-        
+
         const total = filteredChannels.reduce((sum: number, c: any) => sum + (c.unreadCount || 0), 0);
         setTotalUnreadCount(total);
       }
@@ -144,14 +144,14 @@ export function ChatProvider({ children }: ChatProviderProps) {
       const isViewingChannel = channelId === currentActiveChannel;
       const isUserStaff = userRoleRef.current && STAFF_ROLES.includes(userRoleRef.current.toLowerCase());
       const isTeamChannel = channelType === "team";
-      
+
       // Staff should not get badge notifications for team channels
       const shouldSkipForStaff = isUserStaff && isTeamChannel;
-      
+
       if (!isOwnMessage && !isViewingChannel && !shouldSkipForStaff) {
         setTotalUnreadCount((prev) => prev + 1);
       }
-      
+
       // If viewing this channel, mark as read immediately so the server-side
       // unread count stays at 0 when we invalidate queries
       if (isViewingChannel && !isOwnMessage) {
@@ -171,7 +171,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
           console.error("Failed to mark as read:", error);
         }
       }
-      
+
       // Invalidate queries so the chat page updates
       queryClient.invalidateQueries({ queryKey: ["chat", "channels"] });
       queryClient.invalidateQueries({ queryKey: ["chat", "messages", channelId] });
@@ -184,13 +184,13 @@ export function ChatProvider({ children }: ChatProviderProps) {
   }, [token, isAuthenticated, queryClient]);
 
   return (
-    <ChatContext.Provider value={{ 
-      isConnected, 
-      totalUnreadCount, 
+    <ChatContext.Provider value={{
+      isConnected,
+      totalUnreadCount,
       activeChannelId,
       setActiveChannelId,
-      refreshUnreadCount, 
-      decrementUnreadCount 
+      refreshUnreadCount,
+      decrementUnreadCount
     }}>
       {children}
     </ChatContext.Provider>

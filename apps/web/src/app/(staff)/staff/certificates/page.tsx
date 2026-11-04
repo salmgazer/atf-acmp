@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
 import { useState } from "react";
 import {
   Award,
@@ -142,13 +143,13 @@ export default function AdminCertificatesPage() {
             Generate and manage participant certificates
           </p>
         </div>
-        <Button
+        <StaffOnly permission="manage"><Button
           onClick={() => setGenerateDialogOpen(true)}
           disabled={!selectedCohortId}
         >
           <FileDown className="mr-2 h-4 w-4" />
           Generate Certificates
-        </Button>
+        </Button></StaffOnly>
       </div>
 
       {/* Cohort Selection */}
@@ -267,20 +268,20 @@ export default function AdminCertificatesPage() {
                         <TableCell>{cert.finalScore?.toFixed(1) || "-"}</TableCell>
                         <TableCell>{cert.downloadCount}</TableCell>
                         <TableCell>
-                          <DropdownMenu>
+                          <StaffOnly permission="manage"><DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="icon">
                                 <MoreHorizontal className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem
+                              <StaffOnly permission="manage"><DropdownMenuItem
                                 onClick={() => handleRegenerate(cert.id)}
                               >
                                 <RefreshCw className="mr-2 h-4 w-4" />
                                 Regenerate
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
+                              </DropdownMenuItem></StaffOnly>
+                              <StaffOnly permission="manage"><DropdownMenuItem
                                 onClick={() => {
                                   setSelectedCertificate(cert);
                                   setDeleteDialogOpen(true);
@@ -289,9 +290,9 @@ export default function AdminCertificatesPage() {
                               >
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 Delete
-                              </DropdownMenuItem>
+                              </DropdownMenuItem></StaffOnly>
                             </DropdownMenuContent>
-                          </DropdownMenu>
+                          </DropdownMenu></StaffOnly>
                         </TableCell>
                       </TableRow>
                     ))
@@ -333,7 +334,7 @@ export default function AdminCertificatesPage() {
       )}
 
       {/* Generate Dialog */}
-      <Dialog open={generateDialogOpen} onOpenChange={setGenerateDialogOpen}>
+      <StaffOnly permission="manage"><Dialog open={generateDialogOpen} onOpenChange={setGenerateDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Generate Certificates</DialogTitle>
@@ -366,10 +367,10 @@ export default function AdminCertificatesPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <StaffOnly permission="manage"><Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Certificate</DialogTitle>
@@ -391,7 +392,7 @@ export default function AdminCertificatesPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
     </div>
   );
 }

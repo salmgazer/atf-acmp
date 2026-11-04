@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ServiceUnavailableException,
   Logger,
   Inject,
   forwardRef,
@@ -22,6 +23,9 @@ import {
 import { Team, TeamStatus, TeamMember } from "@/database/entities/team.entity";
 import { Cohort } from "@/database/entities/cohort.entity";
 import { User, Role } from "@/database/entities/user.entity";
+import { RefreshToken } from "@/database/entities/refresh-token.entity";
+import { VerificationCode, VerificationCodeType } from "@/database/entities/verification-code.entity";
+import { SocketSessionsService } from "@/auth/socket-sessions.service";
 import { ChatService } from "@/modules/chat/chat.service";
 import { OneSignalService } from "@/modules/notifications/onesignal.service";
 import { EmailService } from "@/email/email.service";
@@ -71,6 +75,7 @@ export class MentorsService {
     private readonly oneSignalService: OneSignalService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
+    private readonly socketSessions: SocketSessionsService,
   ) {
     this.frontendUrl = this.configService.get<string>("FRONTEND_URL", "https://challenge.atf.africa");
   }
@@ -413,10 +418,63 @@ export class MentorsService {
   }
 
   async update(id: string, dto: UpdateMentorDto): Promise<Mentor> {
-    const mentor = await this.findOne(id);
-    Object.assign(mentor, dto);
-    await this.mentorRepository.save(mentor);
+    let changedUserId: string | undefined;
+    try {
+      await this.mentorRepository.manager.transaction(async manager => {
+        const mentors = manager.getRepository(Mentor);
+        const users = manager.getRepository(User);
+        const mentor = await mentors.findOne({ where: { id }, lock: { mode: "pessimistic_write" } });
+        if (!mentor) throw new NotFoundException("Mentor not found");
+        const email = dto.email?.trim().toLowerCase();
+        const { email: _email, ...changes } = dto;
+        if (email !== undefined && email !== mentor.email.toLowerCase()) {
+          // Check persisted status before accepting a simultaneous status update.
+          if (mentor.status !== MentorStatus.IMPORTED) throw new BadRequestException("Email can only be changed while the mentor is imported");
+          const duplicate = await mentors.findOne({ where: { email: ILike(email), id: Not(id) }, withDeleted: true });
+          if (duplicate) throw new ConflictException("A mentor with this email already exists");
+          const login = await users.findOne({ where: { email: ILike(mentor.email) }, withDeleted: true, lock: { mode: "pessimistic_write" } });
+          if (login && (login.role !== Role.MENTOR || login.deletedAt)) throw new BadRequestException("The linked login account is unavailable for a mentor email change");
+          const duplicateUser = await users.findOne({ where: { email: ILike(email), ...(login ? { id: Not(login.id) } : {}) }, withDeleted: true });
+          if (duplicateUser) throw new ConflictException("This email is already used by another account");
+          Object.assign(mentor, changes);
+          mentor.firebaseUid = null as any;
+          if (login) {
+            const now = new Date();
+            await users.update(login.id, {
+              email, firstName: mentor.firstName, lastName: mentor.lastName,
+              firebaseUid: null as any, passwordHash: null as any,
+              passwordResetToken: null, passwordResetExpires: null, passwordChangedAt: now,
+            });
+            await manager.getRepository(RefreshToken).update({ userId: login.id, isRevoked: false }, { isRevoked: true, revokedAt: now, revokedReason: "Mentor email changed" });
+            await manager.getRepository(VerificationCode).update({ userId: login.id, type: VerificationCodeType.MAGIC_LINK, usedAt: IsNull() }, { usedAt: now });
+            changedUserId = login.id;
+          } else {
+            await users.save(users.create({ email, firstName: mentor.firstName, lastName: mentor.lastName, role: Role.MENTOR, isActive: true }));
+          }
+          mentor.email = email;
+        } else Object.assign(mentor, changes);
+        await mentors.save(mentor);
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === "23505") throw new ConflictException("This email is already used by another account");
+      throw error;
+    }
+    if (changedUserId) this.socketSessions.revokePrincipal(changedUserId);
     return this.findOne(id);
+  }
+
+  async resendInvite(id: string): Promise<{ message: string }> {
+    const mentor = await this.findOne(id);
+    if (mentor.status !== MentorStatus.IMPORTED) throw new BadRequestException("Invitations can only be resent to imported mentors");
+    const user = await this.userRepository.findOne({ where: { email: mentor.email }, withDeleted: true });
+    if (user && (user.role !== Role.MENTOR || !user.isActive || user.deletedAt)) throw new BadRequestException("The mentor login account is not active or has a different role");
+    if (!user) await this.ensureUserRecordExists(mentor);
+    const sent = await this.emailService.sendMentorWelcomeEmail({
+      to: mentor.email, firstName: mentor.firstName, lastName: mentor.lastName,
+      cohortName: mentor.cohort?.name, portalUrl: this.frontendUrl.replace(/\/$/, ""),
+    }, true);
+    if (!sent) throw new ServiceUnavailableException("Could not send the mentor invitation. Please try again.");
+    return { message: "Mentor invitation sent" };
   }
 
   async updateFirebaseUid(id: string, firebaseUid: string): Promise<Mentor> {

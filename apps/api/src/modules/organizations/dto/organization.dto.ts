@@ -8,6 +8,9 @@ import {
   MaxLength,
   MinLength,
   IsArray,
+  ArrayMinSize,
+  ArrayMaxSize,
+  ArrayUnique,
   ValidateNested,
   IsUUID,
 } from "class-validator";
@@ -264,6 +267,9 @@ export class SendInviteDto {
 
 export class BulkSendInvitesDto {
   @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
+  @ArrayUnique()
   @IsUUID("4", { each: true })
   organizationIds: string[];
 

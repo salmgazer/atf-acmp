@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { canAccessStaffPage } from "@/lib/auth/staff-permissions";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -91,20 +92,20 @@ export function StaffLayout({ children }: StaffLayoutProps) {
   const { user, logout } = useAuthStore();
   const { totalUnreadCount } = useChatContext();
   const [mobileOpen, setMobileOpen] = useState(false);
-  
+
   // Global cohort context
-  const { 
-    globalCohort, 
+  const {
+    globalCohort,
     globalCohortId,
-    cohorts, 
-    setCohorts, 
-    setGlobalCohortById, 
-    initializeGlobalCohort 
+    cohorts,
+    setCohorts,
+    setGlobalCohortById,
+    initializeGlobalCohort
   } = useStaffCohortStore();
-  
+
   // Fetch cohorts
   const { data: cohortsData } = useCohorts({ limit: 100 });
-  
+
   // Update store when cohorts are fetched
   useEffect(() => {
     if (cohortsData?.data && cohortsData.data.length > 0) {
@@ -134,11 +135,11 @@ export function StaffLayout({ children }: StaffLayoutProps) {
           {title}
         </p>
       )}
-      {items.map((item) => {
+      {items.filter(item => canAccessStaffPage(user?.role, item.href)).map((item) => {
         const isActive = pathname.startsWith(item.href);
         const isChatItem = item.href === "/staff/chat";
         const showBadge = isChatItem && totalUnreadCount > 0;
-        
+
         return (
           <Link
             key={item.href}
@@ -269,7 +270,7 @@ export function StaffLayout({ children }: StaffLayoutProps) {
             <div className="flex justify-center pb-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button 
+                  <button
                     className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent/50 hover:bg-accent transition-colors"
                     title={globalCohort?.name || "Select cohort"}
                   >
@@ -297,12 +298,12 @@ export function StaffLayout({ children }: StaffLayoutProps) {
               </DropdownMenu>
             </div>
           )}
-          
+
           <NavSection title="Overview" items={overviewItems} />
           <NavSection title="Management" items={managementItems} />
           <NavSection title="Settings" items={settingsItems} />
         </nav>
-        
+
         {/* Version number */}
         <div className={cn(
           "border-t border-border/50 py-3",
@@ -417,7 +418,7 @@ export function StaffLayout({ children }: StaffLayoutProps) {
                   </DropdownMenuPortal>
                 </DropdownMenuSub>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   onClick={handleLogout}
                   className="flex items-center gap-2 text-destructive focus:text-destructive cursor-pointer"
                 >

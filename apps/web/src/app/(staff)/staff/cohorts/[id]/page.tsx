@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly, useStaffPermission } from "@/components/auth/staff-only";
 import { use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -58,6 +59,7 @@ const statusTransitions: Record<CohortStatus, { next: CohortStatus | null; label
 };
 
 function CohortDetailContent({ id }: { id: string }) {
+  const canManage = useStaffPermission("manage");
   const router = useRouter();
   const { data: cohort, isLoading, error } = useCohort(id);
   const { data: statistics } = useCohortStatistics(id);
@@ -125,29 +127,29 @@ function CohortDetailContent({ id }: { id: string }) {
           </div>
           <div className="flex items-center gap-2">
             {transition.next && (
-              <Button
+              <StaffOnly permission="manage"><Button
                 variant="default"
                 onClick={() => setShowStatusDialog(true)}
               >
                 <transition.icon className="mr-2 h-4 w-4" />
                 {transition.label}
-              </Button>
+              </Button></StaffOnly>
             )}
-            <Button asChild variant="outline">
+            <StaffOnly permission="manage"><Button asChild variant="outline">
               <Link href={`/staff/cohorts/${id}/edit`}>
                 <Pencil className="mr-2 h-4 w-4" />
                 Edit
               </Link>
-            </Button>
+            </Button></StaffOnly>
             {cohort.status === "draft" && (
-              <Button
+              <StaffOnly permission="admin"><Button
                 variant="outline"
                 className="text-destructive"
                 onClick={() => setShowDeleteDialog(true)}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete
-              </Button>
+              </Button></StaffOnly>
             )}
           </div>
         </div>
@@ -164,12 +166,12 @@ function CohortDetailContent({ id }: { id: string }) {
                 <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
                   This cohort doesn&apos;t have any stages set up yet. Stages are required to manage submissions and evaluations.
                 </p>
-                <Button asChild className="mt-3" size="sm">
+                <StaffOnly permission="manage"><Button asChild className="mt-3" size="sm">
                   <Link href={`/staff/cohorts/${id}/stages`}>
                     <ClipboardList className="mr-2 h-4 w-4" />
                     Configure Stages
                   </Link>
-                </Button>
+                </Button></StaffOnly>
               </div>
             </div>
           </div>
@@ -181,9 +183,9 @@ function CohortDetailContent({ id }: { id: string }) {
               <Tags className="h-5 w-5" />
               Groups ({cohort.groups?.length || 0})
             </h2>
-            <Button asChild variant="outline" size="sm">
+            <StaffOnly permission="manage"><Button asChild variant="outline" size="sm">
               <Link href={`/staff/cohorts/${id}/edit#groups`}>Manage groups</Link>
-            </Button>
+            </Button></StaffOnly>
           </div>
           <Separator className="my-4" />
           {cohort.groups?.length ? (
@@ -193,7 +195,7 @@ function CohortDetailContent({ id }: { id: string }) {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">No groups configured. Use Manage groups to add them.</p>
+            <p className="text-sm text-muted-foreground">No groups configured.{canManage && " Use Manage groups to add them."}</p>
           )}
         </section>
         {/* Stats */}
@@ -268,7 +270,7 @@ function CohortDetailContent({ id }: { id: string }) {
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">Mentor Session Fee</dt>
                 <dd className="font-medium">
-                  {cohort.sessionRate 
+                  {cohort.sessionRate
                     ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cohort.sessionRate)
                     : "Not set"}
                 </dd>
@@ -342,7 +344,7 @@ function CohortDetailContent({ id }: { id: string }) {
                 Verticals ({verticals?.length || 0})
               </h2>
               <Button asChild variant="outline" size="sm">
-                <Link href={`/staff/cohorts/${id}/verticals`}>Manage</Link>
+                <Link href={`/staff/cohorts/${id}/verticals`}>{canManage ? "Manage" : "View"}</Link>
               </Button>
             </div>
             <Separator className="my-4" />
@@ -374,7 +376,7 @@ function CohortDetailContent({ id }: { id: string }) {
               </h2>
               <Button asChild variant={hasNoStages ? "default" : "outline"} size="sm">
                 <Link href={`/staff/cohorts/${id}/stages`}>
-                  {hasNoStages ? "Add Stages" : "Manage"}
+                  {canManage ? hasNoStages ? "Add Stages" : "Manage" : "View"}
                 </Link>
               </Button>
             </div>
@@ -417,7 +419,7 @@ function CohortDetailContent({ id }: { id: string }) {
       </div>
 
       {/* Status Change Dialog */}
-      <Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
+      <StaffOnly permission="manage"><Dialog open={showStatusDialog} onOpenChange={setShowStatusDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{transition.label} Cohort</DialogTitle>
@@ -443,10 +445,10 @@ function CohortDetailContent({ id }: { id: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
 
       {/* Delete Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+      <StaffOnly permission="admin"><Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Cohort</DialogTitle>
@@ -470,7 +472,7 @@ function CohortDetailContent({ id }: { id: string }) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog></StaffOnly>
     </StaffLayout>
   );
 }
@@ -481,7 +483,7 @@ export default function CohortDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  
+
   return (
     <ProtectedRoute portal="staff">
       <CohortDetailContent id={id} />

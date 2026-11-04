@@ -1,5 +1,6 @@
 "use client";
 
+import { StaffOnly } from "@/components/auth/staff-only";
 import { useState, useEffect } from "react";
 import { StaffLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -77,10 +78,10 @@ export default function SubmissionsReviewPage() {
 
   // Get global cohort from store (set by sidebar)
   const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
-  
+
   const { data: cohortsData, isLoading: cohortsLoading } = useCohorts();
   const cohorts = cohortsData?.data || [];
-  
+
   // Initialize local cohort from global when component mounts (if not yet set locally)
   useEffect(() => {
     if (globalCohortId && !hasInitialized) {
@@ -88,12 +89,12 @@ export default function SubmissionsReviewPage() {
       setHasInitialized(true);
     }
   }, [globalCohortId, hasInitialized]);
-  
+
   // Use local cohort if explicitly set, otherwise fall back to global
   const effectiveCohortId = selectedCohortId ?? globalCohortId ?? undefined;
-  
+
   const { data: stages, isLoading: stagesLoading } = useStages(effectiveCohortId);
-  
+
   // Filter to stages that require manual approval
   const approvalStages = stages?.filter((s) => s.requiresManualApproval) || [];
 
@@ -249,14 +250,14 @@ export default function SubmissionsReviewPage() {
               {canReview && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => handleApproveClick(row)}>
+                  <StaffOnly permission="review"><DropdownMenuItem onClick={() => handleApproveClick(row)}>
                     <CheckCircle2 className="mr-2 h-4 w-4 text-green-600" />
                     Approve
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleRejectClick(row)}>
+                  </DropdownMenuItem></StaffOnly>
+                  <StaffOnly permission="review"><DropdownMenuItem onClick={() => handleRejectClick(row)}>
                     <XCircle className="mr-2 h-4 w-4 text-red-600" />
                     Reject
-                  </DropdownMenuItem>
+                  </DropdownMenuItem></StaffOnly>
                 </>
               )}
             </DropdownMenuContent>
@@ -286,8 +287,8 @@ export default function SubmissionsReviewPage() {
                   {cohortsLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <Select 
-                      value={selectedCohortId ?? globalCohortId ?? ""} 
+                    <Select
+                      value={selectedCohortId ?? globalCohortId ?? ""}
                       onValueChange={(v) => {
                         setSelectedCohortId(v || null);
                         setSelectedStageId(""); // Reset stage when cohort changes
@@ -309,8 +310,8 @@ export default function SubmissionsReviewPage() {
 
                 <div className="space-y-2">
                   <Label>Stage (Requires Approval)</Label>
-                  <Select 
-                    value={selectedStageId} 
+                  <Select
+                    value={selectedStageId}
                     onValueChange={setSelectedStageId}
                     disabled={!effectiveCohortId || stagesLoading}
                   >
@@ -381,7 +382,7 @@ export default function SubmissionsReviewPage() {
                 <CheckCircle2 className="h-12 w-12 text-green-500 mb-4" />
                 <h3 className="text-lg font-medium mb-1">All Caught Up!</h3>
                 <p className="text-muted-foreground text-center max-w-md">
-                  {statusFilter === "pending_approval" 
+                  {statusFilter === "pending_approval"
                     ? "There are no submissions pending your approval."
                     : `No submissions found with status "${statusFilter || "any"}".`}
                 </p>
@@ -404,7 +405,7 @@ export default function SubmissionsReviewPage() {
         </div>
 
         {/* Approve Dialog */}
-        <Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
+        <StaffOnly permission="review"><Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Approve Submission</DialogTitle>
@@ -437,10 +438,10 @@ export default function SubmissionsReviewPage() {
               </Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+        </Dialog></StaffOnly>
 
         {/* Reject Dialog */}
-        <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <StaffOnly permission="review"><Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Reject Submission</DialogTitle>
@@ -463,9 +464,9 @@ export default function SubmissionsReviewPage() {
               <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button 
-                variant="destructive" 
-                onClick={handleConfirmReject} 
+              <Button
+                variant="destructive"
+                onClick={handleConfirmReject}
                 disabled={rejectMutation.isPending || !rejectionReason.trim()}
               >
                 {rejectMutation.isPending ? (
@@ -477,7 +478,7 @@ export default function SubmissionsReviewPage() {
               </Button>
             </DialogFooter>
           </DialogContent>
-        </Dialog>
+        </Dialog></StaffOnly>
 
         {/* View Full Submission Dialog */}
         <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
@@ -491,7 +492,7 @@ export default function SubmissionsReviewPage() {
                 {selectedSubmission?.team?.name || "Team"} • {selectedSubmission?.stage?.name || "Stage"}
               </DialogDescription>
             </DialogHeader>
-            
+
             <ScrollArea className="max-h-[calc(90vh-200px)]">
               {selectedSubmission && (
                 <div className="space-y-6 pr-4">
@@ -501,7 +502,7 @@ export default function SubmissionsReviewPage() {
                       <Calendar className="h-4 w-4 text-muted-foreground" />
                       <span className="text-muted-foreground">Submitted:</span>
                       <span>
-                        {selectedSubmission.submittedAt 
+                        {selectedSubmission.submittedAt
                           ? format(new Date(selectedSubmission.submittedAt), "PPp")
                           : "Not yet submitted"}
                       </span>
@@ -674,7 +675,7 @@ export default function SubmissionsReviewPage() {
               </Button>
               {(selectedSubmission?.status === "pending_approval" || selectedSubmission?.status === "late") && (
                 <div className="flex gap-2">
-                  <Button
+                  <StaffOnly permission="review"><Button
                     variant="outline"
                     onClick={() => {
                       setViewDialogOpen(false);
@@ -683,8 +684,8 @@ export default function SubmissionsReviewPage() {
                   >
                     <XCircle className="h-4 w-4 mr-1" />
                     Reject
-                  </Button>
-                  <Button
+                  </Button></StaffOnly>
+                  <StaffOnly permission="review"><Button
                     onClick={() => {
                       setViewDialogOpen(false);
                       handleApproveClick(selectedSubmission);
@@ -692,7 +693,7 @@ export default function SubmissionsReviewPage() {
                   >
                     <CheckCircle2 className="h-4 w-4 mr-1" />
                     Approve
-                  </Button>
+                  </Button></StaffOnly>
                 </div>
               )}
             </DialogFooter>

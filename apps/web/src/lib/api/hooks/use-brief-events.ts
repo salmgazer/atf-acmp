@@ -34,6 +34,22 @@ export interface BriefEventsResponse {
   zoomConfigured: boolean;
 }
 
+export interface PartnerCalendarEvent extends BriefEvent {
+  brief: { id: string; title: string };
+  organization: { id: string; name: string };
+}
+
+export function usePartnerEventCalendar(params: { cohortId?: string; startAt: string; endAt: string; search?: string }) {
+  return useQuery({
+    queryKey: ["partner-event-calendar", params],
+    queryFn: () => api.get<{ events: PartnerCalendarEvent[] }>(`/brief-events/calendar?${new URLSearchParams({
+      cohortId: params.cohortId!, startAt: params.startAt, endAt: params.endAt, ...(params.search ? { search: params.search } : {}),
+    })}`),
+    enabled: !!params.cohortId,
+    refetchInterval: 15000,
+  });
+}
+
 const key = (briefId: string) => ["brief-events", briefId] as const;
 
 export function useBriefEvents(briefId: string) {
@@ -53,6 +69,7 @@ export function useSaveBriefEvent(briefId: string) {
       : api.post<BriefEvent>(`/brief-events/brief/${briefId}`, input),
     onSuccess: (_event, variables) => {
       cache.invalidateQueries({ queryKey: key(briefId) });
+      cache.invalidateQueries({ queryKey: ["partner-event-calendar"] });
       toast.success(variables.id ? "Event updated. Invitations will be updated automatically." : "Event scheduled. Team invitations are being sent.");
     },
     onError: (error: Error) => toast.error(error.message || "Could not save the event"),
@@ -65,6 +82,7 @@ export function useCancelBriefEvent(briefId: string) {
     mutationFn: (id: string) => api.post<BriefEvent>(`/brief-events/${id}/cancel`),
     onSuccess: () => {
       cache.invalidateQueries({ queryKey: key(briefId) });
+      cache.invalidateQueries({ queryKey: ["partner-event-calendar"] });
       toast.success("Event cancelled. Participants will be notified.");
     },
     onError: (error: Error) => toast.error(error.message || "Could not cancel the event"),

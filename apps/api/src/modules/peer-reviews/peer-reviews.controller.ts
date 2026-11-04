@@ -111,6 +111,7 @@ export class AdminPeerReviewsController {
     return this.peerReviewsService.createRubric(dto);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("rubrics/cohort/:cohortId")
   @ApiOperation({ summary: "Get all rubrics for a cohort" })
   @ApiParam({ name: "cohortId", description: "Cohort ID" })
@@ -119,6 +120,7 @@ export class AdminPeerReviewsController {
     return this.peerReviewsService.getRubrics(cohortId);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("rubrics/:id")
   @ApiOperation({ summary: "Get a rubric by ID" })
   @ApiParam({ name: "id", description: "Rubric ID" })
@@ -156,6 +158,7 @@ export class AdminPeerReviewsController {
     return this.peerReviewsService.assignPeerReviews(dto);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("assignments")
   @ApiOperation({ summary: "Get peer review assignments with filters" })
   @ApiResponse({ status: 200, description: "Paginated assignments" })
@@ -163,6 +166,7 @@ export class AdminPeerReviewsController {
     return this.peerReviewsService.getAssignments(query);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("assignments/:id")
   @ApiOperation({ summary: "Get an assignment by ID" })
   @ApiParam({ name: "id", description: "Assignment ID" })
@@ -194,6 +198,7 @@ export class AdminPeerReviewsController {
 
   // ============ Review Management ============
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("reviews")
   @ApiOperation({ summary: "Get submitted reviews with filters" })
   @ApiResponse({ status: 200, description: "Paginated reviews" })
@@ -201,6 +206,7 @@ export class AdminPeerReviewsController {
     return this.peerReviewsService.getReviews(query);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("reviews/:id")
   @ApiOperation({ summary: "Get a review by ID" })
   @ApiParam({ name: "id", description: "Review ID" })
@@ -230,6 +236,7 @@ export class AdminPeerReviewsController {
 
   // ============ Stats ============
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("stats/stage/:cohortId/:stageId")
   @ApiOperation({ summary: "Get peer review statistics for a stage" })
   @ApiParam({ name: "cohortId", description: "Cohort ID" })
@@ -242,6 +249,7 @@ export class AdminPeerReviewsController {
     return this.peerReviewsService.getStageStats(cohortId, stageId);
   }
 
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
   @Get("stats/team/:teamId")
   @ApiOperation({ summary: "Get peer review summary for a team" })
   @ApiParam({ name: "teamId", description: "Team ID" })
