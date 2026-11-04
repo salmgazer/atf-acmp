@@ -183,7 +183,10 @@ jobs:
           # Explicit networking also works before the first API task exists.
           SUBNET="${{ vars.MIGRATION_SUBNET }}"
           SECURITY_GROUP="${{ vars.MIGRATION_SECURITY_GROUP }}"
-          test -n "$SUBNET" && test -n "$SECURITY_GROUP"
+          if [ -z "$SUBNET" ] || [ -z "$SECURITY_GROUP" ]; then
+            echo "::error::Production migration subnet and security group must be configured"
+            exit 1
+          fi
 
           # Register a one-off task definition for migrations
           TASK_DEF=$(cat <<EOF
@@ -331,6 +334,7 @@ jobs:
           push: true
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:${{ env.IMAGE_TAG }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:production-${{ env.IMAGE_TAG }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:production-latest
 
       - name: Deploy API to ECS Express Mode
@@ -443,6 +447,7 @@ jobs:
             NEXT_PUBLIC_ONESIGNAL_APP_ID=${{ vars.ONESIGNAL_APP_ID }}
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_WEB }}:${{ env.IMAGE_TAG }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_WEB }}:production-${{ env.IMAGE_TAG }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_WEB }}:production-latest
 
       - name: Deploy Web to ECS Express Mode
@@ -505,13 +510,15 @@ jobs:
       - name: Verify endpoints
         run: |
           echo "Verifying endpoints..."
-          API_STATUS=$(curl -sSL --max-time 10 https://api.atfchallenge.org/api/health | jq -r '.status' 2>/dev/null || echo "FAILED")
-          WEB_STATUS=$(curl -sSL --max-time 10 -o /dev/null -w '%{http_code}' https://app.atfchallenge.org 2>/dev/null || echo "FAILED")
+          API_STATUS=$(curl -fsSL --max-time 10 --retry 5 --retry-delay 3 --retry-all-errors https://api.atfchallenge.org/api/health/ready | jq -r '.status' 2>/dev/null || echo "FAILED")
+          WEB_STATUS=$(curl -fsSL --max-time 10 --retry 5 --retry-delay 3 --retry-all-errors -o /dev/null -w '%{http_code}' https://app.atfchallenge.org 2>/dev/null || echo "FAILED")
+          BUILT_STATUS=$(curl -fsSL --max-time 10 --retry 5 --retry-delay 3 --retry-all-errors -o /dev/null -w '%{http_code}' https://built.atfchallenge.org 2>/dev/null || echo "FAILED")
           
           echo "API Status: $API_STATUS"
           echo "Web Status: $WEB_STATUS"
+          echo "Built domain status: $BUILT_STATUS"
           
-          if [ "$API_STATUS" != "ok" ] || [ "$WEB_STATUS" != "200" ]; then
+          if [ "$API_STATUS" != "ok" ] || [ "$WEB_STATUS" != "200" ] || [ "$BUILT_STATUS" != "200" ]; then
             echo "WARNING: Some endpoints may not be responding correctly"
             exit 1
           fi
