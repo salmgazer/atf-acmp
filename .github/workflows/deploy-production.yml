@@ -516,16 +516,18 @@ jobs:
 
       - name: Verify endpoints
         run: |
-          echo "Verifying endpoints..."
-          API_STATUS=$(curl -sSL --max-time 10 https://api.atfchallenge.org/api/health | jq -r '.status' 2>/dev/null || echo "FAILED")
-          WEB_STATUS=$(curl -sSL --max-time 10 -o /dev/null -w '%{http_code}' https://app.atfchallenge.org 2>/dev/null || echo "FAILED")
-          
-          echo "API Status: $API_STATUS"
-          echo "Web Status: $WEB_STATUS"
-          
-          if [ "$API_STATUS" != "ok" ] || [ "$WEB_STATUS" != "200" ]; then
-            echo "WARNING: Some endpoints may not be responding correctly"
-            exit 1
-          fi
-          
-          echo "All endpoints verified successfully!"
+          for attempt in {1..12}; do
+            echo "Verifying production endpoints (attempt $attempt of 12)..."
+            API_STATUS=$(curl -fsSL --max-time 10 https://api.atfchallenge.org/api/health/ready | jq -r '.status' 2>/dev/null || true)
+            WEB_STATUS=$(curl -fsSL --max-time 10 https://build.atfchallenge.org/api/health | jq -r '.service' 2>/dev/null || true)
+            APP_STATUS=$(curl -sSL --max-time 10 -o /dev/null -w '%{http_code}' https://app.atfchallenge.org || true)
+            BUILT_STATUS=$(curl -sSL --max-time 10 -o /dev/null -w '%{http_code}' https://built.atfchallenge.org || true)
+            echo "API: $API_STATUS; build portal: $WEB_STATUS; app alias: $APP_STATUS; built alias: $BUILT_STATUS"
+            if [ "$API_STATUS" = "ok" ] && [ "$WEB_STATUS" = "acmp-web" ] && [ "$APP_STATUS" = "200" ] && [ "$BUILT_STATUS" = "200" ]; then
+              echo "All endpoints verified successfully!"
+              exit 0
+            fi
+            if [ "$attempt" -lt 12 ]; then sleep 5; fi
+          done
+          echo "::error::Production endpoints did not become ready"
+          exit 1
