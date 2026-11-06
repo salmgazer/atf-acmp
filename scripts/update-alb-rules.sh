@@ -13,11 +13,13 @@ case "$ENVIRONMENT" in
     API_DOMAIN="api.atfchallenge.org"
     APP_DOMAIN="app.atfchallenge.org"
     BUILT_DOMAIN="built.atfchallenge.org"
+    BUILD_DOMAIN="build.atfchallenge.org"
     ;;
   staging)
     API_DOMAIN="api-staging.atfchallenge.org"
     APP_DOMAIN="app-staging.atfchallenge.org"
     BUILT_DOMAIN=""
+    BUILD_DOMAIN=""
     ;;
   *) echo "Unknown environment: $ENVIRONMENT" >&2; exit 1 ;;
 esac
@@ -93,4 +95,5 @@ update_domain() {
 update_domain "$API_DOMAIN" "$API_TG_ARN"
 update_domain "$APP_DOMAIN" "$WEB_TG_ARN"
 if [ -n "$BUILT_DOMAIN" ]; then update_domain "$BUILT_DOMAIN" "$WEB_TG_ARN"; fi
+if [ -n "$BUILD_DOMAIN" ]; then update_domain "$BUILD_DOMAIN" "$WEB_TG_ARN"; fi
 echo "Custom-domain routing check completed successfully"
