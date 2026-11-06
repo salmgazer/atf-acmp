@@ -345,6 +345,7 @@ jobs:
           push: true
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:${{ env.IMAGE_TAG }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:staging-${{ env.IMAGE_TAG }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:staging-latest
 
       - name: Deploy API to ECS Express Mode
@@ -457,6 +458,7 @@ jobs:
             NEXT_PUBLIC_ONESIGNAL_APP_ID=${{ vars.ONESIGNAL_APP_ID }}
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_WEB }}:${{ env.IMAGE_TAG }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_WEB }}:staging-${{ env.IMAGE_TAG }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_WEB }}:staging-latest
 
       - name: Deploy Web to ECS Express Mode

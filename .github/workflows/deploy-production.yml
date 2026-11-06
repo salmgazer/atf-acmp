@@ -183,7 +183,10 @@ jobs:
           # Explicit networking also works before the first API task exists.
           SUBNET="${{ vars.MIGRATION_SUBNET }}"
           SECURITY_GROUP="${{ vars.MIGRATION_SECURITY_GROUP }}"
-          test -n "$SUBNET" && test -n "$SECURITY_GROUP"
+          if [ -z "$SUBNET" ] || [ -z "$SECURITY_GROUP" ]; then
+            echo "::error::Production migration subnet and security group must be configured"
+            exit 1
+          fi
 
           # Register a one-off task definition for migrations
           TASK_DEF=$(cat <<EOF
@@ -343,6 +346,7 @@ jobs:
           push: true
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:${{ env.IMAGE_TAG }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:production-${{ env.IMAGE_TAG }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:production-latest
 
       - name: Deploy API to ECS Express Mode
@@ -455,6 +459,7 @@ jobs:
             NEXT_PUBLIC_ONESIGNAL_APP_ID=${{ vars.ONESIGNAL_APP_ID }}
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_WEB }}:${{ env.IMAGE_TAG }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_WEB }}:production-${{ env.IMAGE_TAG }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_WEB }}:production-latest
 
       - name: Deploy Web to ECS Express Mode
@@ -521,9 +526,12 @@ jobs:
             API_STATUS=$(curl -fsSL --max-time 10 https://api.atfchallenge.org/api/health/ready | jq -r '.status' 2>/dev/null || true)
             WEB_STATUS=$(curl -fsSL --max-time 10 https://build.atfchallenge.org/api/health | jq -r '.service' 2>/dev/null || true)
             APP_STATUS=$(curl -sSL --max-time 10 -o /dev/null -w '%{http_code}' https://app.atfchallenge.org || true)
-            BUILT_STATUS=$(curl -sSL --max-time 10 -o /dev/null -w '%{http_code}' https://built.atfchallenge.org || true)
-            echo "API: $API_STATUS; build portal: $WEB_STATUS; app alias: $APP_STATUS; built alias: $BUILT_STATUS"
-            if [ "$API_STATUS" = "ok" ] && [ "$WEB_STATUS" = "acmp-web" ] && [ "$APP_STATUS" = "200" ] && [ "$BUILT_STATUS" = "200" ]; then
+            echo "API: $API_STATUS; build portal: $WEB_STATUS; app alias: $APP_STATUS"
+            if [ "$API_STATUS" = "ok" ] && [ "$WEB_STATUS" = "acmp-web" ] && [ "$APP_STATUS" = "200" ]; then
+              BUILT_STATUS=$(curl -sSL --max-time 10 -o /dev/null -w '%{http_code}' https://built.atfchallenge.org || true)
+              if [ "$BUILT_STATUS" != "200" ]; then
+                echo "::warning::The optional built.atfchallenge.org alias is not serving the AWS app. Check its Vercel DNS record separately."
+              fi
               echo "All endpoints verified successfully!"
               exit 0
             fi
