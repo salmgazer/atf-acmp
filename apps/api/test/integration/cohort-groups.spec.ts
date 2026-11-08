@@ -1,3 +1,4 @@
+import { Stage } from "@/database/entities/stage.entity";
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -22,7 +23,8 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     db = new DataSource({ type: 'postgres', url: databaseUrl, entities: [path.join(__dirname, '../../src/database/entities/*.entity.ts')], migrations: [path.join(__dirname, '../../src/database/migrations/*.ts')], synchronize: false });
     await db.initialize();
     await db.runMigrations();
-    cohort = await db.getRepository(Cohort).save({ name: 'Groups regression', groups: ['North', 'South'], teamSizeMax: 10 });
+    cohort = await db.getRepository(Cohort).save({ name: 'Groups regression', groups: ['North', 'South'], teamSizeMax: 5, status: "active" as any });
+    await configureStages(cohort);
     participants = new ParticipantsService(db.getRepository(Participant), db.getRepository('ParticipantPreference') as any, db.getRepository(Cohort), {} as any, {} as any, new ConfigService(), {} as any);
     teams = Object.assign(Object.create(TeamsService.prototype), {
       logger: new Logger('Groups regression'),
@@ -30,8 +32,17 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     });
   }, 120000);
   afterAll(async () => { if (db?.isInitialized) await db.destroy(); });
+  async function configureStages(c: Cohort) {
+    const joining = await db.getRepository(Stage).save({ cohortId: c.id, number: 91, name: "Team joining", deadline: new Date(Date.now() + 7 * 86400000) });
+    const certification = await db.getRepository(Stage).save({ cohortId: c.id, number: 92, name: "Learning certification", deadline: new Date(Date.now() + 21 * 86400000) });
+    await db.getRepository(Cohort).update(c.id, { teamJoiningStageId: joining.id, learningCertificationStageId: certification.id });
+    Object.assign(c, { teamJoiningStageId: joining.id, learningCertificationStageId: certification.id });
+  }
   function row() { const id = randomUUID(); return { participantId: id, email: id + '@example.test', firstName: 'Group', lastName: 'Test', country: 'GH' }; }
-  async function person(group: string) { return db.getRepository(Participant).save({ ...row(), cohortId: cohort.id, group, onboardingComplete: true }); }
+  async function person(group: string | null, targetCohort = cohort) {
+    const p = await db.getRepository(Participant).save({ ...row(), cohortId: targetCohort.id, group, onboardingComplete: true, learningHalfwayReached: true });
+    await db.getRepository("ParticipantPreference").save({ participantId: p.id, matchingProfileCompletedAt: new Date() }); return p;
+  }
   async function team(group: string) { return db.getRepository(Team).save({ name: randomUUID(), inviteCode: randomUUID(), cohortId: cohort.id, group }); }
 
   it('requires a cohort group for single creation and bulk import before saving any row', async () => {
@@ -91,8 +102,9 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     await expect(db.getRepository(Team).save({ name: randomUUID(), inviteCode: randomUUID(), cohortId: cohort.id })).rejects.toThrow('Team group');
   });
   it('lets staff assign legacy ungrouped participants before team formation', async () => {
-    const c = await db.getRepository(Cohort).save({ name: 'Legacy cohort' });
-    const p = await db.getRepository(Participant).save({ ...row(), cohortId: c.id });
+    const c = await db.getRepository(Cohort).save({ name: 'Legacy cohort', status: 'active' as any });
+    await configureStages(c);
+    const p = await person(null, c);
     await db.getRepository(Cohort).update(c.id, { groups: ['North'] });
     await expect(teams.create({ name: 'Missing group', cohortId: c.id, creatorId: p.id })).rejects.toThrow('Select a group');
     expect((await participants.assignGroup(p.id, 'North')).group).toBe('North');

@@ -22,6 +22,7 @@ import {
 import { TeamsService } from "./teams.service";
 import {
   CreateTeamDto,
+  RegisterTeamDto,
   UpdateTeamDto,
   TeamQueryDto,
   PaginatedTeamsDto,
@@ -39,6 +40,7 @@ import {
   RemovalRequestQueryDto,
 } from "./dto/team.dto";
 import { TeamStatus, InvitationStatus } from "@/database/entities/team.entity";
+import { CurrentUser } from "@/common/decorators/current-user.decorator";
 import { Audit } from "@/common/decorators/audit.decorator";
 import { AuditInterceptor } from "@/common/interceptors/audit.interceptor";
 import { AuditAction } from "@/database/entities/audit-log.entity";
@@ -159,6 +161,15 @@ export class TeamsController {
   ) {
     return this.teamsService.rejectRemovalRequest(requestId, dto.resolvedBy, dto.notes);
   }
+
+  @Get(":id/eligibility")
+  eligibility(@Param("id", ParseUUIDPipe) id: string) { return this.teamsService.eligibility(id); }
+
+  @Post(":id/register")
+  registerTeam(@Param("id", ParseUUIDPipe) id: string, @Body() dto: RegisterTeamDto) { return this.teamsService.registerTeam(id, dto.competitionCountry); }
+
+  @Post(":id/start-challenge")
+  startChallenge(@Param("id", ParseUUIDPipe) id: string) { return this.teamsService.startChallenge(id); }
 
   @Get(":id")
   @ApiOperation({ summary: "Get team by ID" })
@@ -414,12 +425,13 @@ export class TeamsController {
 
   @Get("search/participants")
   @ApiOperation({ summary: "Search available participants for team invitations" })
-  async searchParticipants(@Query() query: SearchParticipantsDto) {
+  async searchParticipants(@Query() query: SearchParticipantsDto, @CurrentUser() user: { role: string }) {
     return this.teamsService.searchAvailableParticipants(
       query.cohortId,
       query.query,
       query.limit,
-      query.ungrouped ? null : query.group
+      query.ungrouped ? null : query.group,
+      !["super_admin", "program_manager", "evaluator", "viewer"].includes(user.role)
     );
   }
 

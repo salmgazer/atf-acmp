@@ -4,6 +4,7 @@ import { use } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TeamDeadlineStages } from "@/components/stages/team-deadline-stages";
 import { StageList } from "@/components/stages";
 import { StaffLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -30,6 +31,7 @@ function StagesContent({ cohortId }: { cohortId: string }) {
           </div>
         </div>
 
+        <TeamDeadlineStages cohortId={cohortId} />
         <StageList cohortId={cohortId} />
       </div>
     </StaffLayout>

@@ -1,0 +1,36 @@
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Retain the latest 30 production release images independently of staging builds",
+      "selection": {
+        "tagStatus": "tagged",
+        "tagPrefixList": ["production-"],
+        "countType": "imageCountMoreThan",
+        "countNumber": 30
+      },
+      "action": { "type": "expire" }
+    },
+    {
+      "rulePriority": 2,
+      "description": "Retain the latest 10 staging release images independently of production builds",
+      "selection": {
+        "tagStatus": "tagged",
+        "tagPrefixList": ["staging-"],
+        "countType": "imageCountMoreThan",
+        "countNumber": 10
+      },
+      "action": { "type": "expire" }
+    },
+    {
+      "rulePriority": 3,
+      "description": "Keep the latest 10 other images; environment release rules take precedence",
+      "selection": {
+        "tagStatus": "any",
+        "countType": "imageCountMoreThan",
+        "countNumber": 10
+      },
+      "action": { "type": "expire" }
+    }
+  ]
+}

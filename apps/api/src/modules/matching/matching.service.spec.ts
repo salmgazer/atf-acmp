@@ -531,4 +531,13 @@ describe("MatchingService", () => {
       expect(result.statistics).toHaveProperty("topThreePercentage");
     });
   });
+  it("keeps a registered team's brief matching within its competition country even when a foreign brief ranks higher", () => {
+    const team = { team: { ...mockTeam, competitionCountry: "Ghana" }, briefRankings: ["foreign", "local"], verticalPreferences: [], skills: [], interests: [] };
+    const foreign = { ...mockBrief, id: "foreign", problemCountry: "Nigeria" }, local = { ...mockBrief, id: "local", problemCountry: "GH" };
+    const config = (service as any).normalizeConfig();
+    const result = (service as any).executeMatching([team], [{ brief: foreign, availableSlots: 1 }, { brief: local, availableSlots: 1 }], config);
+    expect(result.matches).toHaveLength(1); expect(result.matches[0].briefId).toBe("local");
+    expect((service as any).executeMatching([team], [{ brief: foreign, availableSlots: 1 }], config).matches).toHaveLength(0);
+  });
+
 });

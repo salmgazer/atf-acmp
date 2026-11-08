@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/client";
 import { toast } from "sonner";
+import type { ParticipantLearningProfile, ParticipantMatchingProfile, BuildDeployAbility, MatchingRole, MatchingSector, MatchingTeamStatus } from "@acmp/shared";
 
 // Types
 export type ParticipantStatus =
@@ -13,7 +14,7 @@ export type ParticipantStatus =
   | "assigned"
   | "inactive";
 
-export interface Participant {
+export interface Participant extends ParticipantLearningProfile {
   id: string;
   participantId: string;
   email: string;
@@ -31,19 +32,19 @@ export interface Participant {
   status: ParticipantStatus;
   cohortId: string;
   group?: string | null;
+  cohort?: { countries: string[] };
   createdAt: string;
   updatedAt: string;
   preference?: ParticipantPreference;
 }
 
-export interface ParticipantPreference {
+export interface ParticipantPreference extends ParticipantMatchingProfile {
   id: string;
   participantId: string;
   verticalId1?: string;
   verticalId2?: string;
   briefRankings: string[];
   crossCountryWilling: boolean;
-  preferredRole?: string;
   availabilityNotes?: string;
   preferencesUpdatedAt?: string;
 }
@@ -113,10 +114,10 @@ export interface BulkImportResult {
 }
 
 export interface OnboardingProfile {
-  firstName: string;
-  lastName: string;
-  institution?: string;
-  phoneNumber?: string;
+  firstName: string; lastName: string; country: string; institution?: string; phoneNumber?: string;
+  whatsappNumber?: string; city?: string; locationType?: string; gender?: string; educationLevel?: string;
+  currentAffiliation?: string; fieldOfStudy?: string; pythonSkill?: string; gitSkill?: string; aiExperience?: string;
+  githubAccountStatus: "has_account" | "no_account"; githubUsername?: string;
 }
 
 export interface OnboardingSkills {
@@ -136,7 +137,10 @@ export interface OnboardingPreferences {
 export interface CompleteOnboardingDto {
   profile: OnboardingProfile;
   skills: OnboardingSkills;
-  preferences: OnboardingPreferences;
+  preferences: OnboardingPreferences & {
+    buildDeployAbility: BuildDeployAbility; preferredRole: MatchingRole; firstChoiceSector: MatchingSector;
+    backupSector: MatchingSector; teamStatus: MatchingTeamStatus; matchingProfileConsent: boolean;
+  };
 }
 
 export interface UpdateParticipantDto {
@@ -443,4 +447,17 @@ export function useUploadMyProfilePicture() {
       queryClient.invalidateQueries({ queryKey: participantKeys.current() });
     },
   });
+}
+
+export function useUpdateMatchingConsent() {
+  const cache = useQueryClient();
+  return useMutation({ mutationFn: ({ id, consent }: { id: string; consent: boolean }) => api.patch<ParticipantPreference>(`/participants/${id}/matching-consent`, { consent }),
+    onSuccess: (preference, { id }) => { cache.setQueryData(participantKeys.preferences(id), preference); cache.invalidateQueries({ queryKey: participantKeys.all }); toast.success("Matching profile visibility updated"); },
+    onError: (error: Error) => toast.error(error.message || "Could not update consent") });
+}
+
+export function useUpdateParticipantProgramme() {
+  const cache = useQueryClient();
+  return useMutation({ mutationFn: ({ id, ...body }: { id: string; programmeOptedOut: boolean; codeLabsCompleted: boolean; reason?: string }) => api.patch<Participant>(`/participants/${id}/programme-status`, body),
+    onSuccess: () => { cache.invalidateQueries({ queryKey: participantKeys.all }); cache.invalidateQueries({ queryKey: ["teams"] }); toast.success("Programme status updated"); }, onError: (error: Error) => toast.error(error.message || "Could not update programme status") });
 }

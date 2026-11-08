@@ -96,3 +96,56 @@ for (const role of ["viewer", "evaluator"]) test(`${role} cannot open the partne
   await expect(page.getByRole("button", { name: "Partners and briefs", exact: true })).toHaveCount(0);
   expect(requests).toHaveLength(0);
 });
+
+test("staff reimports only Industry, reviews before/after values, confirms and downloads the update receipt", async ({ page, context }) => {
+  const requests = await setup(page, context);
+  const updates = [{ entity: "partner", id: "partner-1", name: "Example Partner", rows: [2, 3], changes: [{ field: "industry", label: "Partner industry", before: { industry: null }, after: { industry: "Telecommunication" } }] }];
+  await page.route("**/submission-import/preview", async route => {
+    requests.push({ path: "/submission-import/preview", body: route.request().postDataJSON() });
+    await route.fulfill({ json: { ...preview, mode: "update_existing", updateFields: ["industry"], newPartners: 0, newUsers: 0, newBriefs: 0, updatedPartners: 1, updatedBriefs: 0, unchangedBriefs: 0, unmatchedBriefs: 0, organizations: [], updates } });
+  });
+  await page.route("**/submission-import/apply", async route => {
+    requests.push({ path: "/submission-import/apply", body: route.request().postDataJSON() });
+    await route.fulfill({ json: { batchId: "update-receipt", mode: "update_existing", createdPartners: 0, createdUsers: 0, createdBriefs: 0, updatedPartners: 1, updatedBriefs: 0, unchangedBriefs: 0, unmatchedBriefs: 0, updateFields: ["industry"], updates } });
+  });
+  await page.getByRole("button", { name: "Partners and briefs", exact: true }).click();
+  await page.getByLabel("Import operation").selectOption("update_existing");
+  await expect(page.getByRole("checkbox", { name: "Partner industry", exact: false })).toBeChecked();
+  await page.getByLabel("Cohort", { exact: true }).selectOption(cohortId);
+  await page.getByLabel("Partner brief submissions CSV", { exact: true }).setInputFiles({ name: "Ghana.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+  await page.getByRole("button", { name: "Preview import", exact: true }).click();
+  expect(requests[0].body).toMatchObject({ mode: "update_existing", updateFields: ["industry"] });
+  expect(requests[0].body.primaryContacts).toBeUndefined();
+  await expect(page.getByRole("heading", { name: "Selected field changes" })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Empty", exact: true })).toBeVisible();
+  await expect(page.getByRole("cell", { name: "Telecommunication", exact: true })).toBeVisible();
+  const update = page.getByRole("button", { name: "Update selected fields", exact: true });
+  await page.getByRole("checkbox", { name: "Partner city", exact: false }).check();
+  await expect(update).toBeDisabled();
+  await page.getByRole("checkbox", { name: "Partner city", exact: false }).uncheck();
+  await page.getByRole("button", { name: "Refresh preview", exact: true }).click();
+  await update.click();
+  await expect(page.getByRole("dialog")).toContainText("Selected fields: Partner industry.");
+  await page.getByRole("button", { name: "Confirm update", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Import complete" })).toBeVisible();
+  expect(requests.at(-1)?.body).toMatchObject({ mode: "update_existing", updateFields: ["industry"], previewHash: preview.previewHash });
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download receipt" }).click();
+  expect((await download).suggestedFilename()).toBe("partner-import-update-receipt.json");
+});
+
+test("update mode requires checked fields and explains unchanged and unmatched rows without offering creation", async ({ page, context }) => {
+  await setup(page, context);
+  await page.getByRole("button", { name: "Partners and briefs", exact: true }).click();
+  await page.getByLabel("Import operation").selectOption("update_existing");
+  await page.getByLabel("Cohort", { exact: true }).selectOption(cohortId);
+  await page.getByLabel("Submission CSV data").fill(csv);
+  await page.getByRole("checkbox", { name: "Partner industry", exact: false }).uncheck();
+  await expect(page.getByRole("button", { name: "Preview import", exact: true })).toBeDisabled();
+  await page.getByRole("checkbox", { name: "Partner industry", exact: false }).check();
+  await page.route("**/submission-import/preview", route => route.fulfill({ json: { ...preview, mode: "update_existing", newPartners: 0, newUsers: 0, newBriefs: 0, updatedPartners: 0, updatedBriefs: 0, unchangedBriefs: 1, unmatchedBriefs: 1, organizations: [], updates: [] } }));
+  await page.getByRole("button", { name: "Preview import", exact: true }).click();
+  await expect(page.getByText("No selected field changes to apply. Check unchanged and unmatched rows above.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Update selected fields", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Import partners and briefs", exact: true })).toHaveCount(0);
+});

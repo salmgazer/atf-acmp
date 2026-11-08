@@ -1,4 +1,5 @@
-import { Entity, Column, OneToMany, Index } from "typeorm";
+import { Entity, Column, OneToMany, Index, ManyToOne, JoinColumn, Relation } from "typeorm";
+import { Stage } from "./stage.entity";
 import { BaseEntity } from "./base.entity";
 
 export enum CohortStatus {
@@ -10,6 +11,7 @@ export enum CohortStatus {
 }
 
 export interface CohortDeadlines {
+  learningCertificationEnd?: string;
   teamFormationEnd: string;
   briefSelectionEnd: string;
   stage1End: string;
@@ -42,6 +44,16 @@ export interface LeaderboardConfig {
 @Entity("cohorts")
 @Index(["status"])
 export class Cohort extends BaseEntity {
+  @Column({ name: "team_joining_stage_id", type: "uuid", nullable: true }) teamJoiningStageId: string | null;
+  @ManyToOne(() => Stage, { nullable: true, onDelete: "SET NULL" })
+  @JoinColumn({ name: "team_joining_stage_id", foreignKeyConstraintName: "cohort_team_joining_stage_fk" }) teamJoiningStage: Relation<Stage> | null;
+  @Column({ name: "learning_certification_stage_id", type: "uuid", nullable: true }) learningCertificationStageId: string | null;
+  @ManyToOne(() => Stage, { nullable: true, onDelete: "SET NULL" })
+  @JoinColumn({ name: "learning_certification_stage_id", foreignKeyConstraintName: "cohort_learning_certification_stage_fk" }) learningCertificationStage: Relation<Stage> | null;
+  // Resolved from stage rows for rule evaluation; never persisted as a date copy.
+  teamRuleDeadlines?: { joining: string | null; certification: string | null };
+  teamRuleDeadlineVersion?: string;
+
   @Column()
   name: string;
 

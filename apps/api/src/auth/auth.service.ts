@@ -160,14 +160,14 @@ export class AuthService {
     const participant = await this.participantRepository.findOne({
       where: { email: email.toLowerCase() },
       relations: ["cohort"],
-      select: { id: true, email: true, participantId: true, firstName: true, lastName: true, cohortId: true, status: true, mustChangePassword: true, passwordHash: true },
+      select: { id: true, email: true, participantId: true, firstName: true, lastName: true, cohortId: true, status: true, programmeOptedOut: true, mustChangePassword: true, passwordHash: true },
     });
 
     if (!participant) {
       throw new UnauthorizedException("Invalid email or password");
     }
 
-    if (participant.status === "inactive") {
+    if (participant.status === "inactive" || participant.programmeOptedOut) {
       throw new UnauthorizedException("Account is deactivated");
     }
 
@@ -327,7 +327,7 @@ export class AuthService {
       throw new UnauthorizedException("Invalid refresh token");
     }
 
-    if (participant.status === "inactive") {
+    if (participant.status === "inactive" || participant.programmeOptedOut) {
       throw new UnauthorizedException("Account is deactivated");
     }
 
@@ -507,7 +507,7 @@ export class AuthService {
       await this.participantRepository.findOneOrFail({ where: { id: userId }, lock: { mode: "pessimistic_write" } });
       await this.changeParticipantPassword(userId, currentPassword, newPassword);
       const participant = await this.participantRepository.findOne({ where: { id: userId }, relations: ["cohort"] });
-      if (!participant || participant.status === "inactive" || (participant.cohort && this.blockedCohortStatuses.includes(participant.cohort.status))) {
+      if (!participant || (participant.status === "inactive" || participant.programmeOptedOut) || (participant.cohort && this.blockedCohortStatuses.includes(participant.cohort.status))) {
         throw new UnauthorizedException("Participant account is not accessible");
       }
       return this.generateParticipantTokens(participant, userAgent, ipAddress);

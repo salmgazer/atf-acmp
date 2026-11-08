@@ -2,6 +2,9 @@
 
 import { StaffOnly } from "@/components/auth/staff-only";
 import { ParticipantGroupEditor } from "@/components/cohorts/participant-group-editor";
+import { MatchingProfile } from "@/components/participants/matching-profile";
+import { ParticipantProgrammeControls } from "@/components/participants/participant-programme-controls";
+import { LearningProfile } from "@/components/participants/learning-profile";
 
 import { use, useState } from "react";
 import Link from "next/link";
@@ -226,6 +229,9 @@ function ParticipantDetailContent({ id }: { id: string }) {
           </div>
         </div>
 
+        <LearningProfile profile={participant} />
+      <StaffOnly permission="manage"><ParticipantProgrammeControls participant={participant} /></StaffOnly>
+      <MatchingProfile preference={preferences} participantId={participant.id} />
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">

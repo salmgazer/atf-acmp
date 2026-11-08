@@ -302,6 +302,8 @@ function ParticipantsContent() {
         "Skills",
         "Interests",
         "Created At",
+        "LMS Email", "WhatsApp Number", "City", "Location Type", "Gender", "Education Level", "Current Affiliation", "Field of Study", "Python Skill", "Git Skill", "AI Experience", "GitHub Username",
+        "Learning Certificate Issued", "Learning Certificate ID", "Learning Certificate Date", "Learning Finished All Lessons", "Learning Halfway Reached",
       ];
 
       const rows = allParticipants.map((p) => [
@@ -318,6 +320,9 @@ function ParticipantsContent() {
         (p.skills || []).join("; "),
         (p.interests || []).join("; "),
         format(new Date(p.createdAt), "yyyy-MM-dd HH:mm:ss"),
+        p.lmsEmail || "", p.whatsappNumber || "", p.city || "", p.locationType || "", p.gender || "", p.educationLevel || "", p.currentAffiliation || "", p.fieldOfStudy || "", p.pythonSkill || "", p.gitSkill || "", p.aiExperience || "", p.githubUsername || "",
+        p.learningCertificateIssued == null ? "" : p.learningCertificateIssued ? "Yes" : "No", p.learningCertificateId || "", p.learningCertificateDate || "",
+        p.learningFinishedAllLessons == null ? "" : p.learningFinishedAllLessons ? "Yes" : "No", p.learningHalfwayReached == null ? "" : p.learningHalfwayReached ? "Yes" : "No",
       ]);
 
       // Escape CSV values

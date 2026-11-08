@@ -52,10 +52,10 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
         image: redis:7-alpine
-        ports: [6379:6379]
+        ports: [6379/tcp]
     env:
       ACMP_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/acmp_regression_ci_test
-      ACMP_TEST_REDIS_URL: redis://localhost:6379
+      ACMP_TEST_REDIS_URL: redis://localhost:${{ job.services.redis.ports[6379] }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -328,8 +328,9 @@ jobs:
         env:
           RESEND_FROM_EMAIL: ${{ vars.RESEND_FROM_EMAIL }}
           RESEND_FROM_NAME: ${{ vars.RESEND_FROM_NAME }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
-          for name in RESEND_FROM_EMAIL RESEND_FROM_NAME; do
+          for name in RESEND_FROM_EMAIL RESEND_FROM_NAME RESEND_API_KEY; do
             if [ -z "${!name}" ]; then
               echo "::error::$name is required for invitation emails"
               exit 1
@@ -345,6 +346,7 @@ jobs:
           push: true
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:${{ env.IMAGE_TAG }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:staging-${{ env.IMAGE_TAG }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:staging-latest
 
       - name: Deploy API to ECS Express Mode
@@ -380,11 +382,13 @@ jobs:
               {"name": "FRONTEND_URL", "value": "${{ vars.FRONTEND_URL }}"},
               {"name": "MAILCHIMP_FROM_EMAIL", "value": "${{ vars.MAILCHIMP_FROM_EMAIL }}"},
               {"name": "MAILCHIMP_FROM_NAME", "value": "${{ vars.MAILCHIMP_FROM_NAME }}"},
-              {"name": "SMTP_HOST", "value": "${{ vars.SMTP_HOST }}"},
-              {"name": "SMTP_PORT", "value": "${{ vars.SMTP_PORT }}"},
-              {"name": "SMTP_SECURE", "value": "${{ vars.SMTP_SECURE }}"},
-              {"name": "SMTP_FROM_EMAIL", "value": "${{ vars.SMTP_FROM_EMAIL }}"},
-              {"name": "SMTP_FROM_NAME", "value": "${{ vars.SMTP_FROM_NAME }}"},
+              {"name": "SMTP_HOST", "value": ""},
+              {"name": "SMTP_PORT", "value": ""},
+              {"name": "SMTP_SECURE", "value": ""},
+              {"name": "SMTP_FROM_EMAIL", "value": ""},
+              {"name": "SMTP_FROM_NAME", "value": ""},
+              {"name": "SMTP_USER", "value": ""},
+              {"name": "SMTP_PASS", "value": ""},
               {"name": "RESEND_FROM_EMAIL", "value": ${{ toJSON(vars.RESEND_FROM_EMAIL) }}},
               {"name": "RESEND_FROM_NAME", "value": ${{ toJSON(vars.RESEND_FROM_NAME) }}},
               {"name": "RESEND_API_KEY", "value": "${{ secrets.RESEND_API_KEY }}"},
@@ -408,9 +412,7 @@ jobs:
               {"name": "GOOGLE_SERVICE_ACCOUNT_EMAIL", "valueFrom": "${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL_ARN }}"},
               {"name": "GOOGLE_PRIVATE_KEY", "valueFrom": "${{ secrets.GOOGLE_PRIVATE_KEY_ARN }}"},
               {"name": "GOOGLE_ADMIN_EMAIL", "valueFrom": "${{ secrets.GOOGLE_ADMIN_EMAIL_ARN }}"},
-              {"name": "GOOGLE_CALENDAR_EMAIL", "valueFrom": "${{ secrets.GOOGLE_CALENDAR_EMAIL_ARN }}"},
-              {"name": "SMTP_USER", "valueFrom": "${{ secrets.SMTP_USER_ARN }}"},
-              {"name": "SMTP_PASS", "valueFrom": "${{ secrets.SMTP_PASS_ARN }}"}
+              {"name": "GOOGLE_CALENDAR_EMAIL", "valueFrom": "${{ secrets.GOOGLE_CALENDAR_EMAIL_ARN }}"}
             ]
 
   # ----------------------------------------------------------------------------
@@ -457,6 +459,7 @@ jobs:
             NEXT_PUBLIC_ONESIGNAL_APP_ID=${{ vars.ONESIGNAL_APP_ID }}
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_WEB }}:${{ env.IMAGE_TAG }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_WEB }}:staging-${{ env.IMAGE_TAG }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_WEB }}:staging-latest
 
       - name: Deploy Web to ECS Express Mode

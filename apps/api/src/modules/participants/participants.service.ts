@@ -1,7 +1,9 @@
+import { SocketSessionsService } from "@/auth/socket-sessions.service";
+import { applyProgrammeOptOut } from "@/common/services/team-rules";
 import { resolveCohortGroup } from "@/common/services/cohort-groups";
-import { Transactional } from "@/common/decorators/transactional.decorator";
+import { afterCommit, Transactional } from "@/common/decorators/transactional.decorator";
 import {
-  Injectable,
+  Injectable, Optional,
   NotFoundException,
   ConflictException,
   BadRequestException,
@@ -16,7 +18,10 @@ import {
   ParticipantStatus,
   ParticipantPreference,
 } from "@/database/entities/participant.entity";
+import { AuditLog, AuditAction } from "@/database/entities/audit-log.entity";
 import { Cohort } from "@/database/entities/cohort.entity";
+import { Vertical } from "@/database/entities/vertical.entity";
+import { COUNTRY_NAMES, MATCHING_CONSENT_VERSION } from "@acmp/shared";
 import { NotificationsService } from "@/modules/notifications/notifications.service";
 import { NotificationRecipientType, NotificationType, NotificationPriority } from "@/database/entities/notification.entity";
 import { EmailService } from "@/email/email.service";
@@ -31,6 +36,8 @@ import {
   ImportResultDto,
   CompleteOnboardingDto,
   OnboardingPreferencesDto,
+  CompleteOnboardingPreferencesDto,
+  UpdateParticipantProgrammeDto,
   ParticipantStatisticsDto,
 } from "./dto/participant.dto";
 
@@ -49,6 +56,7 @@ export class ParticipantsService {
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
     private readonly cohortsService: CohortsService,
+    @Optional() private readonly socketSessions?: SocketSessionsService,
   ) {}
 
   @Transactional()
@@ -525,53 +533,61 @@ export class ParticipantsService {
   /**
    * Complete onboarding process
    */
-  async completeOnboarding(
-    id: string,
-    dto: CompleteOnboardingDto
-  ): Promise<Participant> {
+  @Transactional("participant-onboarding")
+  async completeOnboarding(id: string, dto: CompleteOnboardingDto): Promise<Participant> {
     const participant = await this.findOne(id);
-
-    // Update profile
-    participant.firstName = dto.profile.firstName;
-    participant.lastName = dto.profile.lastName;
-    participant.institution = dto.profile.institution;
-    participant.phoneNumber = dto.profile.phoneNumber;
-
-    // Update skills and interests
+    if (participant.onboardingComplete && participant.preference?.matchingProfileCompletedAt) return participant;
+    const alreadyOnboarded = participant.onboardingComplete;
+    if (participant.mustChangePassword) throw new BadRequestException("Change your initial password before completing onboarding");
+    if (participant.status === ParticipantStatus.INACTIVE || participant.cohort.status !== "active") throw new BadRequestException("Onboarding requires an active participant and cohort");
+    if (dto.preferences.firstChoiceSector === dto.preferences.backupSector) throw new BadRequestException("Choose a different backup sector");
+    const countryName = (value: string) => Object.entries(COUNTRY_NAMES).find(([code, name]) => [code.toLowerCase(), name.toLowerCase()].includes(value.trim().toLowerCase()))?.[1] || value.trim();
+    const country = countryName(dto.profile.country);
+    const allowed = participant.cohort.countries.map(countryName);
+    if (!country || (allowed.length && !allowed.includes(country))) throw new BadRequestException("Choose a country enabled for this cohort");
+    const verticalIds = [dto.preferences.verticalId1, dto.preferences.verticalId2].filter(Boolean) as string[];
+    if (new Set(verticalIds).size !== verticalIds.length) throw new BadRequestException("Choose different programme verticals");
+    if (verticalIds.length && await this.participantRepository.manager.getRepository(Vertical).countBy({ id: In(verticalIds), cohortId: participant.cohortId, isActive: true }) !== verticalIds.length) throw new BadRequestException("Choose active verticals from your cohort");
+    for (const field of ["firstName", "lastName", "institution", "phoneNumber", "whatsappNumber", "city", "locationType", "gender", "educationLevel", "currentAffiliation", "fieldOfStudy", "pythonSkill", "gitSkill", "aiExperience"] as const) {
+      const value = dto.profile[field];
+      if (value !== undefined) (participant as any)[field] = value?.trim() ?? null;
+    }
+    if (!participant.firstName || !participant.lastName) throw new BadRequestException("First name and last name are required");
+    participant.country = country;
+    participant.githubAccountStatus = dto.profile.githubAccountStatus;
+    participant.githubUsername = dto.profile.githubAccountStatus === "has_account" ? dto.profile.githubUsername!.trim() : null;
     participant.skills = dto.skills.skills;
     participant.interests = dto.skills.interests;
-
-    // Mark onboarding as complete
+    participant.profileConfirmedAt = new Date();
     participant.onboardingComplete = true;
-    participant.status = ParticipantStatus.READY;
-
-    // Save participant
+    // Existing team membership/status is preserved for legacy participants.
+    if (!alreadyOnboarded && participant.status !== ParticipantStatus.ASSIGNED) participant.status = ParticipantStatus.READY;
     await this.participantRepository.save(participant);
-
-    // Create or update preferences
     await this.savePreferences(id, dto.preferences);
 
-    // Send welcome notification
-    try {
-      await this.notificationsService.create({
-        recipientId: participant.id,
-        recipientType: NotificationRecipientType.PARTICIPANT,
-        type: NotificationType.ANNOUNCEMENT,
-        title: "Welcome to the AI Challenge! 🎉",
-        body: `Hi ${participant.firstName}! Your profile is set up and you're ready to go. Start by exploring challenge briefs and finding a team to join.`,
-        actionUrl: "/participant/dashboard",
-        priority: NotificationPriority.NORMAL,
-      });
-    } catch (error) {
-      this.logger.warn(`Failed to send welcome notification: ${error}`);
-    }
+    if (!alreadyOnboarded) afterCommit(this, async () => {
+      // Send welcome notification
+      try {
+        await this.notificationsService.create({
+          recipientId: participant.id,
+          recipientType: NotificationRecipientType.PARTICIPANT,
+          type: NotificationType.ANNOUNCEMENT,
+          title: "Welcome to the AI Challenge! 🎉",
+          body: `Hi ${participant.firstName}! Your profile is set up and you're ready to go. Start by exploring challenge briefs and finding a team to join.`,
+          actionUrl: "/participant/dashboard",
+          priority: NotificationPriority.NORMAL,
+        });
+      } catch (error) {
+        this.logger.warn(`Failed to send welcome notification: ${error}`);
+      }
 
-    // Add participant to forum chat channels
-    try {
-      await this.cohortsService.addParticipantToForumChannels(participant);
-    } catch (error) {
-      this.logger.warn(`Failed to add participant to forum channels: ${error}`);
-    }
+      // Add participant to forum chat channels
+      try {
+        await this.cohortsService.addParticipantToForumChannels(participant);
+      } catch (error) {
+        this.logger.warn(`Failed to add participant to forum channels: ${error}`);
+      }
+    });
 
     return this.findOne(id);
   }
@@ -593,14 +609,59 @@ export class ParticipantsService {
       });
     }
 
-    preference.verticalId1 = dto.verticalId1;
-    preference.verticalId2 = dto.verticalId2;
-    preference.briefRankings = dto.briefRankings;
-    preference.crossCountryWilling = dto.crossCountryWilling;
-    preference.preferredRole = dto.preferredRole;
-    preference.availabilityNotes = dto.availabilityNotes;
+    // Older profile clients update only their submitted preferences. They must
+    // not erase the matching answers recorded during onboarding.
+    for (const field of ["verticalId1", "verticalId2", "briefRankings", "crossCountryWilling", "preferredRole", "availabilityNotes"] as const) {
+      if (dto[field] !== undefined) (preference as any)[field] = dto[field];
+    }
+    if ("buildDeployAbility" in dto) {
+      const matching = dto as CompleteOnboardingPreferencesDto;
+      preference.buildDeployAbility = matching.buildDeployAbility;
+      preference.firstChoiceSector = matching.firstChoiceSector;
+      preference.backupSector = matching.backupSector;
+      preference.teamStatus = matching.teamStatus;
+      preference.matchingProfileConsent = matching.matchingProfileConsent;
+      preference.matchingProfileConsentAt = new Date();
+      preference.matchingProfileConsentVersion = MATCHING_CONSENT_VERSION;
+      preference.matchingProfileCompletedAt = new Date();
+    }
     preference.preferencesUpdatedAt = new Date();
 
+    return this.preferenceRepository.save(preference);
+  }
+
+  @Transactional("participant-programme")
+  async updateProgrammeStatus(id: string, dto: UpdateParticipantProgrammeDto, actorId: string) {
+    const participant = await this.findOne(id);
+    const before = { programmeOptedOut: participant.programmeOptedOut, codeLabsCompleted: participant.codeLabsCompleted };
+    if (dto.programmeOptedOut === undefined && dto.codeLabsCompleted === undefined) throw new BadRequestException("Choose a programme status to update");
+    if (dto.programmeOptedOut !== undefined) {
+      participant.programmeOptedOut = dto.programmeOptedOut;
+      participant.programmeOptedOutAt = dto.programmeOptedOut ? new Date() : null;
+      participant.programmeOptOutReason = dto.reason?.trim() || null;
+    }
+    if (dto.codeLabsCompleted !== undefined) {
+      participant.codeLabsCompleted = dto.codeLabsCompleted;
+      participant.codeLabsVerifiedAt = dto.codeLabsCompleted ? new Date() : null;
+      participant.codeLabsVerifiedBy = dto.codeLabsCompleted ? actorId : null;
+    }
+    await this.participantRepository.save(participant);
+    if (participant.programmeOptedOut) {
+      await applyProgrammeOptOut(this.participantRepository.manager, id);
+      afterCommit(this, () => this.socketSessions?.revokePrincipal(id));
+    }
+    await this.participantRepository.manager.save(AuditLog, this.participantRepository.manager.create(AuditLog, { actorId, action: AuditAction.UPDATE, entityType: "Participant", entityId: id, before, after: { programmeOptedOut: participant.programmeOptedOut, codeLabsCompleted: participant.codeLabsCompleted }, description: "Updated programme eligibility: opt-out and verified CodeLabs evidence" }));
+    return this.findOne(id);
+  }
+
+  @Transactional("participant-onboarding")
+  async updateMatchingConsent(participantId: string, consent: boolean): Promise<ParticipantPreference> {
+    await this.findOne(participantId);
+    let preference = await this.preferenceRepository.findOneBy({ participantId });
+    if (!preference) preference = this.preferenceRepository.create({ participantId, briefRankings: [], crossCountryWilling: false });
+    preference.matchingProfileConsent = consent;
+    preference.matchingProfileConsentAt = new Date();
+    preference.matchingProfileConsentVersion = MATCHING_CONSENT_VERSION;
     return this.preferenceRepository.save(preference);
   }
 
