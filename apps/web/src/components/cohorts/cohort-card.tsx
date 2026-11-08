@@ -1,4 +1,5 @@
 "use client";
+import { formatUtcDeadline } from "@/lib/utc-deadline";
 
 import { StaffOnly } from "@/components/auth/staff-only";
 import Link from "next/link";
@@ -143,7 +144,7 @@ export function CohortCard({ cohort, onDuplicate, onDelete }: CohortCardProps) {
             <span className="text-muted-foreground">Next: </span>
             <span className="font-medium text-foreground">
               {nextDeadline.key.replace(/End$/, "").replace(/([A-Z])/g, " $1").trim()} -{" "}
-              {format(nextDeadline.date, "MMM d, yyyy")}
+              {formatUtcDeadline(nextDeadline.date)}
             </span>
           </div>
         )}

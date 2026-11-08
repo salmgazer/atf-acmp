@@ -1,3 +1,4 @@
+import * as teamRules from "@/common/services/team-rules";
 import { EmailService } from "@/email/email.service";
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
@@ -63,6 +64,7 @@ describe("TeamsService", () => {
   });
 
   beforeEach(async () => {
+    jest.spyOn(teamRules, "assertParticipantTeamAdmission").mockResolvedValue(mockParticipant as any);
     teamRepository = createMockRepository();
     memberRepository = createMockRepository();
     invitationRepository = createMockRepository();
@@ -314,13 +316,10 @@ describe("TeamsService", () => {
   });
 
   describe("updateStatus", () => {
-    it("should update team status", async () => {
+    it("requires the dedicated start action rather than allowing status updates to bypass certificate checks", async () => {
       teamRepository.findOne.mockResolvedValue(mockTeam);
-      teamRepository.save.mockResolvedValue({ ...mockTeam, status: TeamStatus.ACTIVE });
-
-      const result = await service.updateStatus("team-123", TeamStatus.ACTIVE);
-
-      expect(result.status).toBe(TeamStatus.ACTIVE);
+      await expect(service.updateStatus("team-123", TeamStatus.ACTIVE)).rejects.toThrow("Start challenge");
+      expect(teamRepository.save).not.toHaveBeenCalled();
     });
   });
 

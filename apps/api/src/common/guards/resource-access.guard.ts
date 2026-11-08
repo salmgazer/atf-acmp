@@ -1,3 +1,4 @@
+import { assertChallengeStarted } from "../services/team-rules";
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { PATH_METADATA } from "@nestjs/common/constants";
@@ -192,6 +193,10 @@ export class ResourceAccessGuard implements CanActivate {
       if (["submissions", "journals"].includes(base) && params.id) {
         const member = await teamId();
         if (!await find(base === "submissions" ? "Submission" : "JournalEntry", { id: params.id, teamId: member.teamId })) return this.deny();
+      }
+      if (!read && ["submissions", "journals", "peer-reviews"].includes(base)) {
+        const member = await teamId();
+        await assertChallengeStarted(this.db.manager, member.teamId);
       }
       if (params.cohortId) ownCohort(params.cohortId);
     } else if (base === "stages") {

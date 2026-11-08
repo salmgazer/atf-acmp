@@ -1,6 +1,7 @@
 export type CohortStatus = "draft" | "active" | "evaluation" | "completed" | "archived";
 
 export interface CohortDeadlines {
+  learningCertificationEnd?: string;
   teamFormationEnd: string;
   briefSelectionEnd: string;
   stage1End: string;
@@ -20,6 +21,8 @@ export interface RubricConfig {
 }
 
 export interface Cohort {
+  teamJoiningStageId?: string | null;
+  learningCertificationStageId?: string | null;
   id: string;
   name: string;
   description?: string;

@@ -41,15 +41,14 @@ const AFRICAN_COUNTRIES = [
 const cohortFormSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name is too long"),
   description: z.string().max(500, "Description is too long").optional(),
-  teamSizeMin: z.coerce.number().min(1).max(10),
-  teamSizeMax: z.coerce.number().min(1).max(15),
+  teamSizeMin: z.coerce.number().int().min(3).max(5),
+  teamSizeMax: z.coerce.number().int().min(3).max(5),
   briefCap: z.coerce.number().min(1).max(500),
   maxTeamsPerBrief: z.coerce.number().min(1).max(100),
   sessionRate: z.coerce.number().min(0).optional(),
   countries: z.array(z.string()).min(1, "Select at least one country"),
   groups: z.array(z.string().trim().min(1).max(100)).max(100).refine(names => new Set(names.map(name => name.toLowerCase())).size === names.length, "Group names must be unique"),
   deadlines: z.object({
-    teamFormationEnd: z.string().optional(),
     briefSelectionEnd: z.string().optional(),
   }),
   rubric: z.object({
@@ -99,7 +98,6 @@ export function CohortForm({ cohort, onSubmit, onCancel, isLoading }: CohortForm
       countries: cohort?.countries || [],
       groups: cohort?.groups || [],
       deadlines: {
-        teamFormationEnd: cohort?.deadlines?.teamFormationEnd?.split("T")[0] || "",
         briefSelectionEnd: cohort?.deadlines?.briefSelectionEnd?.split("T")[0] || "",
       },
       rubric: cohort?.rubric || { criteria: [] },
@@ -134,7 +132,7 @@ export function CohortForm({ cohort, onSubmit, onCancel, isLoading }: CohortForm
     const formattedDeadlines: Record<string, string> = {};
     Object.entries(data.deadlines).forEach(([key, value]) => {
       if (value) {
-        formattedDeadlines[key] = new Date(value).toISOString();
+        formattedDeadlines[key] = new Date(`${value}T23:59:59.999Z`).toISOString();
       }
     });
 
@@ -325,24 +323,13 @@ export function CohortForm({ cohort, onSubmit, onCancel, isLoading }: CohortForm
         <div>
           <h3 className="text-lg font-medium">Deadlines</h3>
           <p className="text-sm text-muted-foreground">
-            Set registration and team formation deadlines. Stage deadlines are configured separately.
+            Configure brief selection here. Team joining and learning certification use the deadline stages selected on the cohort’s Stages page.
           </p>
         </div>
         <Separator />
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="teamFormationEnd">Team Formation End</Label>
-            <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="teamFormationEnd"
-                type="date"
-                className="pl-10"
-                {...register("deadlines.teamFormationEnd")}
-              />
-            </div>
-          </div>
+          <div className="space-y-2"><p className="text-sm font-medium">Team joining and learning certification</p><p className="text-sm text-muted-foreground">Select the deadline stages on this cohort&apos;s Stages page. The selected stages supply these cutoffs directly in UTC.</p></div>
 
           <div className="space-y-2">
             <Label htmlFor="briefSelectionEnd">Brief Selection End</Label>

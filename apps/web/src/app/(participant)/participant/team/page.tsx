@@ -1,5 +1,6 @@
 "use client";
 
+import { TeamEligibility } from "@/components/teams/team-eligibility";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -183,7 +184,7 @@ function TeamDashboard({
   const pendingMembers = team.members.filter((m) => m.status === "pending");
   
   // Check if team is full (only count confirmed members against max size from cohort)
-  const isTeamFull = team.cohort?.teamSizeMax ? confirmedMembers.length >= team.cohort.teamSizeMax : false;
+  const isTeamFull = team.cohort?.teamSizeMax ? confirmedMembers.length >= Math.min(5, team.cohort.teamSizeMax) : false;
 
   const leaveMutation = useLeaveTeam();
   const { data: pendingMembersData } = usePendingMembers(team.id);
@@ -232,6 +233,7 @@ function TeamDashboard({
 
   return (
     <div className="space-y-6">
+      <TeamEligibility team={team} canManage={isLeadOrCoLead} />
       {/* Team Header */}
       <div className="rounded-xl bg-gradient-to-r from-primary to-primary/80 p-6 text-primary-foreground">
         <div className="flex items-start justify-between">
@@ -630,8 +632,8 @@ function InviteDialog({
           <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
             <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
             <p className="text-xs text-blue-700 dark:text-blue-300">
-              Only participants who have logged in and completed their onboarding are shown here. 
-              If you can&apos;t find someone, ask them to log in first.
+              Only participants who have completed onboarding and chosen to show their matching profile are listed.
+              If you can&apos;t find someone, ask them to check their profile visibility.
             </p>
           </div>
 

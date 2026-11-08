@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { ConfigService } from "@nestjs/config";
-import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
@@ -20,9 +20,17 @@ function fixture(ids = [first]) {
   for (const method of ["innerJoin", "where", "andWhere", "select", "orderBy"]) query[method] = jest.fn(() => query);
   query.getRawMany = jest.fn(async () => ids.map(id => ({ id })));
   const repository = { createQueryBuilder: jest.fn(() => query), findOne: jest.fn() };
-  const queue = { add: jest.fn(async () => ({ id: "batch-id" })), getJob: jest.fn(), setGlobalConcurrency: jest.fn() };
+  const queue = { add: jest.fn(async () => ({ id: "batch-id" })), getJob: jest.fn(), setGlobalConcurrency: jest.fn(async () => undefined) };
   const email = { requireDeliveryConfiguration: jest.fn(), sendParticipantInviteEmail: jest.fn() };
-  return { query, repository, queue, email, service: new ParticipantInvitesService(repository as any, queue as any, email as any) };
+  const records = new Map<string, any>();
+  const ledger = {
+    find: jest.fn(async (id: string) => records.get(id)),
+    record: jest.fn(async (id: string, participantIds: string[], requestedBy: string, progress?: any, state = "queued") => {
+      const value = records.get(id) || { id, participantIds, requestedBy, state, progress: progress || { total: participantIds.length, processed: 0, sent: 0, failed: 0, skipped: 0, failures: [] } }; records.set(id, value); return value;
+    }),
+    status: jest.fn(async (id: string) => { const value = records.get(id); if (!value) throw new NotFoundException("Invitation batch not found or expired"); return { id, state: value.state, ...value.progress, ...(value.state === "failed" ? { error: "The invitation batch stopped. Check the results before retrying." } : {}) }; }),
+  };
+  return { query, repository, queue, email, ledger, service: new ParticipantInvitesService(repository as any, queue as any, email as any, ledger as any) };
 }
 
 describe("Participant invitation resends", () => {
@@ -30,7 +38,7 @@ describe("Participant invitation resends", () => {
     const { service, query, queue } = fixture();
     expect(await service.resendSelected([first, first], "manager")).toMatchObject({ total: 1, sent: 0, state: "queued" });
     expect(query.andWhere).toHaveBeenCalledWith("p.id IN (:...ids)", { ids: [first] });
-    expect(queue.add).toHaveBeenCalledWith("resend", { participantIds: [first], requestedBy: "manager" }, expect.objectContaining({ attempts: 1, jobId: expect.any(String) }));
+    expect(queue.add).toHaveBeenCalledWith("resend", { participantIds: [first], requestedBy: "manager" }, expect.objectContaining({ attempts: 5, jobId: expect.any(String) }));
   });
 
   it("requires a non-empty, bounded selection and rejects ineligible or missing members atomically", async () => {
@@ -78,7 +86,7 @@ describe("Participant invitation resends", () => {
   it("reports progress, failures and expired batches", async () => {
     const { service, queue } = fixture();
     queue.getJob.mockResolvedValueOnce({ id: "batch", data: { participantIds: [first, second] }, progress: { total: 2, processed: 1, sent: 1, failed: 0, skipped: 0, failures: [] }, getState: async () => "active" });
-    expect(await service.status("batch")).toMatchObject({ state: "active", processed: 1, total: 2 });
+    expect(await service.status("batch")).toMatchObject({ state: "queued", processed: 1, total: 2 });
     queue.getJob.mockResolvedValueOnce({ id: "failed", data: { participantIds: [first] }, progress: 0, getState: async () => "failed", failedReason: "Private database diagnostic" });
     expect(await service.status("failed")).toMatchObject({ state: "failed", processed: 0, total: 1, error: expect.not.stringContaining("Private") });
     queue.getJob.mockResolvedValueOnce(null);
@@ -112,16 +120,20 @@ describe("Participant invitation worker", () => {
   const setup = (participant: any = pending) => {
     const repository = { findOne: jest.fn(async () => participant) };
     const email = { sendParticipantInviteEmail: jest.fn(async () => undefined) };
-    const worker = new ParticipantInvitesProcessor(repository as any, email as any, new ConfigService({ FRONTEND_URL: "https://portal.example.test/" }));
-    const job: any = { data: { participantIds: [first], requestedBy: "manager" }, progress: 0, updateProgress: jest.fn(async () => undefined) };
-    return { repository, email, worker, job };
+    let batch: any;
+    const manager = { query: jest.fn(async () => []), findOneByOrFail: jest.fn(async () => batch), update: jest.fn(async (_entity, _id, patch) => Object.assign(batch, patch)) };
+    const runner = { manager, connect: jest.fn(), query: jest.fn(async () => [{ locked: true }]), release: jest.fn(), isReleased: false };
+    const ledger = { db: { createQueryRunner: () => runner }, record: jest.fn(async (id, participantIds, requestedBy, progress) => batch ||= { id, participantIds, requestedBy, progress, state: "queued" }), checkpoint: jest.fn(async (_manager, _id, progress) => { batch.progress = progress; batch.state = progress.processed === progress.total ? "completed" : "active"; }) };
+    const worker = new ParticipantInvitesProcessor(repository as any, email as any, new ConfigService({ FRONTEND_URL: "https://portal.example.test/" }), ledger as any);
+    const job: any = { id: "batch", data: { participantIds: [first], requestedBy: "manager" }, progress: 0, updateProgress: jest.fn(async () => undefined) };
+    return { repository, email, worker, job, ledger };
   };
 
   it("sends the branded invitation and records the result without mutating credentials", async () => {
-    const { worker, email, job } = setup();
+    const { worker, email, job, ledger } = setup();
     expect(await worker.process(job)).toMatchObject({ processed: 1, sent: 1, failed: 0, skipped: 0 });
     expect(email.sendParticipantInviteEmail).toHaveBeenCalledWith({ to: pending.email, firstName: "Jane", participantId: "ATF-001", portalUrl: "https://portal.example.test/participant/login" });
-    expect(job.updateProgress).toHaveBeenCalledWith(expect.objectContaining({ sent: 1 }));
+    expect(ledger.checkpoint).toHaveBeenCalledWith(expect.anything(), "batch", expect.objectContaining({ sent: 1 }));
   });
 
   it.each([null, { ...pending, mustChangePassword: false }, { ...pending, onboardingComplete: true }, { ...pending, status: "inactive" }, { ...pending, cohort: { status: "draft" } }, { ...pending, cohort: { status: "archived" } }])("rechecks eligibility before delivery", async participant => {
@@ -131,10 +143,10 @@ describe("Participant invitation worker", () => {
   });
 
   it("reports a delivery failure and stores a checkpoint", async () => {
-    const { worker, email, job } = setup();
+    const { worker, email, job, ledger } = setup();
     email.sendParticipantInviteEmail.mockRejectedValue(new Error("Private provider diagnostic") as never);
     expect(await worker.process(job)).toMatchObject({ sent: 0, failed: 1, failures: [{ participantId: "ATF-001", message: "Email delivery failed" }] });
-    expect(job.updateProgress).toHaveBeenCalledWith(expect.objectContaining({ processed: 1, failed: 1 }));
+    expect(ledger.checkpoint).toHaveBeenCalledWith(expect.anything(), "batch", expect.objectContaining({ processed: 1, failed: 1 }));
   });
 
   it("resumes from the last checkpoint after a worker restart", async () => {

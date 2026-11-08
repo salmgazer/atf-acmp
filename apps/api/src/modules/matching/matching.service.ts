@@ -1,3 +1,4 @@
+import { normalizeTeamCountry } from "@acmp/shared";
 import { Inject } from "@nestjs/common";
 import { CACHE_MANAGER, Cache } from "@nestjs/cache-manager";
 import { Transactional } from "@/common/decorators/transactional.decorator";
@@ -500,6 +501,9 @@ export class MatchingService {
     for (const teamData of teams) {
       for (const briefData of briefs) {
         if (briefData.availableSlots > 0) {
+          const country = normalizeTeamCountry(teamData.team.competitionCountry);
+          const problemCountry = normalizeTeamCountry(briefData.brief.problemCountry || briefData.brief.organization?.country);
+          if (country && country.toLowerCase() !== problemCountry.toLowerCase()) continue;
           const candidate = this.calculateMatchScore(
             teamData,
             briefData.brief,
@@ -721,11 +725,14 @@ export class MatchingService {
       );
     }
 
+    const problem = await this.briefRepository.findOne({ where: { id: briefId }, relations: ["organization"] });
+    if (team.competitionCountry && normalizeTeamCountry(team.competitionCountry) !== normalizeTeamCountry(problem?.problemCountry || problem?.organization?.country)) throw new BadRequestException("The brief's problem country must match the competition country");
+
     // Assign brief and update status
     team.briefId = briefId;
-    if (team.status === TeamStatus.FORMING) {
-      team.status = TeamStatus.ACTIVE;
-    }
+    team.status = TeamStatus.FORMING;
+    team.registeredAt = null;
+    team.challengeStartedAt = null;
 
     await this.teamRepository.save(team);
 

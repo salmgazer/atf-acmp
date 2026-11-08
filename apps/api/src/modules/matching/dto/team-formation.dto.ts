@@ -1,3 +1,4 @@
+import type { TeamRuleReport } from "@acmp/shared";
 import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import {
   IsUUID,
@@ -8,7 +9,7 @@ import {
   IsBoolean,
   IsArray,
   ValidateNested,
-  IsEnum,
+  IsEnum, IsInt, ArrayMinSize, ArrayMaxSize, ArrayUnique,
 } from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
@@ -119,7 +120,7 @@ export class TeamFormationConfigDto {
   })
   @IsOptional()
   @IsNumber()
-  @Min(1)
+  @Min(3) @Max(5) @IsInt()
   teamSizeMin?: number;
 
   @ApiPropertyOptional({
@@ -127,11 +128,11 @@ export class TeamFormationConfigDto {
   })
   @IsOptional()
   @IsNumber()
-  @Min(1)
+  @Min(3) @Max(5) @IsInt()
   teamSizeMax?: number;
 
   @ApiPropertyOptional({
-    description: "Allow cross-country teams even for participants who prefer same country",
+    description: "Deprecated: cross-country consent cannot be overridden",
     default: false,
   })
   @IsOptional()
@@ -168,7 +169,7 @@ export class RunTeamFormationDto {
 
 export class ManualTeamAssignmentDto {
   @ApiProperty({ description: "Participant IDs to group into a team" })
-  @IsArray()
+  @IsArray() @ArrayMinSize(3) @ArrayMaxSize(5) @ArrayUnique()
   @IsUUID("4", { each: true })
   participantIds: string[];
 
@@ -212,6 +213,8 @@ export class FinalizeTeamFormationDto {
  * Proposed team in the preview
  */
 export class ProposedTeamDto {
+  competitionCountry?: string;
+  eligibility?: TeamRuleReport;
   @ApiPropertyOptional() group?: string | null;
 
   @ApiProperty({ description: "Temporary ID for the proposed team" })
@@ -506,6 +509,10 @@ export class ProposedBriefAssignmentDto {
  * Full team formation preview response
  */
 export class TeamFormationPreviewDto {
+  policyVersion?: string;
+  deadlineVersion?: string;
+  sourceVersions?: Record<string, string>;
+  cohortVersion?: string;
   @ApiProperty()
   cohortId: string;
 

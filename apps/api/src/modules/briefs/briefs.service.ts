@@ -655,6 +655,12 @@ export class BriefsService {
       resources: brief.resources,
       maxTeams: brief.maxTeams,
       secondaryContact: brief.secondaryContact || {},
+      whatChanges: brief.whatChanges,
+      affectedCount: brief.affectedCount,
+      dataDescription: brief.dataDescription,
+      dataAccess: brief.dataAccess,
+      countryLeadNotes: brief.countryLeadNotes,
+      problemCountry: brief.problemCountry,
     };
 
     // Handle vertical change - check new vertical capacity if needed
@@ -676,7 +682,7 @@ export class BriefsService {
     }
 
     // Apply restored data
-    const restorableFields = ['title', 'description', 'problemStatement', 'expectedOutcomes', 'verticalId', 'tags', 'resources', 'maxTeams', 'secondaryContact'];
+    const restorableFields = ['title', 'description', 'problemStatement', 'expectedOutcomes', 'verticalId', 'tags', 'resources', 'maxTeams', 'secondaryContact', 'whatChanges', 'affectedCount', 'dataDescription', 'dataAccess', 'countryLeadNotes', 'problemCountry'];
     const previousData = revision.previousData!;
     restorableFields.forEach(field => {
       if (previousData[field] !== undefined) {

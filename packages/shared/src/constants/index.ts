@@ -1,5 +1,9 @@
 // Skills and interests
 export * from "./skills";
+export * from "./participant-import";
+export * from "./submission-import";
+export * from "./participant-matching";
+export * from "./team-rules";
 export { hasStaffPermission } from "./staff-permissions";
 export type { StaffPermission } from "./staff-permissions";
 

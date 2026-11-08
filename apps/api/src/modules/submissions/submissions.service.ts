@@ -1,3 +1,5 @@
+import { parseStageTimestamp } from "@/common/services/stage-time";
+import { assertChallengeStarted } from "@/common/services/team-rules";
 import { Transactional } from "@/common/decorators/transactional.decorator";
 import { scoreAgainstRubric } from "@/common/services/rubric-scoring";
 import { UploadService } from "@/common/services/upload.service";
@@ -57,8 +59,8 @@ export class SubmissionsService {
     if (dto.evaluationCriteria) scoreAgainstRubric(dto.evaluationCriteria, dto.evaluationCriteria.map(item => ({ criterionId: item.id, score: 0 })));
     const stage = this.stageRepository.create({
       ...dto,
-      startDate: dto.startDate ? new Date(dto.startDate) : undefined,
-      deadline: new Date(dto.deadline),
+      startDate: dto.startDate ? parseStageTimestamp(dto.startDate) : undefined,
+      deadline: parseStageTimestamp(dto.deadline),
     });
     return this.stageRepository.save(stage);
   }
@@ -72,8 +74,8 @@ export class SubmissionsService {
 
     Object.assign(stage, {
       ...dto,
-      startDate: dto.startDate ? new Date(dto.startDate) : stage.startDate,
-      deadline: dto.deadline ? new Date(dto.deadline) : stage.deadline,
+      startDate: dto.startDate ? parseStageTimestamp(dto.startDate) : stage.startDate,
+      deadline: dto.deadline ? parseStageTimestamp(dto.deadline) : stage.deadline,
     });
 
     return this.stageRepository.save(stage);
@@ -186,6 +188,7 @@ export class SubmissionsService {
     });
     const isRejectedSubmission = existingSubmission?.status === SubmissionStatus.REJECTED;
     this.assertSubmissionAllowed(team, stage, isRejectedSubmission);
+    await assertChallengeStarted(this.teamRepository.manager, team.id);
     if (dto.fileUrls) dto.fileUrls = await this.uploads.validateSubmissionDocuments(dto.fileUrls, team.id, stage.requirements.documentMaxSize, stage.requirements.documentTypes);
     if (dto.videoUrl) await this.uploads.validateSubmissionVideo(dto.videoUrl, team.id, stage.requirements.videoMaxSize, stage.requirements.videoMaxDuration);
     
@@ -251,6 +254,7 @@ export class SubmissionsService {
     // Allow resubmission for rejected submissions even past deadline
     const isResubmission = submission?.status === SubmissionStatus.REJECTED;
     this.assertSubmissionAllowed(team, stage, isResubmission);
+    await assertChallengeStarted(this.teamRepository.manager, team.id);
     
     if (isPastDeadline && !stage.allowLateSubmissions && !isResubmission) {
       throw new BadRequestException("Deadline has passed and late submissions are not allowed");

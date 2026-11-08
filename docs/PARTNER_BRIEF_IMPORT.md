@@ -11,10 +11,46 @@
 - [x] Add selected-partner bulk approval with role checks, confirmation, transactional account provisioning and staff attribution.
 - [x] Preserve normal JSON parsing alongside the importer's larger CSV payload limit, verified through the real HTTP routes.
 - [x] Verify Ghana dry run and database/browser regressions without importing application data or sending real emails.
+- [x] Populate partner Industry from Sector, including the specific Other-sector detail, on imports and public onboarding.
+- [x] Add update-only imports with explicit field selections, before/after preview, stale-preview protection and audited receipts.
 
 One partner represents an organization within a cohort and country. Every brief retains its main contact and submitter. Only the selected partner main contact becomes an organization owner; other contacts use member logins and brief-specific hosting permission. Partners remain Pending and briefs Submitted on import. Consent absent from the CSV remains unconfirmed.
 
 Preview never writes application records. Apply requires an unchanged preview, validates live conflicts again and uses one serializable transaction for the entire CSV. Repeating the same source rows skips existing receipts; changed or conflicting source rows are reported rather than overwritten. The same authenticated staff flow is used locally, on staging and on production, with each environment's cohort selected explicitly.
+
+That repeat/skip behavior applies to **Create new partners and briefs**, the default operation. **Update existing only** explicitly permits selected-field corrections using the same source identity. It never creates partners, briefs, users, memberships or invitations. Existing source receipts retain their original content/hash; each update batch records its field selections and before/after changes in the audit trail and downloadable receipt. Brief updates also add staff-attributed revisions. Approved brief-list caches refresh after commit.
+
+## Industry mapping and selective updates
+
+The CSV's sector describes the partner. The existing `organizations.industry` field is the Industry column shown on `/staff/partners`; it is distinct from `organizations.sector` and the brief's `verticalId`. No new database column or migration is needed. The prior importer saved sector but omitted Industry. Public `/onboard-partner` submissions now populate Industry through the same mapping.
+
+| CSV input | System destination | Rule |
+| --- | --- | --- |
+| Sector; Sector (if Other) | Partner `industry` | Use Sector; for Other, use its supplied detail. Preserve wording, including Legal services and Telecommunication. |
+| Sector; Sector (if Other) | Partner `sector`, `sectorOther` | Preserve public-intake fields; normalize Local / Municipal Government to Local/Municipal Government. |
+| City or town | Partner `city` | Optional selected update. |
+| Opportunity title | Brief `title` | Optional selected update; matching never relies on the title. |
+| The opportunity and who it affects | Brief `description`, `problemStatement` | Update together when selected. |
+| If addressed, what changes? | Brief `expectedOutcomes`, `whatChanges` | Update together when selected. |
+| Roughly how many people? | Brief `affectedCount` | Optional selected update. |
+| Records and data that exist | Brief `dataDescription` | Optional selected update. |
+| Can data be shared? | Brief `dataAccess` | Optional selected update. |
+| Country lead notes | Brief `countryLeadNotes` | Optional selected update. |
+| Country | Brief `problemCountry` | Optional selected update; partner country remains part of identity validation. |
+
+To backfill Industry:
+
+1. Open `/staff/partners/import` → **Partners and briefs**.
+2. Select **Update existing only**, the correct active cohort and source timezone.
+3. Keep only **Partner industry** checked (the update-mode default) and upload the original full CSV.
+4. Preview and review **Selected field changes**, then select **Update selected fields** and confirm.
+5. Download the receipt. Rerunning the update reports unchanged rows once the values match.
+
+Updates identify briefs by cohort + original Session ID + Opportunity #, using import receipts where available. Public-intake records without receipts can match the same exact source identity. Partner identity/country/cohort is verified before changes. Unknown source identities are skipped with warnings; deleted, reassigned or ambiguous matches block apply. Repeated partner rows are consolidated into one update. Conflicting selected values for the same partner block the import rather than choosing a submitter arbitrarily. Blank selected cells preserve existing data and cannot clear a field.
+
+The original complete CSV format and its validation still apply. Updates allow only the listed fields, leaving partner ownership, contacts, emails, credentials, consent, scoring, approval states, brief vertical assignments and source provenance untouched. Changing fields, file, mode or target data invalidates the preview. Selecting a field explicitly authorizes replacing its nonblank current value; review the before/after comparison before confirming.
+
+The Ghana reference has 31 brief rows representing 13 partners, with no conflicting sector values within a partner. Industries resolve to Healthcare (4 partners), Agriculture (3), Finance (2), and one each for Education, Legal services, Local/Municipal Government and Telecommunication. A disposable-database rehearsal backfilled exactly 13 Industry values while preserving all 31 briefs, accounts, contacts and original receipts. Its second preview reported 31 unchanged rows. No application records were changed and no real email was sent during verification.
 
 ## Staff workflow
 
@@ -46,7 +82,7 @@ The Ghana CSV passed a read-only preview under the existing local Super Admin id
 | POST | `/organizations/submission-import/apply` | Apply the reviewed input using `previewHash`; return a batch receipt |
 | POST | `/organizations/bulk-approve` | Approve 1–500 selected pending, active partners atomically; provision portal access without sending invitations |
 
-All routes require Super Admin or Program Manager access. Import requests include `cohortId`, `csv`, `sourceName`, `sourceTimezone` and optional `primaryContacts` keyed by country/organization. Apply also requires the latest `previewHash`. Changed data or conflicting concurrent operations require a refreshed preview. Bulk approval takes unique UUIDs in `organizationIds` and records the authenticated staff identity. A stale selection or conflicting account rolls back the entire approval.
+All routes require Super Admin or Program Manager access. Import requests include `cohortId`, `csv`, `sourceName`, `sourceTimezone` and optional `primaryContacts` keyed by country/organization. Optional `mode` is `create` (default) or `update_existing`; the latter requires a nonempty, unique `updateFields` allowlist (for example `["industry"]`). Apply also requires the latest `previewHash`. Changed data or conflicting concurrent operations require a refreshed preview. Bulk approval takes unique UUIDs in `organizationIds` and records the authenticated staff identity. A stale selection or conflicting account rolls back the entire approval.
 
 ## Verification on 2026-11-04
 
@@ -55,3 +91,12 @@ All routes require Super Admin or Program Manager access. Import requests includ
 - [x] Workspace type checks and production API/web builds passed.
 - [x] The local migration is applied, API readiness passes and the importer accepts its larger CSV payload while rejecting anonymous requests with HTTP 401.
 - [x] Ghana passed both the read-only local preview and the disposable import/rerun rehearsal without changing application data.
+
+## Selective-update verification on 2026-11-07
+
+- [x] 575 API tests passed, including Industry-only backfill, selected brief fields, blank preservation, immutable source receipts, stale previews, HTTP field validation, conflicts and authorization.
+- [x] 21 partner browser tests passed, including field selection, before/after review, confirmation, downloaded update receipts and unchanged/unmatched rows.
+- [x] Ghana disposable rehearsal backfilled 13 partners, changed no briefs/accounts/contacts/receipts and reported 31 unchanged rows on repeat.
+- [x] Workspace type checks, API/web builds and local API readiness passed. Lint has no errors; existing repository warnings remain.
+
+The application's existing partner records have not been reimported by this verification; reimport remains a deliberate staff preview/confirm action in each environment.

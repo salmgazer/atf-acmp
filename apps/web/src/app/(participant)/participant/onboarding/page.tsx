@@ -1,369 +1,151 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useForm, Controller } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Textarea } from "@/components/ui/textarea";
-import { PhoneInput } from "@/components/ui/phone-input";
-import {
-  useCurrentParticipant,
-  useCompleteOnboarding,
-  type CompleteOnboardingDto,
-} from "@/lib/api/hooks/use-participants";
-import { useVerticals, type Vertical } from "@/lib/api/hooks/use-verticals";
+import { useCurrentParticipant, useCompleteOnboarding, type CompleteOnboardingDto, type Participant } from "@/lib/api/hooks/use-participants";
+import { useVerticals } from "@/lib/api/hooks/use-verticals";
 import { useChangePassword } from "@/lib/api/hooks/use-auth-api";
-import {
-  ArrowRight,
-  ArrowLeft,
-  Check,
-  User,
-  Sparkles,
-  Layers,
-  FileText,
-  Globe,
-  Loader2,
-  Lock,
-  Eye,
-  EyeOff,
-} from "lucide-react";
+import { ArrowRight, ArrowLeft, Check, Loader2, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { SKILL_NAMES, INTEREST_OPTIONS as SHARED_INTEREST_OPTIONS } from "@acmp/shared";
+import { BUILD_DEPLOY_OPTIONS, MATCHING_ROLE_OPTIONS, MATCHING_SECTOR_OPTIONS, MATCHING_TEAM_STATUS_OPTIONS, GITHUB_USERNAME_PATTERN, COUNTRY_NAMES, SKILL_NAMES, INTEREST_OPTIONS, matchingOptionLabel } from "@acmp/shared";
 
-// Use shared skill and interest options
-const SKILL_OPTIONS = [...SKILL_NAMES];
-const INTEREST_OPTIONS = [...SHARED_INTEREST_OPTIONS];
-
-const ROLE_OPTIONS = [
-  { value: "leader", label: "Team Leader", description: "Lead and coordinate the team" },
-  { value: "co-leader", label: "Co-Leader", description: "Support leadership and fill gaps" },
-  { value: "member", label: "Team Member", description: "Contribute expertise to the team" },
-  { value: "flexible", label: "Flexible", description: "Open to any role based on team needs" },
-];
-
-// Steps configuration
-const STEPS = [
-  { id: 1, title: "Security", icon: Lock },
-  { id: 2, title: "Profile", icon: User },
-  { id: 3, title: "Skills", icon: Sparkles },
-  { id: 4, title: "Verticals", icon: Layers },
-  { id: 5, title: "Preferences", icon: Globe },
-  { id: 6, title: "Complete", icon: Check },
-];
-
-// Password validation schema for onboarding (no current password needed)
 const passwordSchema = z.object({
-  newPassword: z.string()
-    .min(8, "Password must be at least 8 characters")
-    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-    .regex(/[0-9]/, "Password must contain at least one number"),
+  newPassword: z.string().min(8, "Password must be at least 8 characters").regex(/[A-Z]/, "Password must contain at least one uppercase letter").regex(/[a-z]/, "Password must contain at least one lowercase letter").regex(/[0-9]/, "Password must contain at least one number"),
   confirmPassword: z.string().min(1, "Please confirm your password"),
-}).refine((data) => data.newPassword === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-});
-
+}).refine(data => data.newPassword === data.confirmPassword, { message: "Passwords don't match", path: ["confirmPassword"] });
 type PasswordData = z.infer<typeof passwordSchema>;
-
-// Validation schemas
-const profileSchema = z.object({
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
-  institution: z.string().optional(),
-  phoneNumber: z.string().optional(),
+const profileFields = [
+  ["firstName", "First name", 255], ["lastName", "Last name", 255], ["phoneNumber", "Phone number", 50], ["whatsappNumber", "WhatsApp number", 50],
+  ["city", "City", 150], ["locationType", "Location type", 150], ["gender", "Gender", 100], ["institution", "Institution / university", 255],
+  ["educationLevel", "Education level", 150], ["currentAffiliation", "Current affiliation", 150], ["fieldOfStudy", "Field of study", 255],
+] as const;
+const skillsFields = [["pythonSkill", "Python skill"], ["gitSkill", "Git skill"], ["aiExperience", "AI experience"]] as const;
+const steps = ["Security", "Profile", "Skills & GitHub", "Sectors", "Team preferences", "Review"];
+const selectClass = "h-11 w-full rounded-md border border-input bg-background px-3 text-sm";
+const countryName = (value: string) => Object.entries(COUNTRY_NAMES).find(([code, name]) => [code.toLowerCase(), name.toLowerCase()].includes(value.toLowerCase()))?.[1] || value;
+const draftSchema = z.object({
+  profile: z.object({ firstName: z.string().max(255), lastName: z.string().max(255), country: z.string().max(255), institution: z.string().max(255), phoneNumber: z.string().max(50), whatsappNumber: z.string().max(50), city: z.string().max(150), locationType: z.string().max(150), gender: z.string().max(100), educationLevel: z.string().max(150), currentAffiliation: z.string().max(150), fieldOfStudy: z.string().max(255), pythonSkill: z.string().max(255), gitSkill: z.string().max(255), aiExperience: z.string().max(255), githubUsername: z.string().max(255), githubAccountStatus: z.enum(["", "has_account", "no_account"]) }),
+  skills: z.array(z.string().max(255)).max(100), interests: z.array(z.string().max(255)).max(100),
+  buildDeployAbility: z.enum(["", "confident", "with_support", "no"]), preferredRole: z.enum(["", "builder", "sector_specialist", "business_impact_lead"]),
+  firstChoiceSector: z.string().max(50), backupSector: z.string().max(50), teamStatus: z.enum(["", "full_team", "partial_team", "need_team"]),
+  crossCountry: z.enum(["", "yes", "no"]), consent: z.enum(["", "yes", "no"]), verticalId1: z.string().max(50), verticalId2: z.string().max(50),
 });
-
-const skillsSchema = z.object({
-  skills: z.array(z.string()).min(1, "Select at least one skill"),
-  interests: z.array(z.string()).min(1, "Select at least one interest"),
-});
-
-const verticalsSchema = z.object({
-  verticalId1: z.string().optional(),
-  verticalId2: z.string().optional(),
-});
-
-const preferencesSchema = z.object({
-  crossCountryWilling: z.boolean(),
-  preferredRole: z.string().optional(),
-  availabilityNotes: z.string().optional(),
-});
-
-type ProfileData = z.infer<typeof profileSchema>;
-type SkillsData = z.infer<typeof skillsSchema>;
-type VerticalsData = z.infer<typeof verticalsSchema>;
-type PreferencesData = z.infer<typeof preferencesSchema>;
-
-function StepIndicator({ currentStep }: { currentStep: number }) {
-  return (
-    <div className="mx-4 overflow-x-auto py-4">
-      <div className="flex items-center justify-start gap-1 min-w-max px-1">
-        {STEPS.map((step, index) => {
-          const isCompleted = currentStep > step.id;
-          const isCurrent = currentStep === step.id;
-          const StepIcon = step.icon;
-
-          return (
-            <div key={step.id} className="flex items-center shrink-0">
-              <div
-                className={cn(
-                  "flex h-9 w-9 items-center justify-center rounded-full border-2 transition-colors",
-                  isCompleted && "border-primary bg-primary text-primary-foreground",
-                  isCurrent && "border-primary bg-primary/10",
-                  !isCompleted && !isCurrent && "border-muted"
-                )}
-              >
-                {isCompleted ? (
-                  <Check className="h-4 w-4" />
-                ) : (
-                  <StepIcon className={cn("h-4 w-4", isCurrent && "text-primary")} />
-                )}
-              </div>
-              {index < STEPS.length - 1 && (
-                <div
-                  className={cn(
-                    "h-0.5 w-6 mx-1",
-                    currentStep > step.id ? "bg-primary" : "bg-muted"
-                  )}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+type Draft = z.infer<typeof draftSchema>;
+function initialDraft(p: Participant): Draft {
+  const preference = p.preference;
+  const profile = Object.fromEntries([...profileFields, ...skillsFields].map(([field]) => [field, p[field] || ""]));
+  return { profile: { ...profile, country: countryName(p.country), githubUsername: p.githubUsername || "", githubAccountStatus: p.githubAccountStatus || (p.githubUsername ? "has_account" : "") } as Draft["profile"],
+    skills: p.skills || [], interests: p.interests || [], buildDeployAbility: preference?.buildDeployAbility || "", preferredRole: MATCHING_ROLE_OPTIONS.find(option => option.value === preference?.preferredRole)?.value || "", firstChoiceSector: preference?.firstChoiceSector || "", backupSector: preference?.backupSector || "", teamStatus: preference?.teamStatus || "", crossCountry: preference?.matchingProfileCompletedAt ? preference.crossCountryWilling ? "yes" : "no" : "", consent: preference?.matchingProfileConsent == null ? "" : preference.matchingProfileConsent ? "yes" : "no", verticalId1: preference?.verticalId1 || "", verticalId2: preference?.verticalId2 || "" };
 }
-
+function validateStep(draft: Draft, step: number) {
+  if (step === 2 && (!draft.profile.firstName.trim() || !draft.profile.lastName.trim() || !draft.profile.country)) return "Confirm your first name, last name and country.";
+  if (step === 3) {
+    if (!draft.buildDeployAbility) return "Tell us whether you can build and deploy an application.";
+    if (!draft.profile.githubAccountStatus) return "Tell us whether you have a GitHub account.";
+    if (draft.profile.githubAccountStatus === "has_account" && !GITHUB_USERNAME_PATTERN.test(draft.profile.githubUsername.trim())) return "Enter a valid GitHub username, without a URL or @ prefix, or choose that you do not have an account yet.";
+  }
+  if (step === 4 && (!MATCHING_SECTOR_OPTIONS.some(option => option.value === draft.firstChoiceSector) || !MATCHING_SECTOR_OPTIONS.some(option => option.value === draft.backupSector) || draft.firstChoiceSector === draft.backupSector)) return "Choose a first-choice sector and a different backup sector.";
+  if (step === 4 && draft.verticalId1 && draft.verticalId1 === draft.verticalId2) return "Choose different programme verticals.";
+  if (step === 5 && (!draft.preferredRole || !draft.teamStatus || !draft.crossCountry || !draft.consent)) return "Answer each team preference question. You can choose No for profile visibility and cross-country teams.";
+  return null;
+}
+function Choices({ title, value, onChange, options, description }: { title: string; value: string; onChange: (value: string) => void; options: readonly { value: string; label: string }[]; description?: string }) {
+  const id = title.toLowerCase().replace(/[^a-z]+/g, "-");
+  return <fieldset className="space-y-3"><legend className="text-sm font-medium">{title}</legend>{description && <p className="text-sm text-muted-foreground">{description}</p>}<RadioGroup aria-label={title} value={value} onValueChange={onChange} className="gap-2">{options.map(option => <label htmlFor={`${id}-${option.value}`} key={option.value} className={cn("flex cursor-pointer items-center gap-3 rounded-lg border p-3 text-sm", value === option.value && "border-primary bg-primary/5")}><RadioGroupItem id={`${id}-${option.value}`} value={option.value} />{option.label}</label>)}</RadioGroup></fieldset>;
+}
 function OnboardingContent() {
   const router = useRouter();
-  const [currentStep, setCurrentStep] = useState(1);
-  const [passwordChanged, setPasswordChanged] = useState(false);
-  const [formData, setFormData] = useState<{
-    profile: ProfileData;
-    skills: SkillsData;
-    verticals: VerticalsData;
-    preferences: PreferencesData;
-  }>({
-    profile: { firstName: "", lastName: "", institution: "", phoneNumber: "" },
-    skills: { skills: [], interests: [] },
-    verticals: { verticalId1: undefined, verticalId2: undefined },
-    preferences: { crossCountryWilling: true, preferredRole: "flexible", availabilityNotes: "" },
-  });
-
-  const { data: participant, isLoading: participantLoading, refetch: refetchParticipant } = useCurrentParticipant();
+  const { data: participant, isLoading, isError, refetch } = useCurrentParticipant();
   const { data: verticals } = useVerticals(participant?.cohortId);
-  const completeMutation = useCompleteOnboarding();
-  const changePasswordMutation = useChangePassword();
-
-  // Track if form data has been initialized
-  const [initialized, setInitialized] = useState(false);
-
-  // Initialize form data from participant (only once)
+  const complete = useCompleteOnboarding(), password = useChangePassword();
+  const [draft, setDraft] = useState<Draft | null>(null), [step, setStep] = useState(1), [error, setError] = useState<string | null>(null), [finished, setFinished] = useState(false);
+  const storageKey = participant ? `acmp-onboarding-v2:${participant.id}` : null;
   useEffect(() => {
-    if (participant && !initialized) {
-      setFormData((prev) => ({
-        ...prev,
-        profile: {
-          firstName: participant.firstName || "",
-          lastName: participant.lastName || "",
-          institution: participant.institution || "",
-          phoneNumber: participant.phoneNumber || "",
-        },
-        skills: {
-          skills: participant.skills || [],
-          interests: participant.interests || [],
-        },
-      }));
-      setInitialized(true);
-    }
-
-    if (participant) {
-      // If password already changed, skip to step 2
-      if (!participant.mustChangePassword) {
-        setPasswordChanged(true);
-        if (currentStep === 1) {
-          setCurrentStep(2);
-        }
-      }
-
-      // If onboarding is already complete, redirect
-      if (participant.onboardingComplete) {
-        router.push("/participant/dashboard");
-      }
-    }
-  }, [participant, router, currentStep, initialized]);
-
-  const handlePasswordChange = async (data: PasswordData) => {
-    if (!participant?.participantId) {
-      toast.error("Unable to change password. Please try again.");
-      return;
-    }
-    
-    try {
-      await changePasswordMutation.mutateAsync({
-        currentPassword: participant.participantId, // Use participant ID as current password
-        newPassword: data.newPassword,
-      });
-      setPasswordChanged(true);
-      toast.success("Password changed successfully!");
-      // Refetch participant to update mustChangePassword status
-      await refetchParticipant();
-      setCurrentStep(2);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to change password");
-    }
-  };
-
-  const handleNext = () => {
-    if (currentStep < STEPS.length) {
-      setCurrentStep((s) => s + 1);
-    }
-  };
-
-  const handleBack = () => {
-    if (currentStep > 1) {
-      // Don't go back to password step if already changed
-      if (currentStep === 2 && passwordChanged) {
-        return;
-      }
-      setCurrentStep((s) => s - 1);
-    }
-  };
-
-  const handleSubmit = async () => {
     if (!participant) return;
-
-    const data: CompleteOnboardingDto = {
-      profile: formData.profile,
-      skills: formData.skills,
-      preferences: {
-        verticalId1: formData.verticals.verticalId1,
-        verticalId2: formData.verticals.verticalId2,
-        briefRankings: [], // Will be set later when browsing briefs
-        crossCountryWilling: formData.preferences.crossCountryWilling,
-        preferredRole: formData.preferences.preferredRole,
-        availabilityNotes: formData.preferences.availabilityNotes,
-      },
-    };
-
-    await completeMutation.mutateAsync({ id: participant.id, data });
-    router.push("/participant/dashboard");
+    if (participant.onboardingComplete && participant.preference?.matchingProfileCompletedAt) { router.replace("/participant/dashboard"); return; }
+    if (draft) { if (!participant.mustChangePassword && step === 1) setStep(2); return; }
+    let initial = initialDraft(participant), nextStep = participant.mustChangePassword ? 1 : 2;
+    if (storageKey) try {
+      const saved = JSON.parse(sessionStorage.getItem(storageKey) || "null");
+      if (saved?.expires > Date.now() && saved.version === 2) {
+        const parsed = draftSchema.safeParse(saved.draft);
+        if (parsed.success) { initial = parsed.data; if (!participant.mustChangePassword && Number.isInteger(saved.step)) nextStep = Math.max(2, Math.min(6, saved.step)); }
+      }
+    } catch { /* A draft is optional. */ }
+    setDraft(initial); setStep(nextStep);
+  }, [participant, draft, router, step, storageKey]);
+  useEffect(() => {
+    if (!storageKey || !draft || step === 1 || finished || participant?.preference?.matchingProfileCompletedAt) return;
+    try { sessionStorage.setItem(storageKey, JSON.stringify({ version: 2, draft, step, expires: Date.now() + 86400000 })); } catch { /* A draft is optional. */ }
+  }, [storageKey, draft, step, finished, participant?.preference?.matchingProfileCompletedAt]);
+  const changePassword = async (values: PasswordData) => {
+    if (!participant) return;
+    try { await password.mutateAsync({ currentPassword: participant.participantId, newPassword: values.newPassword }); await refetch(); setStep(2); } catch (failure) { toast.error(failure instanceof Error ? failure.message : "Could not change your password. Please try again."); }
   };
-
-  if (participantLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-10 border-b bg-background px-4 py-3">
-        <div className="flex items-center justify-center">
-          <div className="flex items-center gap-2">
-            <img 
-              src="/logos/image_only/Brand-Mark_Red.png" 
-              alt="ATF" 
-              className="h-8 w-8 rounded-md"
-            />
-            <span className="font-semibold">Complete Your Profile</span>
-          </div>
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-md px-4 py-6">
-        <StepIndicator currentStep={currentStep} />
-
-        <div className="mt-6">
-          {/* Step 1: Password Reset */}
-          {currentStep === 1 && (
-            <PasswordResetStep
-              onSubmit={handlePasswordChange}
-              isSubmitting={changePasswordMutation.isPending}
-              participantId={participant?.participantId}
-            />
-          )}
-
-          {/* Step 2: Profile */}
-          {currentStep === 2 && (
-            <ProfileStep
-              data={formData.profile}
-              onUpdate={(data) => setFormData((prev) => ({ ...prev, profile: data }))}
-              onNext={handleNext}
-            />
-          )}
-
-          {/* Step 3: Skills */}
-          {currentStep === 3 && (
-            <SkillsStep
-              data={formData.skills}
-              onUpdate={(data) => setFormData((prev) => ({ ...prev, skills: data }))}
-              onNext={handleNext}
-              onBack={handleBack}
-            />
-          )}
-
-          {/* Step 4: Verticals */}
-          {currentStep === 4 && (
-            <VerticalsStep
-              data={formData.verticals}
-              verticals={verticals || []}
-              onUpdate={(data) => setFormData((prev) => ({ ...prev, verticals: data }))}
-              onNext={handleNext}
-              onBack={handleBack}
-            />
-          )}
-
-          {/* Step 5: Preferences */}
-          {currentStep === 5 && (
-            <PreferencesStep
-              data={formData.preferences}
-              onUpdate={(data) => setFormData((prev) => ({ ...prev, preferences: data }))}
-              onNext={handleNext}
-              onBack={handleBack}
-            />
-          )}
-
-          {/* Step 6: Complete */}
-          {currentStep === 6 && (
-            <CompleteStep
-              formData={formData}
-              verticals={verticals || []}
-              isSubmitting={completeMutation.isPending}
-              onSubmit={handleSubmit}
-              onBack={handleBack}
-            />
-          )}
-        </div>
-      </div>
-    </div>
-  );
+  if (isLoading || (!draft && !isError)) return <div className="flex min-h-screen items-center justify-center"><Loader2 aria-label="Loading profile" className="h-8 w-8 animate-spin" /></div>;
+  if (isError || !participant || !draft) return <div className="mx-auto max-w-lg p-8"><p role="alert">Could not load your profile.</p><Button onClick={() => refetch()}>Try again</Button></div>;
+  const update = <K extends keyof Draft>(key: K, value: Draft[K]) => { setDraft(current => current ? { ...current, [key]: value } : current); setError(null); };
+  const updateProfile = (key: keyof Draft["profile"], value: string) => { setDraft(current => current ? { ...current, profile: { ...current.profile, [key]: value } } : current); setError(null); };
+  const next = (event: FormEvent) => { event.preventDefault(); const message = validateStep(draft, step); setError(message); if (!message) { setStep(current => current + 1); window.scrollTo(0, 0); } };
+  const back = () => { setStep(current => Math.max(2, current - 1)); setError(null); };
+  const submit = async () => {
+    for (let current = 2; current <= 5; current++) { const message = validateStep(draft, current); if (message) { setStep(current); setError(message); return; } }
+    const data: CompleteOnboardingDto = {
+      profile: { ...draft.profile, githubAccountStatus: draft.profile.githubAccountStatus as "has_account" | "no_account", githubUsername: draft.profile.githubAccountStatus === "has_account" ? draft.profile.githubUsername.trim() : undefined },
+      skills: { skills: draft.skills, interests: draft.interests },
+      preferences: { verticalId1: draft.verticalId1 || undefined, verticalId2: draft.verticalId2 || undefined, briefRankings: participant.preference?.briefRankings || [], crossCountryWilling: draft.crossCountry === "yes", preferredRole: draft.preferredRole as CompleteOnboardingDto["preferences"]["preferredRole"], buildDeployAbility: draft.buildDeployAbility as CompleteOnboardingDto["preferences"]["buildDeployAbility"], firstChoiceSector: draft.firstChoiceSector as CompleteOnboardingDto["preferences"]["firstChoiceSector"], backupSector: draft.backupSector as CompleteOnboardingDto["preferences"]["backupSector"], teamStatus: draft.teamStatus as CompleteOnboardingDto["preferences"]["teamStatus"], matchingProfileConsent: draft.consent === "yes" },
+    };
+    try { await complete.mutateAsync({ id: participant.id, data }); setFinished(true); if (storageKey) try { sessionStorage.removeItem(storageKey); } catch { /* Optional cache. */ } router.push("/participant/dashboard"); } catch { setError("Could not complete setup. Your answers have been kept; check the error message and try again."); }
+  };
+  const countries = [...new Set((participant.cohort?.countries?.length ? participant.cohort.countries : Object.values(COUNTRY_NAMES)).map(countryName))];
+  if (draft.profile.country && !countries.includes(draft.profile.country)) countries.unshift(draft.profile.country);
+  const activeVerticals = verticals?.filter(vertical => vertical.isActive) || [];
+  const yesNo = [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }];
+  return <div className="min-h-screen bg-background"><header className="border-b px-4 py-4"><div className="flex items-center justify-center gap-3"><img src="/logos/image_only/Brand-Mark_Red.png" alt="ATF" className="h-8 w-8" /><h1 className="text-lg font-semibold">Complete Your Profile</h1></div></header>
+    <main className="mx-auto max-w-2xl space-y-7 px-4 py-8"><nav aria-label="Onboarding progress"><ol className="grid grid-cols-6 gap-2">{steps.map((title, index) => <li key={title} aria-current={step === index + 1 ? "step" : undefined} className={cn("border-t-4 pt-2 text-xs text-muted-foreground", step >= index + 1 && "border-primary", step === index + 1 && "font-semibold text-foreground")}><span className="block">{index + 1}</span><span className="hidden sm:block">{title}</span></li>)}</ol><p className="mt-3 text-sm text-muted-foreground">Step {step} of 6 · {steps[step - 1]}</p></nav>
+      {step === 1 ? <PasswordResetStep onSubmit={changePassword} isSubmitting={password.isPending} /> : <form onSubmit={next} className="space-y-6">
+      {step === 2 && <><div><h2 className="text-xl font-bold">Personal Information</h2><p className="mt-1 text-sm text-muted-foreground">We have prefilled the details supplied by ATF. Confirm or correct them before continuing.</p></div>
+        <dl className="grid gap-3 rounded-lg border bg-muted/30 p-4 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">Participant ID</dt><dd>{participant.participantId}</dd></div><div><dt className="text-muted-foreground">LMS email</dt><dd className="break-all">{participant.lmsEmail || participant.email}</dd></div><div><dt className="text-muted-foreground">Group</dt><dd>{participant.group || "Not assigned"}</dd></div></dl>
+        <div className="grid gap-4 sm:grid-cols-2">{profileFields.map(([field, title, length]) => <div key={field} className="space-y-2"><Label htmlFor={field}>{title}{field === "firstName" || field === "lastName" ? " *" : ""}</Label><Input id={field} type={field === "phoneNumber" || field === "whatsappNumber" ? "tel" : "text"} value={draft.profile[field]} maxLength={length} required={field === "firstName" || field === "lastName"} onChange={event => updateProfile(field, event.target.value)} /></div>)}<div className="space-y-2"><Label htmlFor="country">Country of residence *</Label><select id="country" className={selectClass} value={draft.profile.country} required onChange={event => updateProfile("country", event.target.value)}><option value="">Choose your country</option>{countries.map(country => <option key={country}>{country}</option>)}</select></div></div>
+        <LearningRecord participant={participant} />
+      </>}
+      {step === 3 && <><div><h2 className="text-xl font-bold">Skills & GitHub</h2><p className="mt-1 text-sm text-muted-foreground">Confirm your imported experience and tell us how you can contribute.</p></div>
+        <div className="grid gap-4 sm:grid-cols-3">{skillsFields.map(([field, title]) => <div key={field} className="space-y-2"><Label htmlFor={field}>{title}</Label><Input id={field} value={draft.profile[field]} maxLength={255} onChange={event => updateProfile(field, event.target.value)} /></div>)}</div>
+        <Choices title="Can you build and deploy an application?" value={draft.buildDeployAbility} options={BUILD_DEPLOY_OPTIONS} onChange={value => update("buildDeployAbility", value as Draft["buildDeployAbility"])} />
+        <div className="space-y-4 rounded-lg border p-4"><Choices title="Do you have a GitHub account?" value={draft.profile.githubAccountStatus} options={[{ value: "has_account", label: "Yes, I have an account" }, { value: "no_account", label: "I do not have an account yet" }]} onChange={value => updateProfile("githubAccountStatus", value)} />
+        {draft.profile.githubAccountStatus === "has_account" && <div className="space-y-2"><Label htmlFor="githubUsername">GitHub username *</Label><Input id="githubUsername" placeholder="Your username, without @ or a URL" value={draft.profile.githubUsername} maxLength={39} onChange={event => updateProfile("githubUsername", event.target.value)} /></div>}
+        <p className="text-sm text-muted-foreground">GitHub is where teams store and share their code, and where we track build progress.</p><a href="https://github.com/signup" target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-primary underline">Create a GitHub account</a>{draft.profile.githubAccountStatus === "no_account" && <p className="text-sm text-muted-foreground">You can finish onboarding now and create your account before your team starts building.</p>}</div>
+        <details><summary className="cursor-pointer text-sm font-medium">Additional skills and interests (optional)</summary><div className="mt-4 space-y-4">{([['skills', SKILL_NAMES], ['interests', INTEREST_OPTIONS]] as const).map(([key, options]) => <fieldset key={key}><legend className="mb-2 text-sm capitalize">{key}</legend><div className="flex flex-wrap gap-2">{options.map(option => <Button key={option} type="button" variant={draft[key].includes(option) ? "default" : "outline"} aria-pressed={draft[key].includes(option)} size="sm" onClick={() => update(key, draft[key].includes(option) ? draft[key].filter(value => value !== option) : [...draft[key], option])}>{option}</Button>)}</div></fieldset>)}</div></details>
+      </>}
+      {step === 4 && <><div><h2 className="text-xl font-bold">Preferred Sectors</h2><p className="mt-1 text-sm text-muted-foreground">Choose the sector you want to work in and a different backup.</p></div>{([['firstChoiceSector', 'First-choice sector'], ['backupSector', 'Backup sector']] as const).map(([field, title]) => <div key={field} className="space-y-2"><Label htmlFor={field}>{title} *</Label><select id={field} className={selectClass} value={draft[field]} required onChange={event => update(field, event.target.value)}><option value="">Choose a sector</option>{MATCHING_SECTOR_OPTIONS.map(option => <option key={option.value} value={option.value} disabled={field === 'backupSector' && option.value === draft.firstChoiceSector}>{option.label}</option>)}</select></div>)}
+        {activeVerticals.length > 0 && <details><summary className="cursor-pointer text-sm font-medium">Programme vertical preferences (optional)</summary><p className="mt-2 text-sm text-muted-foreground">You can also keep your preferences for this cohort&apos;s configured programme verticals.</p><div className="mt-3 grid gap-3 sm:grid-cols-2">{([['verticalId1', 'First programme vertical'], ['verticalId2', 'Second programme vertical']] as const).map(([field, title]) => <div key={field} className="space-y-2"><Label htmlFor={field}>{title}</Label><select id={field} className={selectClass} value={draft[field]} onChange={event => update(field, event.target.value)}><option value="">No preference</option>{activeVerticals.map(vertical => <option key={vertical.id} value={vertical.id}>{vertical.name}</option>)}</select></div>)}</div></details>}
+      </>}
+      {step === 5 && <><div><h2 className="text-xl font-bold">Team Preferences</h2><p className="mt-1 text-sm text-muted-foreground">These answers help us suggest teams that suit you.</p></div><Choices title="Preferred team role" value={draft.preferredRole} options={MATCHING_ROLE_OPTIONS} onChange={value => update("preferredRole", value as Draft["preferredRole"])} /><Choices title="Team status" value={draft.teamStatus} options={MATCHING_TEAM_STATUS_OPTIONS} onChange={value => update("teamStatus", value as Draft["teamStatus"])} description="Tell us your current situation. This answer does not register or create a team." /><Choices title="Open to a cross-country team?" value={draft.crossCountry} options={yesNo} onChange={value => update("crossCountry", value as Draft["crossCountry"])} /><Choices title="Show your matching profile to other participants?" value={draft.consent} options={yesNo} onChange={value => update("consent", value as Draft["consent"])} description="If you choose Yes, other participants can find your profile when looking for teammates. This includes your name, country, institution, skills, role and sectors. Your phone, email and learning certificate details are not part of this matching profile. Choosing No still lets you complete onboarding; you can change this choice on your profile." /></>}
+      {step === 6 && <><div><h2 className="text-xl font-bold">Review Your Profile</h2><p className="mt-1 text-sm text-muted-foreground">Completing setup confirms the details below.</p></div><dl className="grid gap-4 rounded-lg border p-5 text-sm sm:grid-cols-2">{[...profileFields.map(([field, title]) => [title, draft.profile[field]]), ["Country", draft.profile.country], ...skillsFields.map(([field, title]) => [title, draft.profile[field]]), ["GitHub username", draft.profile.githubAccountStatus === "has_account" ? draft.profile.githubUsername : "No account yet"], ["Build and deploy", matchingOptionLabel(BUILD_DEPLOY_OPTIONS, draft.buildDeployAbility)], ["Preferred team role", matchingOptionLabel(MATCHING_ROLE_OPTIONS, draft.preferredRole)], ["First-choice sector", matchingOptionLabel(MATCHING_SECTOR_OPTIONS, draft.firstChoiceSector)], ["Backup sector", matchingOptionLabel(MATCHING_SECTOR_OPTIONS, draft.backupSector)], ["Team status", matchingOptionLabel(MATCHING_TEAM_STATUS_OPTIONS, draft.teamStatus)], ["Cross-country team", draft.crossCountry === "yes" ? "Yes" : "No"], ["Matching profile visible", draft.consent === "yes" ? "Yes" : "No"]].map(([title, value]) => <div key={title}><dt className="text-muted-foreground">{title}</dt><dd className="break-words font-medium">{value || "Not provided"}</dd></div>)}</dl><LearningRecord participant={participant} /></>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      <div className="flex gap-3">{step > 2 && <Button type="button" variant="outline" onClick={back} disabled={complete.isPending}><ArrowLeft className="mr-2 h-4 w-4" />Back</Button>}{step === 6 ? <Button type="button" className="flex-1" onClick={submit} disabled={complete.isPending}>{complete.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}Complete Setup</Button> : <Button type="submit" className="flex-1">{step === 5 ? "Review" : "Continue"}<ArrowRight className="ml-2 h-4 w-4" /></Button>}</div>
+      </form>}
+    </main></div>;
 }
-
-// Step Components
-
+function LearningRecord({ participant }: { participant: Participant }) {
+  const status = (value?: boolean | null) => value == null ? "Not recorded" : value ? "Yes" : "No";
+  return <section className="space-y-3 rounded-lg border p-4"><h3 className="font-medium">Learning programme record</h3><p className="text-sm text-muted-foreground">ATF supplies this record. Contact staff if it needs correcting.</p><dl className="grid gap-3 text-sm sm:grid-cols-2">{[["Halfway reached", status(participant.learningHalfwayReached)], ["All lessons finished", status(participant.learningFinishedAllLessons)], ["Learning certificate issued", status(participant.learningCertificateIssued)], ["Learning certificate ID", participant.learningCertificateId || "Not recorded"], ["Learning certificate date", participant.learningCertificateDate || "Not recorded"]].map(([label, value]) => <div key={label}><dt className="text-muted-foreground">{label}</dt><dd className="break-all">{value}</dd></div>)}</dl></section>;
+}
 function PasswordResetStep({
   onSubmit,
   isSubmitting,
-  participantId,
 }: {
   onSubmit: (data: PasswordData) => void;
   isSubmitting: boolean;
-  participantId?: string;
 }) {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -524,556 +306,6 @@ function PasswordResetStep({
   );
 }
 
-function ProfileStep({
-  data,
-  onUpdate,
-  onNext,
-}: {
-  data: ProfileData;
-  onUpdate: (data: ProfileData) => void;
-  onNext: () => void;
-}) {
-  const form = useForm<ProfileData>({
-    resolver: zodResolver(profileSchema),
-    defaultValues: data,
-    values: data, // This will update form values when data changes
-  });
-
-  const handleSubmit = form.handleSubmit((values) => {
-    onUpdate(values);
-    onNext();
-  });
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold">Personal Information</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Verify and update your basic details
-        </p>
-      </div>
-
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="firstName">First Name *</Label>
-            <Input id="firstName" {...form.register("firstName")} />
-            {form.formState.errors.firstName && (
-              <p className="text-xs text-destructive">
-                {form.formState.errors.firstName.message}
-              </p>
-            )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="lastName">Last Name *</Label>
-            <Input id="lastName" {...form.register("lastName")} />
-            {form.formState.errors.lastName && (
-              <p className="text-xs text-destructive">
-                {form.formState.errors.lastName.message}
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="institution">Institution / University</Label>
-          <Input
-            id="institution"
-            placeholder="e.g. University of Nairobi"
-            {...form.register("institution")}
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="phoneNumber">Phone Number</Label>
-          <Controller
-            name="phoneNumber"
-            control={form.control}
-            render={({ field }) => (
-              <PhoneInput
-                id="phoneNumber"
-                value={field.value || ""}
-                onChange={field.onChange}
-                defaultCountry="ke"
-              />
-            )}
-          />
-        </div>
-      </div>
-
-      <Button type="submit" className="w-full">
-        Continue
-        <ArrowRight className="ml-2 h-4 w-4" />
-      </Button>
-    </form>
-  );
-}
-
-function SkillsStep({
-  data,
-  onUpdate,
-  onNext,
-  onBack,
-}: {
-  data: SkillsData;
-  onUpdate: (data: SkillsData) => void;
-  onNext: () => void;
-  onBack: () => void;
-}) {
-  const [skills, setSkills] = useState<string[]>(() => data.skills || []);
-  const [interests, setInterests] = useState<string[]>(() => data.interests || []);
-
-  const toggleSkill = (skill: string) => {
-    setSkills((prev) =>
-      prev.includes(skill) ? prev.filter((s) => s !== skill) : [...prev, skill]
-    );
-  };
-
-  const toggleInterest = (interest: string) => {
-    setInterests((prev) =>
-      prev.includes(interest) ? prev.filter((i) => i !== interest) : [...prev, interest]
-    );
-  };
-
-  const handleNext = () => {
-    if (skills.length === 0 || interests.length === 0) return;
-    onUpdate({ skills, interests });
-    onNext();
-  };
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold">Skills & Interests</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Help us match you with the right team
-        </p>
-      </div>
-
-      <div className="space-y-4">
-        <div>
-          <Label className="text-base">Your Skills *</Label>
-          <p className="text-xs text-muted-foreground mb-3">Select all that apply</p>
-          <div className="flex flex-wrap gap-2">
-            {SKILL_OPTIONS.map((skill) => (
-              <Badge
-                key={skill}
-                variant={skills.includes(skill) ? "default" : "outline"}
-                className="cursor-pointer px-3 py-1.5 text-sm"
-                onClick={() => toggleSkill(skill)}
-              >
-                {skill}
-              </Badge>
-            ))}
-          </div>
-          {skills.length === 0 && (
-            <p className="text-xs text-destructive mt-2">Select at least one skill</p>
-          )}
-        </div>
-
-        <div>
-          <Label className="text-base">Your Interests *</Label>
-          <p className="text-xs text-muted-foreground mb-3">What domains excite you?</p>
-          <div className="flex flex-wrap gap-2">
-            {INTEREST_OPTIONS.map((interest) => (
-              <Badge
-                key={interest}
-                variant={interests.includes(interest) ? "default" : "outline"}
-                className="cursor-pointer px-3 py-1.5 text-sm"
-                onClick={() => toggleInterest(interest)}
-              >
-                {interest}
-              </Badge>
-            ))}
-          </div>
-          {interests.length === 0 && (
-            <p className="text-xs text-destructive mt-2">Select at least one interest</p>
-          )}
-        </div>
-      </div>
-
-      <div className="flex gap-3">
-        <Button type="button" variant="outline" onClick={onBack} className="flex-1">
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back
-        </Button>
-        <Button
-          type="button"
-          onClick={handleNext}
-          disabled={skills.length === 0 || interests.length === 0}
-          className="flex-1"
-        >
-          Continue
-          <ArrowRight className="ml-2 h-4 w-4" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function VerticalsStep({
-  data,
-  verticals,
-  onUpdate,
-  onNext,
-  onBack,
-}: {
-  data: VerticalsData;
-  verticals: Vertical[];
-  onUpdate: (data: VerticalsData) => void;
-  onNext: () => void;
-  onBack: () => void;
-}) {
-  const [selected, setSelected] = useState<string[]>(
-    [data.verticalId1, data.verticalId2].filter(Boolean) as string[]
-  );
-
-  const toggleVertical = (id: string) => {
-    setSelected((prev) => {
-      if (prev.includes(id)) {
-        return prev.filter((v) => v !== id);
-      }
-      if (prev.length >= 2) {
-        return [...prev.slice(1), id];
-      }
-      return [...prev, id];
-    });
-  };
-
-  const handleNext = () => {
-    onUpdate({
-      verticalId1: selected[0],
-      verticalId2: selected[1],
-    });
-    onNext();
-  };
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold">Preferred Verticals</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Select up to 2 verticals you&apos;re interested in
-        </p>
-      </div>
-
-      <div className="space-y-3">
-        {verticals.filter((v) => v.isActive).map((vertical) => (
-          <div
-            key={vertical.id}
-            onClick={() => toggleVertical(vertical.id)}
-            className={cn(
-              "p-4 rounded-lg border cursor-pointer transition-colors",
-              selected.includes(vertical.id)
-                ? "border-primary bg-primary/5"
-                : "border-muted hover:border-muted-foreground/50"
-            )}
-          >
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="font-medium">{vertical.name}</h3>
-                {vertical.description && (
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {vertical.description}
-                  </p>
-                )}
-              </div>
-              {selected.includes(vertical.id) && (
-                <Badge variant="default" className="ml-2">
-                  {selected.indexOf(vertical.id) + 1}
-                </Badge>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="flex gap-3">
-        <Button type="button" variant="outline" onClick={onBack} className="flex-1">
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back
-        </Button>
-        <Button type="button" onClick={handleNext} className="flex-1">
-          Continue
-          <ArrowRight className="ml-2 h-4 w-4" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function PreferencesStep({
-  data,
-  onUpdate,
-  onNext,
-  onBack,
-}: {
-  data: PreferencesData;
-  onUpdate: (data: PreferencesData) => void;
-  onNext: () => void;
-  onBack: () => void;
-}) {
-  const [crossCountryWilling, setCrossCountryWilling] = useState(data.crossCountryWilling);
-  const [preferredRole, setPreferredRole] = useState(data.preferredRole || "flexible");
-  const [availabilityNotes, setAvailabilityNotes] = useState(data.availabilityNotes || "");
-
-  const handleNext = () => {
-    onUpdate({ crossCountryWilling, preferredRole, availabilityNotes });
-    onNext();
-  };
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold">Team Preferences</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Help us find the best team for you
-        </p>
-      </div>
-
-      <div className="space-y-6">
-        <div>
-          <Label className="text-base">Preferred Team Role</Label>
-          <RadioGroup
-            value={preferredRole}
-            onValueChange={setPreferredRole}
-            className="mt-3 space-y-3"
-          >
-            {ROLE_OPTIONS.map((role) => (
-              <div
-                key={role.value}
-                className={cn(
-                  "flex items-start space-x-3 p-3 rounded-lg border cursor-pointer",
-                  preferredRole === role.value
-                    ? "border-primary bg-primary/5"
-                    : "border-muted"
-                )}
-                onClick={() => setPreferredRole(role.value)}
-              >
-                <RadioGroupItem value={role.value} id={role.value} className="mt-1" />
-                <div>
-                  <Label htmlFor={role.value} className="cursor-pointer font-medium">
-                    {role.label}
-                  </Label>
-                  <p className="text-xs text-muted-foreground">{role.description}</p>
-                </div>
-              </div>
-            ))}
-          </RadioGroup>
-        </div>
-
-        <div className="p-4 rounded-lg border">
-          <div className="flex items-start gap-3">
-            <Checkbox
-              id="cross-country"
-              checked={crossCountryWilling}
-              onCheckedChange={(checked) => setCrossCountryWilling(checked as boolean)}
-            />
-            <div>
-              <Label htmlFor="cross-country" className="cursor-pointer">
-                <Globe className="inline h-4 w-4 mr-1" />
-                Open to cross-country collaboration
-              </Label>
-              <p className="text-xs text-muted-foreground mt-1">
-                Work with participants from different countries
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="availability">Availability Notes (Optional)</Label>
-          <Textarea
-            id="availability"
-            placeholder="e.g. Available evenings and weekends, timezone is EAT..."
-            value={availabilityNotes}
-            onChange={(e) => setAvailabilityNotes(e.target.value)}
-            rows={3}
-          />
-        </div>
-      </div>
-
-      <div className="flex gap-3">
-        <Button type="button" variant="outline" onClick={onBack} className="flex-1">
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back
-        </Button>
-        <Button type="button" onClick={handleNext} className="flex-1">
-          Review
-          <ArrowRight className="ml-2 h-4 w-4" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function CompleteStep({
-  formData,
-  verticals,
-  isSubmitting,
-  onSubmit,
-  onBack,
-}: {
-  formData: {
-    profile: ProfileData;
-    skills: SkillsData;
-    verticals: VerticalsData;
-    preferences: PreferencesData;
-  };
-  verticals: Vertical[];
-  isSubmitting: boolean;
-  onSubmit: () => void;
-  onBack: () => void;
-}) {
-  const selectedVerticals = verticals.filter(
-    (v) =>
-      v.id === formData.verticals.verticalId1 || v.id === formData.verticals.verticalId2
-  );
-  const role = ROLE_OPTIONS.find((r) => r.value === formData.preferences.preferredRole);
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold">Review Your Profile</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Make sure everything looks good
-        </p>
-      </div>
-
-      <div className="space-y-4">
-        {/* Profile Summary */}
-        <div className="p-4 rounded-lg border space-y-3">
-          <h3 className="font-medium flex items-center gap-2">
-            <User className="h-4 w-4" />
-            Personal Info
-          </h3>
-          <div className="text-sm space-y-1">
-            <p>
-              <span className="text-muted-foreground">Name:</span>{" "}
-              {formData.profile.firstName} {formData.profile.lastName}
-            </p>
-            {formData.profile.institution && (
-              <p>
-                <span className="text-muted-foreground">Institution:</span>{" "}
-                {formData.profile.institution}
-              </p>
-            )}
-            {formData.profile.phoneNumber && (
-              <p>
-                <span className="text-muted-foreground">Phone:</span>{" "}
-                {formData.profile.phoneNumber}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Skills Summary */}
-        <div className="p-4 rounded-lg border space-y-3">
-          <h3 className="font-medium flex items-center gap-2">
-            <Sparkles className="h-4 w-4" />
-            Skills & Interests
-          </h3>
-          <div className="space-y-3">
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Skills</p>
-              {formData.skills?.skills?.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                  {formData.skills.skills.map((skill) => (
-                    <Badge key={skill} variant="secondary" className="text-xs">
-                      {skill}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground italic">No skills selected</p>
-              )}
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Interests</p>
-              {formData.skills?.interests?.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                  {formData.skills.interests.map((interest) => (
-                    <Badge key={interest} variant="outline" className="text-xs">
-                      {interest}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground italic">No interests selected</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Verticals Summary */}
-        {selectedVerticals.length > 0 && (
-          <div className="p-4 rounded-lg border space-y-3">
-            <h3 className="font-medium flex items-center gap-2">
-              <Layers className="h-4 w-4" />
-              Preferred Verticals
-            </h3>
-            <div className="space-y-1">
-              {selectedVerticals.map((v, i) => (
-                <p key={v.id} className="text-sm">
-                  {i + 1}. {v.name}
-                </p>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Preferences Summary */}
-        <div className="p-4 rounded-lg border space-y-3">
-          <h3 className="font-medium flex items-center gap-2">
-            <Globe className="h-4 w-4" />
-            Team Preferences
-          </h3>
-          <div className="text-sm space-y-1">
-            {role && (
-              <p>
-                <span className="text-muted-foreground">Preferred Role:</span> {role.label}
-              </p>
-            )}
-            <p>
-              <span className="text-muted-foreground">Cross-country:</span>{" "}
-              {formData.preferences.crossCountryWilling ? "Yes" : "No"}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex gap-3">
-        <Button type="button" variant="outline" onClick={onBack} className="flex-1">
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back
-        </Button>
-        <Button
-          type="button"
-          onClick={onSubmit}
-          disabled={isSubmitting}
-          className="flex-1"
-        >
-          {isSubmitting ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <Check className="mr-2 h-4 w-4" />
-              Complete Setup
-            </>
-          )}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 export default function OnboardingPage() {
-  return (
-    <ProtectedRoute portal="participant">
-      <OnboardingContent />
-    </ProtectedRoute>
-  );
+  return <ProtectedRoute portal="participant"><OnboardingContent /></ProtectedRoute>;
 }

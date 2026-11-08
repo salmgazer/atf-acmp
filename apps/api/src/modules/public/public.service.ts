@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, DataSource } from "typeorm";
 import { ConfigService } from "@nestjs/config";
+import { sectorToIndustry } from "@acmp/shared";
 import { Organization, OrganizationStatus, OrganizationUser, OrganizationUserRole } from "@/database/entities/organization.entity";
 import { Brief, BriefStatus } from "@/database/entities/brief.entity";
 import { Cohort, CohortStatus } from "@/database/entities/cohort.entity";
@@ -101,6 +102,7 @@ export class PublicService {
           city: dto.org.city,
           sector: dto.org.sector,
           sectorOther: dto.org.sectorOther,
+          industry: sectorToIndustry(dto.org.sector, dto.org.sectorOther),
           submitterName: dto.org.contactName,
           submitterDesignation: dto.org.designation,
           submitterDepartment: dto.org.department,

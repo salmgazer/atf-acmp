@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Repository } from "typeorm";
@@ -8,19 +8,22 @@ import { Participant, ParticipantStatus } from "@/database/entities/participant.
 import { CohortStatus } from "@/database/entities/cohort.entity";
 import { EmailService } from "@/email/email.service";
 import { ResendPendingParticipantInvitesDto, ParticipantInviteBatch, ParticipantInviteProgress } from "./dto/participant-invites.dto";
+import { ParticipantInviteLedgerService, emptyInviteProgress } from "./participant-invite-ledger.service";
 
 export const PARTICIPANT_INVITES_QUEUE = "participant-invites";
 export interface ParticipantInviteJob { participantIds: string[]; requestedBy: string }
 
 @Injectable()
 export class ParticipantInvitesService implements OnModuleInit {
+  private readonly logger = new Logger(ParticipantInvitesService.name);
   constructor(
     @InjectRepository(Participant) private readonly participants: Repository<Participant>,
     @InjectQueue(PARTICIPANT_INVITES_QUEUE) private readonly queue: Queue<ParticipantInviteJob>,
     private readonly email: EmailService,
+    private readonly ledger: ParticipantInviteLedgerService,
   ) {}
 
-  async onModuleInit() { await this.queue.setGlobalConcurrency(1); }
+  async onModuleInit() { void this.queue.setGlobalConcurrency(1).catch(() => this.logger.warn("Redis is unavailable; participant invitation batches remain in PostgreSQL")); }
 
   private eligible() {
     return this.participants.createQueryBuilder("p")
@@ -50,25 +53,47 @@ export class ParticipantInvitesService implements OnModuleInit {
     return this.enqueue(pending.map(p => p.id), requestedBy);
   }
 
-  private async enqueue(participantIds: string[], requestedBy: string): Promise<ParticipantInviteBatch> {
+  async inviteImported(participantIds: string[], requestedBy: string, batchId: string): Promise<string[]> {
+    const batches: string[] = [];
+    for (let offset = 0; offset < participantIds.length; offset += 500) {
+      const ids = participantIds.slice(offset, offset + 500);
+      const eligible = await this.eligible().andWhere("p.id IN (:...ids)", { ids }).select("p.id", "id").getRawMany<{ id: string }>();
+      if (!eligible.length) continue;
+      const job = await this.enqueue(eligible.map(person => person.id), requestedBy, `import-${batchId}-${offset}`);
+      batches.push(job.id);
+    }
+    return batches;
+  }
+
+  private async enqueue(participantIds: string[], requestedBy: string, jobId: string = randomUUID()): Promise<ParticipantInviteBatch> {
     if (!participantIds.length) throw new BadRequestException("No pending participants match the current filters");
     this.email.requireDeliveryConfiguration();
-    const job = await this.queue.add("resend", { participantIds, requestedBy }, {
-      jobId: randomUUID(),
-      attempts: 1,
+    const batch = await this.ledger.record(jobId, participantIds, requestedBy);
+    // PostgreSQL accepts the batch even if Redis is unavailable. Recovery republishes it.
+    if (!["completed", "failed"].includes(batch.state)) void this.dispatch(batch.id, batch.participantIds, batch.requestedBy).catch(() => this.logger.warn("Invitation batch saved; Redis dispatch will retry"));
+    return this.ledger.status(batch.id);
+  }
+
+  async dispatch(jobId: string, participantIds: string[], requestedBy: string) {
+    await this.queue.add("resend", { participantIds, requestedBy }, {
+      jobId, attempts: 5, backoff: { type: "exponential", delay: 2000 },
       removeOnComplete: { age: 86400, count: 1000 },
       removeOnFail: { age: 604800, count: 1000 },
     });
-    return { id: job.id!, state: "queued", total: participantIds.length, processed: 0, sent: 0, failed: 0, skipped: 0, failures: [] };
   }
 
   async status(id: string): Promise<ParticipantInviteBatch> {
+    if (await this.ledger.find(id)) return this.ledger.status(id);
+    // Adopt pre-upgrade Redis batches without replaying their completed recipients.
     const job = await this.queue.getJob(id);
-    if (!job) throw new NotFoundException("Invitation batch not found or expired");
+    if (job) await this.adopt(job);
+    return this.ledger.status(id);
+  }
+
+  async adopt(job: import("bullmq").Job<ParticipantInviteJob>) {
     const state = await job.getState();
     const progress: ParticipantInviteProgress = typeof job.progress === "object" ? job.progress as ParticipantInviteProgress
-      : { total: job.data.participantIds.length, processed: 0, sent: 0, failed: 0, skipped: 0, failures: [] };
-    return { ...progress, id: job.id!, state: state === "completed" ? "completed" : state === "failed" ? "failed" : state === "active" ? "active" : "queued",
-      ...(state === "failed" ? { error: "The invitation batch stopped. Check the results before retrying." } : {}) };
+      : emptyInviteProgress(job.data.participantIds.length);
+    await this.ledger.record(job.id!, job.data.participantIds, job.data.requestedBy, progress, state === "completed" || progress.processed === progress.total ? "completed" : state === "failed" ? "failed" : "queued");
   }
 }

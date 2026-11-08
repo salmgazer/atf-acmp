@@ -1,8 +1,8 @@
 "use client";
+import { formatUtcDeadline } from "@/lib/utc-deadline";
 
 import { StaffOnly } from "@/components/auth/staff-only";
 import { useState } from "react";
-import { format } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Calendar,
@@ -236,7 +236,7 @@ export function StageList({ cohortId }: StageListProps) {
                       <div className="text-sm">
                         <p className="text-xs text-muted-foreground">Deadline</p>
                         <p className={`font-medium ${isPast ? "text-amber-600" : ""}`}>
-                          {format(new Date(stage.deadline), "MMM d, yyyy")}
+                          {formatUtcDeadline(stage.deadline)}
                         </p>
                       </div>
                     </div>
