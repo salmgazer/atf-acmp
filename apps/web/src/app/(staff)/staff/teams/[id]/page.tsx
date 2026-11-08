@@ -1,5 +1,8 @@
 "use client";
 
+import { TeamEligibility } from "@/components/teams/team-eligibility";
+import { hasStaffPermission } from "@acmp/shared";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import { StaffOnly } from "@/components/auth/staff-only";
 import { use, useState } from "react";
 import Link from "next/link";
@@ -200,6 +203,7 @@ function MemberCard({
 }
 
 function TeamDetailContent({ id }: { id: string }) {
+  const staffRole = useAuthStore(state => state.user?.role);
   const router = useRouter();
   const [showAssignBriefDialog, setShowAssignBriefDialog] = useState(false);
   const [showUnassignDialog, setShowUnassignDialog] = useState(false);
@@ -326,6 +330,8 @@ function TeamDetailContent({ id }: { id: string }) {
             </div>
           )}
         </div>
+
+        <TeamEligibility team={team} canManage={hasStaffPermission(staffRole, "manage")} />
 
         {/* Disqualification Alert */}
         {isDisqualified && team.disqualificationReason && (

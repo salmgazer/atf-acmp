@@ -1,4 +1,5 @@
 "use client";
+import { formatUtcDeadline } from "@/lib/utc-deadline";
 
 import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -68,7 +69,7 @@ function formatDeadline(deadline: string | Date | undefined): string {
   if (days === 0) return "Today";
   if (days === 1) return "Tomorrow";
   if (days <= 7) return `${days} days left`;
-  return format(date, "MMM d, yyyy");
+  return formatUtcDeadline(date);
 }
 
 /**

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 // Types
 export interface CohortDeadlines {
+  learningCertificationEnd?: string;
   teamFormationEnd?: string;
   briefSelectionEnd?: string;
   stage1End?: string;
@@ -34,6 +35,9 @@ export interface RubricConfig {
 export type CohortStatus = "draft" | "active" | "evaluation" | "completed" | "archived";
 
 export interface Cohort {
+  teamJoiningStageId?: string | null;
+  learningCertificationStageId?: string | null;
+  teamRuleDeadlines?: { joining: string | null; certification: string | null };
   id: string;
   name: string;
   description?: string;
@@ -55,6 +59,8 @@ export interface Cohort {
 }
 
 export interface CreateCohortDto {
+  teamJoiningStageId?: string | null;
+  learningCertificationStageId?: string | null;
   name: string;
   description?: string;
   teamSizeMin?: number;
@@ -182,6 +188,8 @@ export function useUpdateCohort() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: cohortKeys.lists() });
       queryClient.setQueryData(cohortKeys.detail(data.id), data);
+      queryClient.invalidateQueries({ queryKey: ["team-eligibility"] });
+      queryClient.invalidateQueries({ queryKey: ["team-formation"] });
       toast.success("Cohort updated successfully");
     },
     onError: (error: Error) => {
@@ -201,6 +209,8 @@ export function useUpdateCohortStatus() {
       queryClient.invalidateQueries({ queryKey: cohortKeys.lists() });
       queryClient.invalidateQueries({ queryKey: cohortKeys.active() });
       queryClient.setQueryData(cohortKeys.detail(data.id), data);
+      queryClient.invalidateQueries({ queryKey: ["team-eligibility"] });
+      queryClient.invalidateQueries({ queryKey: ["team-formation"] });
       toast.success(`Cohort status updated to ${data.status}`);
     },
     onError: (error: Error) => {

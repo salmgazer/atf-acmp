@@ -1,3 +1,4 @@
+import { assertChallengeStarted } from "@/common/services/team-rules";
 import {
   Injectable,
   NotFoundException,
@@ -53,6 +54,8 @@ export class JournalsService {
     if (!membership || !membership.team) {
       throw new ForbiddenException("You must be part of a team to create journal entries");
     }
+    await assertChallengeStarted(this.teamMemberRepository.manager, membership.teamId);
+
 
     // Check if entry already exists for this week
     const existing = await this.journalRepository.findOne({
@@ -102,6 +105,8 @@ export class JournalsService {
     if (!membership || membership.teamId !== entry.teamId) {
       throw new ForbiddenException("You can only edit your team's journal entries");
     }
+    await assertChallengeStarted(this.teamMemberRepository.manager, membership.teamId);
+
 
     // Check if still editable
     if (!entry.canEdit()) {

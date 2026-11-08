@@ -76,6 +76,10 @@ export class Team extends BaseEntity {
   @JoinColumn({ name: "cohort_id" })
   cohort: Cohort;
 
+  @Column({ name: "competition_country", type: "varchar", length: 255, nullable: true }) competitionCountry: string | null;
+  @Column({ name: "registered_at", type: "timestamptz", nullable: true }) registeredAt: Date | null;
+  @Column({ name: "challenge_started_at", type: "timestamptz", nullable: true }) challengeStartedAt: Date | null;
+
   @Column({ name: "brief_id", nullable: true })
   briefId?: string;
 

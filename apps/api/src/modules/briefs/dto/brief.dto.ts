@@ -116,6 +116,7 @@ class ScoringAnswersDto {
 }
 
 export class CreateBriefDto {
+  @IsOptional() @IsString() @MaxLength(255) problemCountry?: string;
   @IsString()
   @MinLength(5)
   @MaxLength(255)
@@ -196,6 +197,7 @@ export class CreateBriefDto {
 }
 
 export class UpdateBriefDto {
+  @IsOptional() @IsString() @MaxLength(255) problemCountry?: string;
   @IsOptional()
   @IsString()
   @MinLength(5)

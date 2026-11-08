@@ -1,4 +1,5 @@
 "use client";
+import type { TeamRuleReport } from "@acmp/shared";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/client";
@@ -47,6 +48,9 @@ export interface TeamMember {
 }
 
 export interface Team {
+  competitionCountry?: string | null;
+  registeredAt?: string | null;
+  challengeStartedAt?: string | null;
   id: string;
   name: string;
   description?: string;
@@ -772,4 +776,14 @@ export function useRejectRemovalRequest() {
       toast.error(error.message || "Failed to reject removal request");
     },
   });
+}
+
+export function useTeamEligibility(id: string) {
+  return useQuery({ queryKey: ["team-eligibility", id], queryFn: () => api.get<TeamRuleReport>(`/teams/${id}/eligibility`), enabled: !!id, refetchInterval: 30000 });
+}
+export function useTeamRegistrationAction() {
+  const cache = useQueryClient();
+  return useMutation({ mutationFn: ({ id, competitionCountry, action }: { id: string; competitionCountry?: string; action: "register" | "start-challenge" }) => api.post<Team>(`/teams/${id}/${action}`, action === "register" ? { competitionCountry } : {}),
+    onSuccess: (_data, { action }) => { cache.invalidateQueries({ queryKey: ["teams"] }); cache.invalidateQueries({ queryKey: ["team-eligibility"] }); toast.success(action === "register" ? "Team registered" : "Challenge started"); },
+    onError: (error: Error) => toast.error(error.message || "Could not update team registration") });
 }

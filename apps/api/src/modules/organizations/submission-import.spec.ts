@@ -7,8 +7,14 @@ import { SubmissionImportService } from "./submission-import.service";
 import { OrganizationsController } from "./organizations.controller";
 import { RolesGuard } from "@/auth/guards/roles.guard";
 import { submissionFixture } from "./__fixtures__/partner-submissions";
+import { sectorToIndustry } from "@acmp/shared";
 
 describe("Partner submission CSV validation", () => {
+  it("maps sectors to industry without losing Other details or local government wording", () => {
+    expect(sectorToIndustry("Healthcare")).toBe("Healthcare");
+    expect(sectorToIndustry("Other", "Telecommunication")).toBe("Telecommunication");
+    expect(sectorToIndustry("Local/Municipal Government")).toBe("Local/Municipal Government");
+  });
   it("parses quoted multiline fields, multiple submissions, source contacts and incomplete impact without losing text", async () => {
     const fixture = submissionFixture();
     fixture.rows[0]["The opportunity and who it affects"] = 'Quoted "challenge", details\n' + "a".repeat(7800);

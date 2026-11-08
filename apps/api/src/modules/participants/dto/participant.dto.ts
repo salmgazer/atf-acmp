@@ -14,9 +14,11 @@ import {
   ValidateNested,
   ArrayMinSize,
   ArrayMaxSize,
+  MaxLength, MinLength, IsIn, IsDefined, ValidateIf, Matches,
 } from "class-validator";
 import { Type } from "class-transformer";
-import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional, OmitType } from "@nestjs/swagger";
+import { BUILD_DEPLOY_OPTIONS, MATCHING_ROLE_OPTIONS, MATCHING_SECTOR_OPTIONS, MATCHING_TEAM_STATUS_OPTIONS, GITHUB_USERNAME_PATTERN, type BuildDeployAbility, type MatchingSector, type MatchingTeamStatus, type MatchingRole } from "@acmp/shared";
 import {
   Participant,
   ParticipantStatus,
@@ -266,23 +268,24 @@ export class BulkImportResultDto {
 // ============ Onboarding DTOs ============
 
 export class OnboardingProfileDto {
-  @ApiProperty()
-  @IsString()
-  firstName: string;
-
-  @ApiProperty()
-  @IsString()
-  lastName: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  institution?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  phoneNumber?: string;
+  @IsString() @MinLength(1) @MaxLength(255) firstName: string;
+  @IsString() @MinLength(1) @MaxLength(255) lastName: string;
+  @IsOptional() @IsString() @MaxLength(255) institution?: string;
+  @IsOptional() @IsString() @MaxLength(50) phoneNumber?: string;
+  @IsString() @MinLength(1) @MaxLength(255) country: string;
+  @IsOptional() @IsString() @MaxLength(50) whatsappNumber?: string;
+  @IsOptional() @IsString() @MaxLength(150) city?: string;
+  @IsOptional() @IsString() @MaxLength(150) locationType?: string;
+  @IsOptional() @IsString() @MaxLength(100) gender?: string;
+  @IsOptional() @IsString() @MaxLength(150) educationLevel?: string;
+  @IsOptional() @IsString() @MaxLength(150) currentAffiliation?: string;
+  @IsOptional() @IsString() @MaxLength(255) fieldOfStudy?: string;
+  @IsOptional() @IsString() @MaxLength(255) pythonSkill?: string;
+  @IsOptional() @IsString() @MaxLength(255) gitSkill?: string;
+  @IsOptional() @IsString() @MaxLength(255) aiExperience?: string;
+  @IsIn(["has_account", "no_account"]) githubAccountStatus: "has_account" | "no_account";
+  @ValidateIf(o => o.githubAccountStatus === "has_account")
+  @IsString() @Matches(GITHUB_USERNAME_PATTERN, { message: "Provide a GitHub username, without a URL or @ prefix" }) githubUsername?: string;
 }
 
 export class OnboardingSkillsDto {
@@ -330,21 +333,43 @@ export class OnboardingPreferencesDto {
   availabilityNotes?: string;
 }
 
+export class CompleteOnboardingPreferencesDto extends OmitType(OnboardingPreferencesDto, ["preferredRole"] as const) {
+  @IsIn(BUILD_DEPLOY_OPTIONS.map(option => option.value)) buildDeployAbility: BuildDeployAbility;
+  @IsIn(MATCHING_ROLE_OPTIONS.map(option => option.value)) preferredRole: MatchingRole;
+  @IsIn(MATCHING_SECTOR_OPTIONS.map(option => option.value)) firstChoiceSector: MatchingSector;
+  @IsIn(MATCHING_SECTOR_OPTIONS.map(option => option.value)) backupSector: MatchingSector;
+  @IsIn(MATCHING_TEAM_STATUS_OPTIONS.map(option => option.value)) teamStatus: MatchingTeamStatus;
+  @IsBoolean() @StrictBoolean() matchingProfileConsent: boolean;
+}
+
+export class UpdateParticipantProgrammeDto {
+  @ValidateIf((_o, value) => value !== undefined) @IsBoolean() @StrictBoolean() programmeOptedOut?: boolean;
+  @ValidateIf((_o, value) => value !== undefined) @IsBoolean() @StrictBoolean() codeLabsCompleted?: boolean;
+  @IsOptional() @IsString() @MaxLength(2000) reason?: string;
+}
+
+export class UpdateMatchingConsentDto {
+  @IsBoolean() @StrictBoolean() consent: boolean;
+}
+
 export class CompleteOnboardingDto {
   @ApiProperty()
   @ValidateNested()
+  @IsDefined()
   @Type(() => OnboardingProfileDto)
   profile: OnboardingProfileDto;
 
   @ApiProperty()
   @ValidateNested()
+  @IsDefined()
   @Type(() => OnboardingSkillsDto)
   skills: OnboardingSkillsDto;
 
   @ApiProperty()
   @ValidateNested()
-  @Type(() => OnboardingPreferencesDto)
-  preferences: OnboardingPreferencesDto;
+  @IsDefined()
+  @Type(() => CompleteOnboardingPreferencesDto)
+  preferences: CompleteOnboardingPreferencesDto;
 }
 
 // ============ Password Change DTOs ============

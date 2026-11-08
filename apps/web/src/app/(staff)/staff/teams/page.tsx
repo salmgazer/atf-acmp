@@ -427,7 +427,7 @@ function TeamsContent() {
                   </div>
                   <div className="text-center">
                     <p className="text-2xl font-bold">{formationPreview.statistics?.averageCompatibilityScore?.toFixed(0) ?? 0}%</p>
-                    <p className="text-xs text-muted-foreground">Avg Compatibility</p>
+                    <p className="text-xs text-muted-foreground">Avg Match Guide</p>
                   </div>
                 </div>
 
@@ -439,6 +439,8 @@ function TeamsContent() {
                     </p>
                   </div>
                 )}
+
+                {formationPreview.proposedTeams.length > 0 && <div className="overflow-x-auto rounded-lg border"><table className="w-full text-sm"><thead><tr>{["Proposed team", "Group / country", "Members", "Builders / non-computing", "Role and mix guidance"].map(label => <th key={label} className="p-3 text-left">{label}</th>)}</tr></thead><tbody>{formationPreview.proposedTeams.map(team => <tr key={team.proposedTeamId} className="border-t"><td className="p-3">{team.suggestedName}</td><td className="p-3">{team.group || "No group"} · {team.competitionCountry || "Choose at registration"}</td><td className="p-3">{team.participants.map(person => `${person.firstName} ${person.lastName}`).join(", ")}</td><td className="p-3">{team.eligibility?.builderCount ?? "—"} / {team.eligibility?.nonComputingCount ?? "—"}</td><td className="p-3"><ul>{team.eligibility?.guidance.map(message => <li key={message}>{message}</li>)}</ul></td></tr>)}</tbody></table></div>}
 
                 {formationPreview.warnings.length > 0 && (
                   <div className="rounded-md bg-amber-50 dark:bg-amber-950/20 p-3">
@@ -459,7 +461,7 @@ function TeamsContent() {
 
             {!formationPreview && !formationLoading && (
               <p className="text-sm text-muted-foreground mt-3">
-                Click &quot;Run Team Formation&quot; to generate a preview of proposed teams based on participant preferences,
+                Click &quot;Run Team Formation&quot; to generate a preview of proposed teams using ATF sector priorities, builder/non-computing coverage, country consent and group boundaries,
                 skills, and interests. You can review before finalizing.
               </p>
             )}

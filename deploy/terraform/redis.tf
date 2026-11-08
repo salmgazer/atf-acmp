@@ -38,7 +38,18 @@ resource "aws_elasticache_subnet_group" "main" {
   }
 }
 
-# ElastiCache Redis cluster (single node for cost efficiency)
+# Queue keys must not be evicted under memory pressure.
+resource "aws_elasticache_parameter_group" "queues" {
+  name   = "acmp-queues-${var.environment}"
+  family = "redis7"
+
+  parameter {
+    name  = "maxmemory-policy"
+    value = "noeviction"
+  }
+}
+
+# PostgreSQL is the participant queue's recovery source if this cache is lost.
 resource "aws_elasticache_cluster" "main" {
   cluster_id           = "acmp-${var.environment}"
   engine               = "redis"
@@ -46,7 +57,7 @@ resource "aws_elasticache_cluster" "main" {
   node_type            = var.redis_node_type
   num_cache_nodes      = 1
   port                 = 6379
-  parameter_group_name = "default.redis7"
+  parameter_group_name = aws_elasticache_parameter_group.queues.name
 
   subnet_group_name  = aws_elasticache_subnet_group.main.name
   security_group_ids = [aws_security_group.redis.id]
@@ -54,8 +65,8 @@ resource "aws_elasticache_cluster" "main" {
   # Maintenance window (Sunday 3-4 AM UTC)
   maintenance_window = "sun:03:00-sun:04:00"
 
-  # Snapshot settings (disable for cost savings on small instances)
-  snapshot_retention_limit = var.environment == "production" ? 1 : 0
+  # Snapshots supplement the participant ledger; they are not its recovery source.
+  snapshot_retention_limit = var.environment == "production" ? 7 : 1
 
   # Apply changes immediately in staging, during maintenance window in production
   apply_immediately = var.environment != "production"

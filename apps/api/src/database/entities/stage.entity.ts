@@ -77,10 +77,10 @@ export class Stage extends BaseEntity {
   @Column({ type: "enum", enum: StageType, default: StageType.MIXED })
   type: StageType;
 
-  @Column({ name: "start_date", type: "timestamp", nullable: true })
+  @Column({ name: "start_date", type: "timestamptz", nullable: true })
   startDate?: Date;
 
-  @Column({ type: "timestamp" })
+  @Column({ type: "timestamptz" })
   deadline: Date;
 
   @Column({ type: "jsonb", default: {} })

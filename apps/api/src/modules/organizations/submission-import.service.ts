@@ -1,15 +1,18 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, Optional } from "@nestjs/common";
 import { DataSource, EntityManager, In } from "typeorm";
 import { randomUUID } from "crypto";
 import { Cohort } from "@/database/entities/cohort.entity";
 import { Organization, OrganizationStatus, OrganizationUser } from "@/database/entities/organization.entity";
-import { Brief, BriefStatus } from "@/database/entities/brief.entity";
+import { Brief, BriefStatus, BriefRevision, BriefRevisionAction, BriefRevisionActorType } from "@/database/entities/brief.entity";
+import { sectorToIndustry } from "@acmp/shared";
 import { User, Role } from "@/database/entities/user.entity";
 import { PartnerImportRecord } from "@/database/entities/partner-import-record.entity";
 import { AuditAction, AuditLog } from "@/database/entities/audit-log.entity";
 import { ensurePartnerContactLogin, saveBriefContacts } from "@/common/services/brief-contacts";
 import { SubmissionImportDto, ApplySubmissionImportDto } from "./dto/submission-import.dto";
 import { ImportIssue, organizationKey, ParsedSubmission, parseSubmissionCsv, sourceHash } from "./submission-import-parser";
+import { planSubmissionUpdates, submissionImportOptions, SubmissionUpdate } from "./submission-import-updates";
+import { CacheService, CACHE_KEYS } from "@/common/cache/cache.service";
 
 interface ImportActor { id: string; email?: string; role: string }
 export interface OrganizationPlan {
@@ -17,14 +20,15 @@ export interface OrganizationPlan {
   primaryCandidates: { email: string; name: string }[]; rows: number[]; newBriefs: number; skippedBriefs: number;
 }
 export interface ImportBriefPreview {
-  row: number; title: string; partner: string; submittedAt: string; status: "new" | "skipped";
+  row: number; title: string; partner: string; submittedAt: string; status: "new" | "skipped" | "updated" | "unchanged" | "unmatched";
+  industry?: string;
   submitter: { name: string; email: string }; host: { name: string; email: string; source: "brief" | "partner" };
   fitScore: number; impactScore: number | null;
 }
 
 @Injectable()
 export class SubmissionImportService {
-  constructor(private readonly db: DataSource) {}
+  constructor(private readonly db: DataSource, @Optional() private readonly cache?: CacheService) {}
 
   private authorize(actor: ImportActor) {
     if (![Role.SUPER_ADMIN, Role.PROGRAM_MANAGER].includes(actor.role as Role)) throw new ForbiddenException("Only program managers can import partner submissions");
@@ -39,19 +43,38 @@ export class SubmissionImportService {
   }
 
   private async plan(dto: SubmissionImportDto, manager: EntityManager) {
+    const { mode, fields } = submissionImportOptions(dto);
     const parsed = await parseSubmissionCsv(dto.csv, dto.sourceTimezone);
     const errors: ImportIssue[] = [...parsed.errors], warnings: ImportIssue[] = [...parsed.warnings];
     const cohort = await manager.findOneBy(Cohort, { id: dto.cohortId });
     if (!cohort || cohort.status !== "active") errors.push({ message: "Choose an active cohort" });
     for (const country of new Set(parsed.rows.map(row => row.org.country))) if (cohort?.countries?.length && !cohort.countries.includes(country)) errors.push({ message: `${country} is not enabled in this cohort` });
     const organizations: OrganizationPlan[] = [];
-    const preview = { ready: false, previewHash: "", sourceName: dto.sourceName, cohortId: dto.cohortId, sourceTimezone: dto.sourceTimezone,
-      totalBriefs: parsed.rows.length, newPartners: 0, newUsers: 0, newBriefs: 0, skippedBriefs: 0, organizations, briefs: [] as ImportBriefPreview[], errors, warnings };
+    const preview = { ready: false, previewHash: "", sourceName: dto.sourceName, cohortId: dto.cohortId, sourceTimezone: dto.sourceTimezone, mode, updateFields: fields,
+      totalBriefs: parsed.rows.length, newPartners: 0, newUsers: 0, newBriefs: 0, skippedBriefs: 0, updatedPartners: 0, updatedBriefs: 0, unchangedBriefs: 0, unmatchedBriefs: 0, updates: [] as SubmissionUpdate[], organizations, briefs: [] as ImportBriefPreview[], errors, warnings };
     if (errors.length) return { preview, rows: parsed.rows, skipped: new Set<string>() };
 
     const partners = await manager.find(Organization, { withDeleted: true });
     const receipts = await manager.find(PartnerImportRecord, { where: { cohortId: dto.cohortId, sessionId: In([...new Set(parsed.rows.map(row => row.sessionId))]) }, withDeleted: true });
     const existingBriefs = await manager.find(Brief, { where: [{ sessionId: In([...new Set(parsed.rows.map(row => row.sessionId))]) }, ...partners.filter(partner => partner.cohortId === dto.cohortId).map(partner => ({ organizationId: partner.id }))], withDeleted: true });
+    if (mode === "update_existing") {
+      const { updates, matched, versions } = planSubmissionUpdates(dto, parsed.rows, partners, receipts, existingBriefs, errors, warnings);
+      preview.updates = updates;
+      preview.updatedPartners = updates.filter(update => update.entity === "partner").length;
+      preview.updatedBriefs = updates.filter(update => update.entity === "brief").length;
+      preview.unmatchedBriefs = parsed.rows.length - matched.size;
+      const changedRows = new Set(updates.flatMap(update => update.rows));
+      preview.unchangedBriefs = parsed.rows.filter(row => matched.has(row.key) && !changedRows.has(row.row)).length;
+      preview.briefs = parsed.rows.map(row => {
+        const match = matched.get(row.key), contact = match?.brief.secondaryContact;
+        return { row: row.row, title: match?.brief.title || row.opportunity.title, partner: match?.partner.name || row.org.orgName, industry: sectorToIndustry(row.org.sector, row.org.sectorOther), submittedAt: row.submittedAt.toISOString(),
+          status: !match ? "unmatched" : changedRows.has(row.row) ? "updated" : "unchanged",
+          submitter: { name: row.org.contactName, email: row.org.email }, host: contact?.email ? { name: contact.name || contact.email, email: contact.email, source: "brief" } : { name: match?.partner.contactPerson || row.org.contactName, email: match?.partner.email || row.org.email, source: "partner" }, fitScore: row.scores.fitScore, impactScore: row.scores.impactScore };
+      });
+      preview.ready = !errors.length;
+      preview.previewHash = sourceHash({ csv: dto.csv, sourceName: dto.sourceName, cohortId: dto.cohortId, timezone: dto.sourceTimezone, mode, fields, updates, versions, receipts: receipts.map(receipt => [receipt.id, receipt.briefId, receipt.deletedAt]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))) });
+      return { preview, rows: parsed.rows, skipped: new Set<string>() };
+    }
     const grouped = new Map<string, ParsedSubmission[]>();
     for (const row of parsed.rows) grouped.set(row.organizationKey, [...(grouped.get(row.organizationKey) || []), row]);
     if (Object.keys(dto.primaryContacts || {}).some(key => !grouped.has(key)) || Object.values(dto.primaryContacts || {}).some(value => typeof value !== "string")) errors.push({ message: "Partner contact selections are invalid" });
@@ -96,19 +119,19 @@ export class SubmissionImportService {
     preview.briefs = parsed.rows.map(row => {
       const group = organizations.find(item => item.key === row.organizationKey)!;
       const contact = row.opportunity.secondaryContact;
-      return { row: row.row, title: row.opportunity.title, partner: group.name, submittedAt: row.submittedAt.toISOString(), status: skipped.has(row.key) ? "skipped" : "new",
+      return { row: row.row, title: row.opportunity.title, partner: group.name, industry: sectorToIndustry(row.org.sector, row.org.sectorOther), submittedAt: row.submittedAt.toISOString(), status: skipped.has(row.key) ? "skipped" : "new",
         submitter: { name: row.org.contactName, email: row.org.email }, host: contact?.email ? { name: contact.name || contact.email, email: contact.email, source: "brief" }
           : { name: group.primaryCandidates.find(candidate => candidate.email === group.primaryEmail)?.name || group.name, email: group.primaryEmail, source: "partner" },
         fitScore: row.scores.fitScore, impactScore: row.scores.impactScore };
     });
     preview.ready = !errors.length;
-    preview.previewHash = sourceHash({ csv: dto.csv, sourceName: dto.sourceName, cohortId: dto.cohortId, timezone: dto.sourceTimezone, organizations, users: users.map(user => ({ id: user.id, email: user.email, active: user.isActive, role: user.role })).sort((a, b) => a.email.localeCompare(b.email)), skipped: [...skipped].sort() });
+    preview.previewHash = sourceHash({ csv: dto.csv, sourceName: dto.sourceName, cohortId: dto.cohortId, timezone: dto.sourceTimezone, mode, fields, organizations, users: users.map(user => ({ id: user.id, email: user.email, active: user.isActive, role: user.role })).sort((a, b) => a.email.localeCompare(b.email)), skipped: [...skipped].sort() });
     return { preview, rows: parsed.rows, skipped };
   }
 
   async apply(dto: ApplySubmissionImportDto, actor: ImportActor) {
     this.authorize(actor);
-    try { return await this.db.transaction("SERIALIZABLE", async manager => {
+    try { const result = await this.db.transaction("SERIALIZABLE", async manager => {
       await manager.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["partner-submission-import"]);
       const account = await manager.findOneBy(User, { id: actor.id });
       if (!account?.isActive || ![Role.SUPER_ADMIN, Role.PROGRAM_MANAGER].includes(account.role)) throw new ForbiddenException("Staff account is no longer authorized");
@@ -116,13 +139,30 @@ export class SubmissionImportService {
       if (!preview.ready) throw new ConflictException({ message: "Import conflicts must be resolved before loading records", errors: preview.errors });
       if (dto.previewHash !== preview.previewHash) throw new ConflictException("The file, contact selections or existing data changed. Refresh the preview before importing.");
       const batchId = randomUUID(), briefIds: string[] = [];
+      if (preview.mode === "update_existing") {
+        for (const update of preview.updates) {
+          const patch = Object.assign({}, ...update.changes.map(change => change.after));
+          if (update.entity === "partner") await manager.update(Organization, update.id, patch);
+          else {
+            const brief = await manager.findOneByOrFail(Brief, { id: update.id });
+            await manager.update(Brief, update.id, { ...patch, currentVersion: brief.currentVersion + 1 });
+            await manager.save(BriefRevision, manager.create(BriefRevision, { briefId: brief.id, action: BriefRevisionAction.UPDATED, version: brief.currentVersion + 1, actorId: actor.id, actorName: account.email, actorType: BriefRevisionActorType.STAFF,
+              comment: `Selected-field CSV update from ${dto.sourceName}`, previousData: Object.assign({}, ...update.changes.map(change => change.before)), newData: patch }));
+            briefIds.push(brief.id);
+          }
+        }
+        const result = { batchId, mode: preview.mode, createdPartners: 0, createdUsers: 0, createdBriefs: 0, skippedBriefs: preview.unchangedBriefs + preview.unmatchedBriefs, updatedPartners: preview.updatedPartners, updatedBriefs: preview.updatedBriefs, unchangedBriefs: preview.unchangedBriefs, unmatchedBriefs: preview.unmatchedBriefs, updateFields: preview.updateFields, updates: preview.updates, briefIds };
+        await manager.save(AuditLog, manager.create(AuditLog, { actorId: actor.id, actorEmail: account.email, action: AuditAction.BULK_IMPORT, entityType: "PartnerSubmissionImport", entityId: batchId,
+          description: `Updated ${result.updatedPartners} partners and ${result.updatedBriefs} briefs from ${dto.sourceName}`, metadata: { ...result, sourceHash: sourceHash(dto.csv), cohortId: dto.cohortId, sourceTimezone: dto.sourceTimezone } }));
+        return result;
+      }
       for (const plan of preview.organizations) {
         const group = rows.filter(row => row.organizationKey === plan.key);
         const selected = group.find(row => row.org.email === plan.primaryEmail) || group[0];
         let partner = plan.organizationId ? await manager.findOneByOrFail(Organization, { id: plan.organizationId }) : null;
         if (!partner) partner = await manager.save(Organization, manager.create(Organization, {
           name: selected.org.orgName, email: plan.primaryEmail, country: selected.org.country, city: selected.org.city,
-          sector: selected.org.sector, sectorOther: selected.org.sectorOther, contactPerson: selected.org.contactName, contactPhone: selected.org.phone,
+          sector: selected.org.sector, sectorOther: selected.org.sectorOther, industry: sectorToIndustry(selected.org.sector, selected.org.sectorOther), contactPerson: selected.org.contactName, contactPhone: selected.org.phone,
           submitterName: selected.org.contactName, submitterDesignation: selected.org.designation, submitterDepartment: selected.org.department,
           cohortId: dto.cohortId, status: OrganizationStatus.PENDING, isActive: true, publicSubmission: false, consentGiven: false,
         }));
@@ -152,7 +192,11 @@ export class SubmissionImportService {
       await manager.save(AuditLog, manager.create(AuditLog, { actorId: actor.id, actorEmail: account.email, action: AuditAction.BULK_IMPORT,
         entityType: "PartnerSubmissionImport", entityId: batchId, description: `Imported ${briefIds.length} briefs from ${dto.sourceName}`, metadata: { ...result, sourceHash: sourceHash(dto.csv), cohortId: dto.cohortId, sourceTimezone: dto.sourceTimezone } }));
       return result;
-    }); } catch (error) {
+    });
+      // Participant brief lists include partner details. Refresh them after commit.
+      await this.cache?.del(`${CACHE_KEYS.BRIEFS_BY_COHORT}:${dto.cohortId}:approved`);
+      return result;
+    } catch (error) {
       const code = (error as { driverError?: { code?: string } }).driverError?.code;
       if (code === "40001" || code === "23505") throw new ConflictException("Existing data changed during import. Refresh the preview before retrying.");
       throw error;

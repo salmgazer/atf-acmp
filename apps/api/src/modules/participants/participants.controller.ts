@@ -16,6 +16,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  GoneException,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import {
@@ -40,6 +41,8 @@ import {
   BulkImportParticipantsDto,
   BulkImportResultDto,
   CompleteOnboardingDto,
+  UpdateMatchingConsentDto,
+  UpdateParticipantProgrammeDto,
   OnboardingPreferencesDto,
   ParticipantStatisticsDto,
 } from "./dto/participant.dto";
@@ -53,6 +56,8 @@ import { ResendParticipantInvitesDto, ResendPendingParticipantInvitesDto } from 
 import { Audit } from "@/common/decorators/audit.decorator";
 import { AuditInterceptor } from "@/common/interceptors/audit.interceptor";
 import { AuditAction } from "@/database/entities/audit-log.entity";
+import { ParticipantImportService } from "./participant-import.service";
+import { ParticipantImportDto, ApplyParticipantImportDto } from "./dto/participant-import.dto";
 
 @ApiTags("participants")
 @Controller("participants")
@@ -62,7 +67,23 @@ export class ParticipantsController {
     private readonly participantsService: ParticipantsService,
     private readonly uploadService: UploadService,
     private readonly invites: ParticipantInvitesService,
+    private readonly imports: ParticipantImportService,
   ) {}
+
+  @Post("import/preview")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @HttpCode(HttpStatus.OK)
+  previewImport(@Body() dto: ParticipantImportDto, @CurrentUser() actor: { id: string; role: string; email?: string }) { return this.imports.preview(dto, actor); }
+
+  @Post("import/apply")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @BulkThrottle()
+  @HttpCode(HttpStatus.ACCEPTED)
+  applyImport(@Body() dto: ApplyParticipantImportDto, @CurrentUser() actor: { id: string; role: string; email?: string }) { return this.imports.enqueue(dto, actor); }
+
+  @Get("import/batches/:id")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  importStatus(@Param("id", ParseUUIDPipe) id: string, @CurrentUser() actor: { id: string; role: string; email?: string }) { return this.imports.status(id, actor); }
 
   // ============ Current Participant Endpoint ============
   
@@ -268,20 +289,22 @@ export class ParticipantsController {
   // ============ Bulk Import Endpoints ============
 
   @Post("bulk-import")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
   @Audit({
     action: AuditAction.BULK_IMPORT,
     entityType: "Participant",
     getDescription: (result) => `Bulk imported ${result?.created || 0} participants`,
   })
-  @ApiOperation({ summary: "Bulk import participants from CSV data" })
+  @ApiOperation({ summary: "Legacy participant import; use preview/apply", deprecated: true })
   @ApiResponse({ status: 201, type: BulkImportResultDto })
-  async bulkImport(@Body() dto: BulkImportParticipantsDto) {
-    return this.participantsService.bulkImport(dto);
+  async bulkImport(@Body() _dto: BulkImportParticipantsDto) {
+    throw new GoneException("Use the participant CSV import preview and apply flow. The legacy import cannot safely update learning status.");
   }
 
   // ============ Onboarding Endpoints ============
 
   @Post(":id/onboarding")
+  @Roles(Role.PARTICIPANT)
   @ApiOperation({ summary: "Complete participant onboarding" })
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({ status: 200, description: "Onboarding completed" })
@@ -290,6 +313,18 @@ export class ParticipantsController {
     @Body() dto: CompleteOnboardingDto
   ) {
     return this.participantsService.completeOnboarding(id, dto);
+  }
+
+  @Patch(":id/programme-status")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  updateProgrammeStatus(@Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateParticipantProgrammeDto, @CurrentUser() actor: { id: string }) {
+    return this.participantsService.updateProgrammeStatus(id, dto, actor.id);
+  }
+
+  @Patch(":id/matching-consent")
+  @Roles(Role.PARTICIPANT)
+  updateMatchingConsent(@Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateMatchingConsentDto) {
+    return this.participantsService.updateMatchingConsent(id, dto.consent);
   }
 
   @Get(":id/preferences")

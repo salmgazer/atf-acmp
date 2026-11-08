@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import { Cohort, CohortStatus } from "@/database/entities/cohort.entity";
 import { Organization, OrganizationUser, OrganizationUserRole } from "@/database/entities/organization.entity";
 import { User, Role } from "@/database/entities/user.entity";
-import { Brief } from "@/database/entities/brief.entity";
+import { Brief, BriefRevision, BriefStatus } from "@/database/entities/brief.entity";
 import { BriefContact } from "@/database/entities/brief-contact.entity";
 import { PartnerImportRecord } from "@/database/entities/partner-import-record.entity";
 import { AuditLog } from "@/database/entities/audit-log.entity";
@@ -23,14 +23,16 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
 (databaseUrl ? describe : describe.skip)("Partner submission imports with PostgreSQL", () => {
   let db: DataSource, service: SubmissionImportService, cohort: Cohort, actor: User;
   let fixture: ReturnType<typeof submissionFixture>;
+  const cache = { del: jest.fn(async () => undefined) };
   beforeAll(async () => {
     const url = new URL(databaseUrl!);
     if (!/^\/acmp_regression_[a-z0-9_]+_test$/.test(url.pathname) || !["localhost", "127.0.0.1", "postgres"].includes(url.hostname)) throw new Error("A disposable local regression database is required");
     db = new DataSource({ type: "postgres", url: databaseUrl, entities: [path.join(__dirname, "../../src/database/entities/*.entity.ts")], migrations: [path.join(__dirname, "../../src/database/migrations/*.ts")], synchronize: false });
-    await db.initialize(); await db.runMigrations(); service = new SubmissionImportService(db);
+    await db.initialize(); await db.runMigrations(); service = new SubmissionImportService(db, cache as any);
   }, 120000);
   afterAll(async () => { if (db?.isInitialized) await db.destroy(); });
   beforeEach(async () => {
+    cache.del.mockClear();
     fixture = submissionFixture();
     cohort = await db.getRepository(Cohort).save({ name: "Import cohort " + randomUUID(), status: CohortStatus.ACTIVE, countries: ["Ghana"] });
     actor = await db.getRepository(User).save({ email: randomUUID() + "@example.test", role: Role.PROGRAM_MANAGER, isActive: true });
@@ -49,7 +51,7 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     const receipt = await service.apply({ ...selected, previewHash: preview.previewHash }, actor);
     expect(receipt).toMatchObject({ createdPartners: 1, createdUsers: 5, createdBriefs: 3 });
     const partner = await db.getRepository(Organization).findOneByOrFail({ email: fixture.submitter });
-    expect(partner).toMatchObject({ status: "pending", publicSubmission: false, consentGiven: false });
+    expect(partner).toMatchObject({ status: "pending", publicSubmission: false, consentGiven: false, industry: "Healthcare" });
     const links = await db.getRepository(OrganizationUser).findBy({ organizationId: partner.id });
     expect(links.filter(link => link.role === OrganizationUserRole.OWNER)).toHaveLength(1);
     const owner = await db.getRepository(User).findOneByOrFail({ email: fixture.submitter });
@@ -111,7 +113,7 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     const publicService = new PublicService(db.getRepository(Organization), db.getRepository(Brief), { findOne: async () => cohort } as any, db.getRepository(User), db, new BriefScoringService(), mail as any, new ConfigService({ FRONTEND_URL: "http://localhost:3000" }));
     const result = await publicService.submitOrganizationBriefs({ sessionId: row.sessionId, org: row.org, opportunities: [row.opportunity as any], consentGiven: true });
     const partner = await db.getRepository(Organization).findOneByOrFail({ id: result.organizationId });
-    expect(partner).toMatchObject({ publicSubmission: true, consentGiven: true, status: "pending" });
+    expect(partner).toMatchObject({ publicSubmission: true, consentGiven: true, status: "pending", industry: "Healthcare" });
     const contact = await db.getRepository(User).findOneByOrFail({ email: fixture.hosts[2] });
     expect(await db.getRepository(OrganizationUser).findOneBy({ organizationId: partner.id, userId: contact.id })).toMatchObject({ role: OrganizationUserRole.MEMBER });
     expect(await db.getRepository(BriefContact).findOneBy({ briefId: result.briefIds![0], email: contact.email })).toMatchObject({ isPrimary: true });
@@ -139,5 +141,94 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     expect(await db.getRepository(OrganizationUser).findOneBy({ organizationId: partner.id, userId: existing.id })).toMatchObject({ role: OrganizationUserRole.OWNER, isPrimary: true });
     expect((await db.getRepository(User).findOneOrFail({ where: { id: existing.id }, select: { passwordHash: true } })).passwordHash).toBe("existing-test-credentials");
     expect((await db.getRepository(Organization).findOneByOrFail({ id: partner.id })).contactPerson).toBe("Existing partner contact");
+  });
+
+  async function load() {
+    const preview = await service.preview(input(), actor);
+    const receipt = await service.apply({ ...input(), previewHash: preview.previewHash }, actor);
+    const partner = await db.getRepository(Organization).findOneByOrFail({ name: fixture.name });
+    return { receipt, partner };
+  }
+  const updateInput = (fields = ["industry"] as import("@acmp/shared").SubmissionUpdateField[]) => ({ ...input(), mode: "update_existing" as const, updateFields: fields });
+
+  it("backfills Industry alone once per partner without changing briefs, accounts, approvals, contacts or source receipts", async () => {
+    const { partner } = await load();
+    await db.getRepository(Organization).update(partner.id, { industry: "", status: "approved" as any });
+    const briefsBefore = await db.getRepository(Brief).findBy({ organizationId: partner.id });
+    const contactsBefore = await db.getRepository(BriefContact).findBy({ briefId: briefsBefore[0].id });
+    const receiptsBefore = await db.getRepository(PartnerImportRecord).findBy({ cohortId: cohort.id });
+    const usersBefore = await db.getRepository(User).count();
+    fixture.rows[0]["Opportunity title"] = "Unselected replacement title";
+    const preview = await service.preview(updateInput(), actor);
+    expect(preview).toMatchObject({ ready: true, updatedPartners: 1, updatedBriefs: 0, newPartners: 0, newUsers: 0, newBriefs: 0 });
+    expect(preview.updates[0].changes).toEqual([{ field: "industry", label: "Partner industry", before: { industry: "" }, after: { industry: "Healthcare" } }]);
+    const receipt = await service.apply({ ...updateInput(), previewHash: preview.previewHash }, actor);
+    expect(receipt).toMatchObject({ updatedPartners: 1, updatedBriefs: 0, createdUsers: 0 });
+    expect(cache.del).toHaveBeenLastCalledWith(`briefs:cohort:${cohort.id}:approved`);
+    expect(await db.getRepository(Organization).findOneByOrFail({ id: partner.id })).toMatchObject({ industry: "Healthcare", status: "approved", email: partner.email });
+    expect(await db.getRepository(Brief).findBy({ organizationId: partner.id })).toEqual(briefsBefore);
+    expect(await db.getRepository(BriefContact).findBy({ briefId: briefsBefore[0].id })).toEqual(contactsBefore);
+    expect(await db.getRepository(PartnerImportRecord).findBy({ cohortId: cohort.id })).toEqual(receiptsBefore);
+    expect(await db.getRepository(User).count()).toBe(usersBefore);
+    expect((await db.getRepository(AuditLog).findOneByOrFail({ entityId: receipt.batchId })).metadata).toMatchObject({ updateFields: ["industry"], updatedPartners: 1 });
+    expect(await service.preview(updateInput(), actor)).toMatchObject({ ready: true, updatedPartners: 0, updatedBriefs: 0, unchangedBriefs: 3 });
+  });
+
+  it("updates only checked brief fields, synchronizes paired fields, preserves blanks, and records revisions", async () => {
+    const { partner } = await load();
+    const first = await db.getRepository(Brief).findOneByOrFail({ sessionId: fixture.sessionId, opportunityNumber: 1 });
+    await db.getRepository(Brief).update(first.id, { status: BriefStatus.APPROVED });
+    fixture.rows[0]["The opportunity and who it affects"] = "A corrected opportunity description affecting the whole district.";
+    fixture.rows[0]["Country lead notes"] = "";
+    fixture.rows[0]["Opportunity title"] = "Do not replace this title";
+    const request = updateInput(["description", "countryLeadNotes"]), preview = await service.preview(request, actor);
+    expect(preview).toMatchObject({ ready: true, updatedPartners: 0, updatedBriefs: 1 });
+    await service.apply({ ...request, previewHash: preview.previewHash }, actor);
+    const updated = await db.getRepository(Brief).findOneByOrFail({ id: first.id });
+    expect(updated).toMatchObject({ description: fixture.rows[0]["The opportunity and who it affects"], problemStatement: fixture.rows[0]["The opportunity and who it affects"], title: first.title, countryLeadNotes: first.countryLeadNotes, status: BriefStatus.APPROVED, fitScore: first.fitScore, currentVersion: first.currentVersion + 1 });
+    expect(await db.getRepository(BriefRevision).findOneBy({ briefId: first.id })).toMatchObject({ actorId: actor.id, actorType: "staff", previousData: { description: first.description }, newData: { description: updated.description } });
+    expect((await db.getRepository(Organization).findOneByOrFail({ id: partner.id })).updatedAt).toEqual(partner.updatedAt);
+  });
+
+  it("rejects stale target data and changed field selections before any updates", async () => {
+    const { partner } = await load();
+    await db.getRepository(Organization).update(partner.id, { industry: "Old value" });
+    const request = updateInput(), preview = await service.preview(request, actor);
+    await db.getRepository(Organization).update(partner.id, { industry: "Staff correction" });
+    await expect(service.apply({ ...request, previewHash: preview.previewHash }, actor)).rejects.toThrow("Refresh the preview");
+    expect((await db.getRepository(Organization).findOneByOrFail({ id: partner.id })).industry).toBe("Staff correction");
+    const fresh = await service.preview(request, actor);
+    await expect(service.apply({ ...updateInput(["city"]), previewHash: fresh.previewHash }, actor)).rejects.toThrow("Refresh the preview");
+  });
+
+  it("skips unmatched rows and requires explicit supported unique fields without creating records", async () => {
+    const before = await db.getRepository(Organization).count();
+    const preview = await service.preview(updateInput(), actor);
+    expect(preview).toMatchObject({ ready: true, newPartners: 0, newBriefs: 0, updatedPartners: 0, unmatchedBriefs: 3 });
+    await service.apply({ ...updateInput(), previewHash: preview.previewHash }, actor);
+    expect(await db.getRepository(Organization).count()).toBe(before);
+    for (const fields of [[], ["industry", "industry"], ["status"], ["__proto__"]]) await expect(service.preview({ ...updateInput(), updateFields: fields as any }, actor)).rejects.toThrow();
+    await expect(service.preview({ ...input(), updateFields: ["industry"] }, actor)).rejects.toThrow("Update existing only");
+  });
+
+  it("blocks conflicting partner industries and removed source targets rather than guessing", async () => {
+    const { partner } = await load();
+    fixture.rows[2]["Sector"] = "Finance";
+    expect((await service.preview(updateInput(), actor)).errors).toEqual(expect.arrayContaining([expect.objectContaining({ message: expect.stringContaining("Conflicting partner industry") })]));
+    expect((await service.preview(updateInput(["title"]), actor)).ready).toBe(true);
+    await db.getRepository(Organization).softDelete(partner.id);
+    expect((await service.preview(updateInput(), actor)).errors.some(error => error.message.includes("removed"))).toBe(true);
+  });
+
+  it("uses specific Other industry detail and updates public-intake briefs by source identity without import receipts", async () => {
+    fixture.rows.forEach(row => { row["Sector"] = "Other"; row["Sector (if Other)"] = "Telecommunication"; });
+    const { partner } = await load();
+    expect(partner.industry).toBe("Telecommunication");
+    await db.getRepository(PartnerImportRecord).delete({ cohortId: cohort.id });
+    await db.getRepository(Organization).update(partner.id, { industry: "Other" });
+    const preview = await service.preview(updateInput(), actor);
+    expect(preview).toMatchObject({ ready: true, updatedPartners: 1, unmatchedBriefs: 0 });
+    await service.apply({ ...updateInput(), previewHash: preview.previewHash }, actor);
+    expect((await db.getRepository(Organization).findOneByOrFail({ id: partner.id })).industry).toBe("Telecommunication");
   });
 });

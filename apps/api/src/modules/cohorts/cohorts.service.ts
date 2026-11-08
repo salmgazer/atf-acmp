@@ -1,3 +1,4 @@
+import { resolveCohortTeamDeadlines, validateCohortDeadlineStages } from "@/common/services/cohort-team-deadlines";
 import { normalizeGroups } from "@/common/services/cohort-groups";
 import {
   Injectable,
@@ -145,6 +146,7 @@ export class CohortsService {
   }
 
   async create(createCohortDto: CreateCohortDto): Promise<CohortWithStageCount> {
+    if (createCohortDto.teamJoiningStageId || createCohortDto.learningCertificationStageId) throw new BadRequestException("Create the cohort and its stages before selecting deadline stages");
     // Validate team size
     if (
       createCohortDto.teamSizeMin &&
@@ -419,6 +421,12 @@ export class CohortsService {
     this.logger.log(`Forum categories for cohort ${cohortId}: isActive=${isActive}, isLocked=${!isActive}`);
   }
 
+  async withTeamDeadlineView<T extends { id: string; deadlines?: Record<string, any> }>(cohort: T): Promise<T> {
+    const copy = Object.assign(new Cohort(), cohort);
+    const resolved = await resolveCohortTeamDeadlines(this.cohortRepository.manager, copy);
+    return { ...cohort, teamRuleDeadlines: resolved, deadlines: { ...cohort.deadlines, teamFormationEnd: resolved.joining || undefined, learningCertificationEnd: resolved.certification || undefined } } as T;
+  }
+
   private async getStageCount(cohortId: string): Promise<number> {
     return this.stageRepository.count({ where: { cohortId } });
   }
@@ -545,6 +553,10 @@ export class CohortsService {
       // Merge existing deadlines with updates for validation
       const mergedDeadlines = { ...cohort.deadlines, ...updateCohortDto.deadlines };
       this.validateDeadlineOrder(mergedDeadlines);
+    }
+
+    if (updateCohortDto.teamJoiningStageId !== undefined || updateCohortDto.learningCertificationStageId !== undefined) {
+      await validateCohortDeadlineStages(this.cohortRepository.manager, Object.assign(new Cohort(), cohort, updateCohortDto));
     }
 
     // Merge updates
