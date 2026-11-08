@@ -41,6 +41,12 @@ export class ParticipantQueueRecoveryService implements OnApplicationBootstrap {
           const batches = await manager.find(ParticipantInviteBatchRecord, { where: { state: In(["queued", "active"]) }, order: { createdAt: "ASC", id: "ASC" }, skip: offset, take: 200 });
           for (const batch of batches) {
             const job = await this.inviteQueue.getJob(batch.id), state = await job?.getState();
+            if (job) {
+              // A legacy worker may have finished since the startup adoption.
+              await this.invites.adopt(job);
+              const current = await manager.findOneByOrFail(ParticipantInviteBatchRecord, { id: batch.id });
+              if (["completed", "failed"].includes(current.state)) continue;
+            }
             if (job && !["completed", "failed", "unknown"].includes(state!)) continue;
             if (job) await job.remove();
             await this.invites.dispatch(batch.id, batch.participantIds, batch.requestedBy);

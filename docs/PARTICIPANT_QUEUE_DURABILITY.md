@@ -17,7 +17,7 @@
 
 `participant_import_batches` remains the durable source for participant imports. The new `participant_invite_batches` table stores an immutable recipient list, requester, status and progress for each invitation batch. Imported invitation batch IDs remain deterministic (`import-<import-batch-id>-<offset>`), so retrying the handoff cannot create a second logical batch.
 
-The API saves a batch to PostgreSQL before attempting to enqueue its Redis job. A Redis publishing failure leaves a queued database record, and the request returns its durable batch ID. A recovery service runs at application startup and every 30 seconds. It republishes missing jobs, replaces finished/failed Redis jobs whose database batch is still unfinished, and restores the concurrency settings lost with Redis. Live Redis jobs are left to BullMQ's existing processing/stall recovery. PostgreSQL locks serialize recovery across API replicas.
+The API saves a batch to PostgreSQL before attempting to enqueue its Redis job. A Redis publishing failure leaves a queued database record, and the request returns its durable batch ID. A recovery service runs at application startup and every 30 seconds. It republishes missing jobs, replaces finished/failed Redis jobs whose database batch is still unfinished, and restores the concurrency settings lost with Redis. Continuing pre-upgrade workers can advance their adopted Redis checkpoint until a database-aware worker claims the batch. Recovery mirrors their final progress before republishing a finished job. Once a database-aware worker is active, Redis snapshots cannot overwrite its checkpoint. Live Redis jobs are left to BullMQ's existing processing/stall recovery. PostgreSQL locks serialize recovery across API replicas.
 
 Each invitation recipient is rechecked against current participant eligibility and their current email. After sending, failing or skipping, the result is saved in PostgreSQL before advancing. Redis progress is no longer authoritative. A replacement Redis instance can therefore resume at the database checkpoint. Completed batches and recipient failures are retained in PostgreSQL and are not automatically replayed. Staff can deliberately resend failed invitations through the existing actions.
 
@@ -46,7 +46,7 @@ Local migration and online Redis AOF initialization were applied on 2026-11-08. 
 
 ## Verification
 
-- 581 API tests passed, including six PostgreSQL/BullMQ/Redis durability integration scenarios; schema/migration consistency passed.
+- 582 API tests passed, including seven PostgreSQL/BullMQ/Redis durability integration scenarios; schema/migration consistency passed.
 - Workspace type checks and API build passed. Terraform formatting and local provider-schema validation passed. Review a targeted Redis plan before applying the infrastructure configuration.
 - Docker Compose configuration validates. The test's `FLUSHDB` is restricted to a dedicated disposable Redis container on a random local port, paired with a disposable regression database. Email delivery is mocked.
 
