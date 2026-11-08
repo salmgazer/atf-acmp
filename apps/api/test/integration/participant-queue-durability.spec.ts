@@ -147,6 +147,21 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL, redisUrl = process.env.A
     expect(await db.getRepository(Participant).countBy({ participantId: sourceId })).toBe(1);
   });
 
+  it("preserves progress written by a legacy worker after initial adoption during a rolling upgrade", async () => {
+    const first = await participant(), second = await participant(), id = randomUUID();
+    const job = await inviteQueue.add("resend", { participantIds: [first.id, second.id], requestedBy: actor.id }, { jobId: id });
+    await job.updateProgress({ total: 2, processed: 1, sent: 1, failed: 0, skipped: 0, failures: [] });
+    await recovery.reconcile();
+    expect(await ledger.status(id)).toMatchObject({ processed: 1, state: "queued" });
+    // The old worker finishes while the new API is rolling out.
+    await job.updateProgress({ total: 2, processed: 2, sent: 2, failed: 0, skipped: 0, failures: [] });
+    await recovery.reconcile();
+    expect(await ledger.status(id)).toMatchObject({ processed: 2, state: "completed" });
+    await redis.flushdb(); await recovery.reconcile();
+    expect(await inviteQueue.getJob(id)).toBeUndefined();
+    expect(email.sendParticipantInviteEmail).not.toHaveBeenCalled();
+  });
+
   it("retains failed-recipient results without automatically resending them after Redis loss", async () => {
     const p = await participant(), batch = await invites.resendSelected([p.id], actor.id);
     await eventually(async () => !!await inviteQueue.getJob(batch.id));

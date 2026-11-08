@@ -15,6 +15,11 @@ export class ParticipantInviteLedgerService {
     // A deterministic imported batch may already exist after a partial queue outage.
     await this.db.getRepository(ParticipantInviteBatchRecord).createQueryBuilder().insert().values({ id, requestedBy, participantIds, progress, state,
       error: state === "failed" ? "The invitation batch stopped. Check the results before retrying." : null }).orIgnore().execute();
+    // Pre-upgrade workers still checkpoint only Redis. Keep their newer progress
+    // until a database-aware worker claims the batch (state becomes active).
+    // Never overwrite a durable worker's checkpoint from a Redis snapshot.
+    await this.db.getRepository(ParticipantInviteBatchRecord).createQueryBuilder().update().set({ progress, state: progress.processed === progress.total ? "completed" : "queued" })
+      .where("id = :id AND state = 'queued' AND (progress->>'processed')::integer < :processed", { id, processed: progress.processed }).execute();
     return this.db.getRepository(ParticipantInviteBatchRecord).findOneByOrFail({ id });
   }
 
