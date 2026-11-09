@@ -149,3 +149,49 @@ test("update mode requires checked fields and explains unchanged and unmatched r
   await expect(page.getByRole("button", { name: "Update selected fields", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Import partners and briefs", exact: true })).toHaveCount(0);
 });
+
+test("staff selects Vertical independently and reviews the sector mapping and readable before/after names", async ({ page, context }) => {
+  const requests = await setup(page, context);
+  const verticals = [
+    { id: "health-id", name: "Health", isNew: false, sectors: ["Healthcare"], rows: [2], briefCap: 50, briefCount: 0, projectedBriefCount: 1 },
+    { id: "education-id", name: "Education", isNew: true, sectors: ["Education"], rows: [3], briefCap: 10, briefCount: 0, projectedBriefCount: 1 },
+  ];
+  const updates = [{ entity: "brief", id: "brief-1", name: "Imported opportunity", rows: [2], changes: [{ field: "verticalId", label: "Brief vertical", before: { verticalId: null }, after: { verticalId: "health-id" }, beforeLabel: "Empty", afterLabel: "Health" }] }];
+  await page.route("**/submission-import/preview", async route => {
+    requests.push({ path: "/submission-import/preview", body: route.request().postDataJSON() });
+    await route.fulfill({ json: { ...preview, mode: "update_existing", organizations: [], newPartners: 0, newUsers: 0, newBriefs: 0, updatedPartners: 0, updatedBriefs: 2, verticals, updates } });
+  });
+  await page.route("**/submission-import/apply", async route => {
+    requests.push({ path: "/submission-import/apply", body: route.request().postDataJSON() });
+    await route.fulfill({ json: { batchId: "vertical-update", mode: "update_existing", updatedPartners: 0, updatedBriefs: 2, createdVerticals: 1, unchangedBriefs: 0, unmatchedBriefs: 0, verticals } });
+  });
+  await page.getByRole("button", { name: "Partners and briefs", exact: true }).click();
+  await page.getByLabel("Import operation").selectOption("update_existing");
+  await page.getByRole("checkbox", { name: "Partner industry", exact: false }).uncheck();
+  await page.getByRole("checkbox", { name: "Brief vertical", exact: false }).check();
+  await page.getByLabel("Cohort", { exact: true }).selectOption(cohortId);
+  await page.getByLabel("Submission CSV data").fill(csv);
+  await page.getByRole("button", { name: "Preview import", exact: true }).click();
+  expect(requests[0].body.updateFields).toEqual(["verticalId"]);
+  await expect(page.getByRole("heading", { name: "Sector to cohort vertical", exact: true })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "Healthcare" })).toContainText("Reuse existing");
+  await expect(page.getByRole("row").filter({ hasText: "Education" })).toContainText("Create vertical");
+  await expect(page.getByRole("row").filter({ hasText: "brief · Rows 2" })).toContainText("Health");
+  await expect(page.getByRole("cell", { name: "health-id", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Update selected fields", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("Selected fields: Brief vertical.");
+  await page.getByRole("button", { name: "Confirm update", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Import complete" })).toBeVisible();
+  expect(requests.at(-1)?.body).toMatchObject({ updateFields: ["verticalId"], previewHash: preview.previewHash });
+});
+
+test("new imports show automatic vertical creation and capacity errors prevent confirmation", async ({ page, context }) => {
+  await setup(page, context);
+  await page.route("**/submission-import/preview", route => route.fulfill({ json: { ...preview, ready: false,
+    verticals: [{ id: "education-id", name: "Education", isNew: true, sectors: ["Education"], rows: [2], briefCap: 10, projectedBriefCount: 2 }],
+    errors: [{ message: 'Vertical "Health" would contain 51 submitted briefs, exceeding its capacity (50).' }] } }));
+  await prepare(page);
+  await expect(page.getByRole("row").filter({ hasText: "Education" })).toContainText("Create vertical");
+  await expect(page.getByRole("region", { name: "Import partner brief submissions" }).getByRole("alert")).toContainText("exceeding its capacity");
+  await expect(page.getByRole("button", { name: "Import partners and briefs", exact: true })).toBeDisabled();
+});

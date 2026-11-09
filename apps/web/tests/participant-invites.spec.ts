@@ -59,6 +59,27 @@ test("participant row menus provide view and resend actions with pending eligibi
   await expect(page.getByRole("checkbox", { name: "Select Sam Inactive" })).toBeDisabled();
 });
 
+test("long names and emails stay compact while the full participant ID stays on one line", async ({ page, context }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await setup(page, context);
+  const participant = { ...participants[0], participantId: "ATF26-694591-GHA", firstName: "Alexandria Catherine", lastName: "Montgomery-Wellington", email: "alexandria.catherine.montgomery.wellington@example.test" };
+  await page.route("**/api/participants?**", route => route.fulfill({ json: { data: [participant], total: 1, totalPages: 1 } }));
+  await page.reload();
+  const name = page.getByRole("link", { name: `${participant.firstName} ${participant.lastName}`, exact: true });
+  await expect(name).toBeVisible();
+  await expect(name).toHaveAttribute("title", `${participant.firstName} ${participant.lastName}`);
+  const email = page.getByText(participant.email, { exact: true });
+  await expect(email).toHaveAttribute("title", participant.email);
+  expect(await name.evaluate(element => element.getBoundingClientRect().width)).toBeLessThanOrEqual(224);
+  expect(await email.evaluate(element => getComputedStyle(element).textOverflow)).toBe("ellipsis");
+  const id = page.getByText(participant.participantId, { exact: true });
+  await expect(id).toBeVisible();
+  expect(await id.evaluate(element => {
+    const range = document.createRange(); range.selectNodeContents(element);
+    return range.getClientRects().length;
+  })).toBe(1);
+});
+
 test("select-all includes only pending participants and bulk resend sends the selected IDs", async ({ page, context }) => {
   const sent = await setup(page, context);
   const selectAll = page.getByRole("checkbox", { name: "Select all pending participants on this page" });

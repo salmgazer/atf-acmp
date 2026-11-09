@@ -10,18 +10,20 @@ export interface SubmissionImportInput {
 }
 export interface SubmissionUpdate {
   entity: "partner" | "brief"; id: string; name: string; rows: number[];
-  changes: { field: SubmissionUpdateField; label: string; before: Record<string, unknown>; after: Record<string, string> }[];
+  changes: { field: SubmissionUpdateField; label: string; before: Record<string, unknown>; after: Record<string, string>; beforeLabel?: string; afterLabel?: string }[];
 }
+export interface SubmissionVerticalPreview { id: string; name: string; isNew: boolean; sectors: string[]; rows: number[]; briefCap: number; briefCount: number; projectedBriefCount: number }
 export interface SubmissionImportPreview {
   ready: boolean; previewHash: string; sourceName: string; cohortId: string; sourceTimezone: string;
   totalBriefs: number; newPartners: number; newUsers: number; newBriefs: number; skippedBriefs: number;
   mode?: SubmissionImportMode; updateFields?: SubmissionUpdateField[]; updates?: SubmissionUpdate[];
   updatedPartners?: number; updatedBriefs?: number; unchangedBriefs?: number; unmatchedBriefs?: number;
+  verticals?: SubmissionVerticalPreview[];
   organizations: { key: string; name: string; country: string; organizationId?: string; primaryEmail: string; primaryCandidates: { email: string; name: string }[]; rows: number[]; newBriefs: number; skippedBriefs: number }[];
-  briefs: { row: number; title: string; partner: string; industry?: string; submittedAt: string; status: "new" | "skipped" | "updated" | "unchanged" | "unmatched"; submitter: { name: string; email: string }; host: { name: string; email: string; source: "brief" | "partner" }; fitScore: number; impactScore: number | null }[];
+  briefs: { row: number; title: string; partner: string; industry?: string; vertical?: string; submittedAt: string; status: "new" | "skipped" | "updated" | "unchanged" | "unmatched"; submitter: { name: string; email: string }; host: { name: string; email: string; source: "brief" | "partner" }; fitScore: number; impactScore: number | null }[];
   errors: { row?: number; message: string }[]; warnings: { row?: number; message: string }[];
 }
-export interface SubmissionImportReceipt { batchId: string; mode?: SubmissionImportMode; createdPartners: number; createdUsers: number; createdBriefs: number; skippedBriefs: number; briefIds: string[]; updatedPartners?: number; updatedBriefs?: number; unchangedBriefs?: number; unmatchedBriefs?: number; updateFields?: SubmissionUpdateField[]; updates?: SubmissionUpdate[] }
+export interface SubmissionImportReceipt { batchId: string; mode?: SubmissionImportMode; createdPartners: number; createdUsers: number; createdBriefs: number; skippedBriefs: number; briefIds: string[]; updatedPartners?: number; updatedBriefs?: number; unchangedBriefs?: number; unmatchedBriefs?: number; updateFields?: SubmissionUpdateField[]; updates?: SubmissionUpdate[]; createdVerticals?: number; verticals?: SubmissionVerticalPreview[] }
 
 export function usePreviewSubmissionImport() {
   return useMutation({
@@ -36,6 +38,8 @@ export function useApplySubmissionImport() {
     onSuccess: receipt => {
       cache.invalidateQueries({ queryKey: ["organizations"] });
       cache.invalidateQueries({ queryKey: ["briefs"] });
+      cache.invalidateQueries({ queryKey: ["verticals"] });
+      cache.invalidateQueries({ queryKey: ["cohorts"] });
       toast.success(receipt.mode === "update_existing" ? `${receipt.updatedPartners} partners and ${receipt.updatedBriefs} briefs updated` : `${receipt.createdBriefs} briefs imported`);
     },
     onError: (error: Error) => toast.error(error.message || "Import failed. Refresh the preview before retrying."),
