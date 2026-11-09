@@ -46,6 +46,7 @@ export interface ScoringAnswers {
 }
 
 export interface Brief {
+  problemCountry?: string | null;
   id: string;
   title: string;
   description: string;
@@ -62,6 +63,7 @@ export interface Brief {
   organization?: {
     id: string;
     name: string;
+    country?: string;
     logoUrl?: string;
   };
   tags: string[];
@@ -113,6 +115,7 @@ export interface BriefRevision {
 }
 
 export interface CreateBriefDto {
+  problemCountry?: string;
   title: string;
   description: string;
   problemStatement: string;
@@ -133,6 +136,7 @@ export interface CreateBriefDto {
 }
 
 export interface UpdateBriefDto {
+  problemCountry?: string;
   title?: string;
   description?: string;
   problemStatement?: string;

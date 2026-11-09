@@ -41,18 +41,25 @@ test('staff can add and remove group tags in cohort settings', async ({ context,
 
 test('grouped participant imports require a selection and include it in the request', async ({ context, page }) => {
   await setup(context, page);
-  await page.route('**/participants/bulk-import', route => route.fulfill({ json: { totalProcessed: 1, successCount: 1, failureCount: 0, results: [{ success: true, participantId: 'ATF-002', email: 'import@example.test' }] } }));
+  await page.route('**/participants/import/preview', route => {
+    const valid = route.request().postDataJSON().group === 'South';
+    return route.fulfill({ json: { ready: valid, previewHash: 'a'.repeat(64), total: 1, counts: { new: valid ? 1 : 0, updated: 0, unchanged: 0, excluded: 0, conflict: valid ? 0 : 1 }, errors: [], warnings: [], records: [{ row: 2, participantId: 'ATF-002', name: 'Import Test', outcome: valid ? 'new' : 'conflict', reason: valid ? undefined : 'Select a cohort group for new participants', changes: [], warnings: [], data: {} }] } });
+  });
+  await page.route('**/participants/import/apply', route => route.fulfill({ json: { id: 'group-import-batch', state: 'completed', sourceName: 'participants.csv', result: { counts: { new: 1 }, stage: 'completed' } } }));
+  await page.route('**/participants/import/batches/group-import-batch', route => route.fulfill({ json: { id: 'group-import-batch', state: 'completed', sourceName: 'participants.csv', result: { counts: { new: 1 }, stage: 'completed' } } }));
   await page.goto('/staff/participants/import');
-  await page.getByText('Select a cohort', { exact: true }).click();
-  await page.getByRole('option', { name: /Grouped cohort/ }).click();
-  await page.locator('#csv-upload').setInputFiles({ name: 'participants.csv', mimeType: 'text/csv', buffer: Buffer.from('participantId,email,firstName,lastName,country\nATF-002,import@example.test,Import,Test,GH\n') });
-  const submit = page.getByRole('button', { name: 'Import 1 Participants', exact: true });
+  await page.getByLabel('Cohort', { exact: true }).selectOption(cohort.id);
+  await page.getByLabel('Participant CSV file').setInputFiles({ name: 'participants.csv', mimeType: 'text/csv', buffer: Buffer.from('participant_id,lms_email,first_name,last_name,country,halfway_reached\nATF-002,import@example.test,Import,Test,GH,Yes\n') });
+  await page.getByRole('button', { name: 'Preview import', exact: true }).click();
+  const submit = page.getByRole('button', { name: 'Review and import', exact: true });
   await expect(submit).toBeDisabled();
-  await page.getByLabel('Group for this import').selectOption('South');
+  await page.getByLabel('Group for new participants').selectOption('South');
+  await page.getByRole('button', { name: 'Preview import', exact: true }).click();
   await expect(submit).toBeEnabled();
-  const sent = page.waitForRequest(request => request.url().endsWith('/participants/bulk-import') && request.method() === 'POST');
+  const sent = page.waitForRequest(request => request.url().endsWith('/participants/import/apply') && request.method() === 'POST');
   await submit.click();
-  expect((await sent).postDataJSON()).toMatchObject({ cohortId: cohort.id, group: 'South', participants: [{ participantId: 'ATF-002' }] });
+  await page.getByRole('button', { name: 'Queue import', exact: true }).click();
+  expect((await sent).postDataJSON()).toMatchObject({ cohortId: cohort.id, group: 'South' });
 });
 
 for (const resource of ['participants', 'teams']) test(`staff ${resource} filters send the selected group`, async ({ context, page }) => {

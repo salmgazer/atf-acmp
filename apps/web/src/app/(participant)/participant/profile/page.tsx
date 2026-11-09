@@ -9,6 +9,8 @@ import { z } from "zod";
 import { useTheme } from "next-themes";
 import { ParticipantLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
+import { MatchingProfile } from "@/components/participants/matching-profile";
+import { LearningProfile } from "@/components/participants/learning-profile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -297,6 +299,8 @@ function ProfileContent() {
 
   return (
     <div className="space-y-6 pb-20">
+      <LearningProfile profile={participant} />
+      <MatchingProfile preference={preferences} participantId={participant.id} editable />
       {/* Profile Header */}
       <Card>
         <CardContent className="pt-6">

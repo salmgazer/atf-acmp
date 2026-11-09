@@ -1,4 +1,5 @@
 "use client";
+import { formatUtcDeadline } from "@/lib/utc-deadline";
 
 import { StaffOnly, useStaffPermission } from "@/components/auth/staff-only";
 import { use } from "react";
@@ -294,7 +295,7 @@ function CohortDetailContent({ id }: { id: string }) {
                 <dt className="text-muted-foreground">Brief Selection</dt>
                 <dd className="font-medium">
                   {cohort.deadlines.briefSelectionEnd
-                    ? format(new Date(cohort.deadlines.briefSelectionEnd), "MMM d, yyyy")
+                    ? formatUtcDeadline(cohort.deadlines.briefSelectionEnd)
                     : "—"}
                 </dd>
               </div>
@@ -302,7 +303,7 @@ function CohortDetailContent({ id }: { id: string }) {
                 <dt className="text-muted-foreground">Team Formation</dt>
                 <dd className="font-medium">
                   {cohort.deadlines.teamFormationEnd
-                    ? format(new Date(cohort.deadlines.teamFormationEnd), "MMM d, yyyy")
+                    ? formatUtcDeadline(cohort.deadlines.teamFormationEnd)
                     : "—"}
                 </dd>
               </div>
@@ -395,7 +396,7 @@ function CohortDetailContent({ id }: { id: string }) {
                       <span className="font-medium truncate">{stage.name}</span>
                     </div>
                     <div className="text-xs text-muted-foreground space-y-1">
-                      <p>Deadline: {format(new Date(stage.deadline), "MMM d, yyyy")}</p>
+                      <p>Deadline: {formatUtcDeadline(stage.deadline)}</p>
                       {stage.stats && (
                         <p>
                           {stage.stats.submitted + stage.stats.late + stage.stats.evaluated} submitted

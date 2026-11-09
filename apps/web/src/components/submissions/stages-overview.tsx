@@ -1,8 +1,9 @@
 "use client";
+import { formatUtcDeadline } from "@/lib/utc-deadline";
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { format, formatDistanceToNow, isPast, isFuture } from "date-fns";
+import { formatDistanceToNow, isPast, isFuture } from "date-fns";
 import {
   Calendar,
   CheckCircle,
@@ -124,7 +125,7 @@ export function StagesOverview({ cohortId }: { cohortId: string }) {
             <div className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                 <Calendar className="h-4 w-4 shrink-0" />
-                <span>Due: {format(new Date(currentStage.deadline), "MMM d, yyyy 'at' h:mm a")}</span>
+                <span>Due: {formatUtcDeadline(currentStage.deadline)}</span>
               </span>
               <Button asChild size="sm">
                 <Link href={`/participant/submissions/${currentStage.id}`}>
@@ -193,7 +194,7 @@ function StageCard({ stage, isCurrent }: { stage: StageWithSubmission; isCurrent
               <p className="text-sm text-muted-foreground">
                 {isDeadlinePast
                   ? `Closed ${formatDistanceToNow(deadline, { addSuffix: true })}`
-                  : `Due ${format(deadline, "MMM d, yyyy 'at' h:mm a")}`}
+                  : `Due ${formatUtcDeadline(deadline)}`}
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">

@@ -280,7 +280,7 @@ export function PartnerFormDialog({
                   <SelectValue placeholder="Select industry" />
                 </SelectTrigger>
                 <SelectContent>
-                  {industries.map((industry) => (
+                  {[...new Set([...industries, ...(watch("industry") ? [watch("industry")!] : [])])].map((industry) => (
                     <SelectItem key={industry} value={industry}>
                       {industry}
                     </SelectItem>

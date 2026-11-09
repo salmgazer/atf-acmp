@@ -1,3 +1,5 @@
+import { assertParticipantTeamAdmission, assertMemberAdmission, teamRuleContext, clearTeamRegistration } from "@/common/services/team-rules";
+import { evaluateTeamRules, normalizeTeamCountry } from "@acmp/shared";
 import { resolveCohortGroup } from "@/common/services/cohort-groups";
 import { Transactional, afterCommit } from "@/common/decorators/transactional.decorator";
 import { SocketSessionsService } from "@/auth/socket-sessions.service";
@@ -109,16 +111,6 @@ export class TeamsService {
       throw new NotFoundException("Cohort not found");
     }
 
-    // Check if team formation deadline has passed
-    if (cohort.deadlines?.teamFormationEnd) {
-      const deadline = new Date(cohort.deadlines.teamFormationEnd);
-      if (new Date() > deadline) {
-        throw new BadRequestException(
-          `Team formation deadline has passed (${deadline.toLocaleDateString()}). Teams can no longer be created.`
-        );
-      }
-    }
-
     // Verify creator exists and is in the cohort
     const creator = await this.participantRepository.findOne({
       where: { id: dto.creatorId, cohortId: dto.cohortId },
@@ -135,6 +127,9 @@ export class TeamsService {
     if (existingMembership) {
       throw new ConflictException("Participant is already in a team");
     }
+
+    resolveCohortGroup(cohort, creator.group);
+    await assertParticipantTeamAdmission(this.teamRepository.manager, cohort, creator.id);
 
     // Generate unique invite code
     const inviteCode = this.generateInviteCode();
@@ -312,6 +307,8 @@ export class TeamsService {
     }
 
     // Add as PENDING member (requires team lead approval)
+    await assertMemberAdmission(this.teamRepository.manager, team.id, participantId);
+
     const member = this.memberRepository.create({
       teamId: team.id,
       participantId,
@@ -408,11 +405,14 @@ export class TeamsService {
       throw new BadRequestException("Team has reached maximum capacity");
     }
 
+    await assertMemberAdmission(this.teamRepository.manager, teamId, pendingMember.participantId);
+
     // Update member status to CONFIRMED
     pendingMember.status = TeamMemberStatus.CONFIRMED;
     pendingMember.confirmedAt = new Date();
     pendingMember.confirmedBy = confirmedBy;
     await this.memberRepository.save(pendingMember);
+    await clearTeamRegistration(this.teamRepository.manager, teamId);
 
     // Now update participant status to ASSIGNED
     await this.participantRepository.update(pendingMember.participantId, {
@@ -713,6 +713,7 @@ export class TeamsService {
     // Remove the member from the team
     if (request.member) {
       await this.memberRepository.remove(request.member);
+      await clearTeamRegistration(this.teamRepository.manager, request.teamId);
 
       // Clear the member reference since the member no longer exists
       request.memberId = null;
@@ -880,9 +881,35 @@ export class TeamsService {
 
   async updateStatus(id: string, status: TeamStatus): Promise<Team> {
     const team = await this.findOne(id);
+    if (status !== TeamStatus.FORMING && status !== TeamStatus.DISQUALIFIED) throw new BadRequestException("Use Register team and Start challenge after all eligibility checks pass");
     team.status = status;
+    team.registeredAt = null; team.challengeStartedAt = null;
     await this.teamRepository.save(team);
     return team;
+  }
+
+  async eligibility(id: string) { return (await teamRuleContext(this.teamRepository.manager, id)).report; }
+
+  @Transactional("team-registration")
+  async registerTeam(id: string, competitionCountry: string) {
+    await this.teamRepository.manager.query("SELECT id FROM teams WHERE id = $1 FOR UPDATE", [id]);
+    const { team, members } = await teamRuleContext(this.teamRepository.manager, id);
+    if (team.status === TeamStatus.DISQUALIFIED) throw new BadRequestException("Disqualified teams cannot register");
+    const country = normalizeTeamCountry(competitionCountry);
+    const report = evaluateTeamRules(team.cohort, members, { competitionCountry: country, hasBrief: !!team.briefId, problemCountry: team.brief?.problemCountry || team.brief?.organization?.country });
+    if (!report.canRegister) throw new BadRequestException(report.registrationIssues.map(issue => issue.message).join("; "));
+    await this.teamRepository.update(id, { competitionCountry: country, registeredAt: new Date(), challengeStartedAt: null, status: TeamStatus.FORMING });
+    return this.findOne(id);
+  }
+
+  @Transactional("team-registration")
+  async startChallenge(id: string) {
+    await this.teamRepository.manager.query("SELECT id FROM teams WHERE id = $1 FOR UPDATE", [id]);
+    const { team, report } = await teamRuleContext(this.teamRepository.manager, id);
+    if (team.status === TeamStatus.DISQUALIFIED) throw new BadRequestException("Disqualified teams cannot start");
+    if (!report.canStartChallenge) throw new BadRequestException(report.challengeIssues.map(issue => issue.message).join("; "));
+    if (!team.challengeStartedAt) await this.teamRepository.update(id, { challengeStartedAt: new Date(), status: TeamStatus.ACTIVE });
+    return this.findOne(id);
   }
 
   @Transactional()
@@ -910,9 +937,10 @@ export class TeamsService {
 
     // Update team with new brief
     const updateData: any = { briefId };
-    if (team.status === TeamStatus.FORMING) {
-      updateData.status = TeamStatus.ACTIVE;
-    }
+    const briefCountry = normalizeTeamCountry(brief.problemCountry || brief.organization?.country || (await this.briefRepository.findOne({ where: { id: briefId }, relations: ["organization"] }))?.organization?.country);
+    if (team.competitionCountry && briefCountry !== normalizeTeamCountry(team.competitionCountry)) throw new BadRequestException("The brief's problem country must match the team's competition country");
+    updateData.challengeStartedAt = null;
+    updateData.status = TeamStatus.FORMING;
     await this.teamRepository.update(id, updateData);
 
     // Recalculate counts for affected briefs
@@ -937,7 +965,7 @@ export class TeamsService {
     const previousBriefId = team.briefId;
 
     // Update the team to remove the brief assignment
-    await this.teamRepository.update(id, { briefId: null as any });
+    await this.teamRepository.update(id, { briefId: null as any, challengeStartedAt: null, status: TeamStatus.FORMING });
 
     // Recalculate the brief's teamsCount
     await this.updateBriefTeamsCount(previousBriefId);
@@ -1021,6 +1049,8 @@ export class TeamsService {
       throw new ConflictException("Participant is already in a team");
     }
 
+    await assertMemberAdmission(this.teamRepository.manager, teamId, dto.participantId);
+
     const member = this.memberRepository.create({
       teamId,
       participantId: dto.participantId,
@@ -1030,6 +1060,7 @@ export class TeamsService {
     });
 
     await this.memberRepository.save(member);
+    await clearTeamRegistration(this.teamRepository.manager, teamId);
 
     // Update participant status
     await this.participantRepository.update(dto.participantId, {
@@ -1060,6 +1091,7 @@ export class TeamsService {
     }
 
     await this.memberRepository.remove(member);
+    if (member.status === TeamMemberStatus.CONFIRMED) await clearTeamRegistration(this.teamRepository.manager, teamId);
 
     // Only update participant status if they were confirmed
     if (member.status === TeamMemberStatus.CONFIRMED) {
@@ -1168,6 +1200,8 @@ export class TeamsService {
     // Set expiration (7 days from now)
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await assertMemberAdmission(this.teamRepository.manager, teamId, dto.participantId);
 
     const invitation = this.invitationRepository.create({
       teamId,
@@ -1285,6 +1319,8 @@ export class TeamsService {
     if (!participant) throw new NotFoundException("Participant not found in this cohort");
     this.assertSameGroup(invitation.team, participant, cohort);
 
+    await assertMemberAdmission(this.teamRepository.manager, invitation.teamId, invitation.participantId);
+
     // Accept invitation
     invitation.status = InvitationStatus.ACCEPTED;
     invitation.respondedAt = new Date();
@@ -1300,6 +1336,7 @@ export class TeamsService {
       confirmedBy: invitation.invitedBy, // Team lead who sent the invitation
     });
     await this.memberRepository.save(member);
+    await clearTeamRegistration(this.teamRepository.manager, invitation.teamId);
 
     // Update participant status
     await this.participantRepository.update(invitation.participantId, {
@@ -1419,7 +1456,8 @@ export class TeamsService {
     cohortId: string,
     query: string,
     limit: number = 10,
-    group?: string | null
+    group?: string | null,
+    requireMatchingConsent = false
   ): Promise<Participant[]> {
     // Get participants who are not in any team
     const memberedParticipantIds = await this.memberRepository
@@ -1436,6 +1474,11 @@ export class TeamsService {
       .andWhere("p.status IN (:...statuses)", {
         statuses: [ParticipantStatus.READY, ParticipantStatus.ONBOARDING],
       });
+
+    if (requireMatchingConsent) {
+      qb.innerJoinAndSelect("p.preference", "matchingPreference", "matchingPreference.matchingProfileConsent = :consent", { consent: true })
+        .select(["p.id", "p.firstName", "p.lastName", "p.country", "p.institution", "p.skills", "p.interests", "p.group", "p.cohortId", "matchingPreference.id", "matchingPreference.preferredRole", "matchingPreference.firstChoiceSector", "matchingPreference.backupSector"]);
+    }
 
     if (group === null) qb.andWhere("p.group IS NULL");
     else if (group !== undefined) qb.andWhere("p.group = :group", { group });

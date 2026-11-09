@@ -9,6 +9,7 @@ import {
 import { BaseEntity } from "./base.entity";
 import { Cohort } from "./cohort.entity";
 import { Vertical } from "./vertical.entity";
+import type { BuildDeployAbility, MatchingSector, MatchingTeamStatus } from "@acmp/shared";
 
 export enum ParticipantStatus {
   IMPORTED = "imported",
@@ -63,6 +64,15 @@ export class ParticipantPreference extends BaseEntity {
   @Column({ name: "preferred_role", nullable: true })
   preferredRole?: string;
 
+  @Column({ name: "build_deploy_ability", type: "varchar", length: 30, nullable: true }) buildDeployAbility: BuildDeployAbility | null;
+  @Column({ name: "first_choice_sector", type: "varchar", length: 50, nullable: true }) firstChoiceSector: MatchingSector | null;
+  @Column({ name: "backup_sector", type: "varchar", length: 50, nullable: true }) backupSector: MatchingSector | null;
+  @Column({ name: "team_status", type: "varchar", length: 30, nullable: true }) teamStatus: MatchingTeamStatus | null;
+  @Column({ name: "matching_profile_consent", type: "boolean", nullable: true }) matchingProfileConsent: boolean | null;
+  @Column({ name: "matching_profile_consent_at", type: "timestamptz", nullable: true }) matchingProfileConsentAt: Date | null;
+  @Column({ name: "matching_profile_consent_version", type: "varchar", length: 30, nullable: true }) matchingProfileConsentVersion: string | null;
+  @Column({ name: "matching_profile_completed_at", type: "timestamptz", nullable: true }) matchingProfileCompletedAt: Date | null;
+
   // Optional: availability notes
   @Column({ type: "text", nullable: true })
   availabilityNotes?: string;
@@ -76,6 +86,7 @@ export class ParticipantPreference extends BaseEntity {
 @Index('participant_cohort_group', ['cohortId', 'group'])
 @Index(["cohortId", "country"])
 @Index(["cohortId", "status"])
+@Index("participant_learning_certificate_unique", ["learningCertificateId"], { unique: true, where: '"learning_certificate_id" IS NOT NULL' })
 export class Participant extends BaseEntity {
   @Index({ unique: true })
   @Column({ name: "participant_id", unique: true })
@@ -99,6 +110,36 @@ export class Participant extends BaseEntity {
 
   @Column({ name: "phone_number", nullable: true })
   phoneNumber?: string;
+
+  @Index("participant_lms_email_lookup")
+  @Column({ name: "lms_email", type: "varchar", length: 255, nullable: true }) lmsEmail: string | null;
+  @Column({ name: "whatsapp_number", type: "varchar", length: 50, nullable: true }) whatsappNumber: string | null;
+  @Column({ type: "varchar", length: 150, nullable: true }) city: string | null;
+  @Column({ name: "location_type", type: "varchar", length: 150, nullable: true }) locationType: string | null;
+  @Column({ type: "varchar", length: 100, nullable: true }) gender: string | null;
+  @Column({ name: "education_level", type: "varchar", length: 150, nullable: true }) educationLevel: string | null;
+  @Column({ name: "current_affiliation", type: "varchar", length: 150, nullable: true }) currentAffiliation: string | null;
+  @Column({ name: "field_of_study", type: "varchar", length: 255, nullable: true }) fieldOfStudy: string | null;
+  @Column({ name: "python_skill", type: "varchar", length: 255, nullable: true }) pythonSkill: string | null;
+  @Column({ name: "git_skill", type: "varchar", length: 255, nullable: true }) gitSkill: string | null;
+  @Column({ name: "ai_experience", type: "varchar", length: 255, nullable: true }) aiExperience: string | null;
+  @Column({ name: "github_username", type: "varchar", length: 255, nullable: true }) githubUsername: string | null;
+  @Column({ name: "learning_certificate_issued", type: "boolean", nullable: true }) learningCertificateIssued: boolean | null;
+  @Column({ name: "learning_certificate_id", type: "varchar", length: 255, nullable: true }) learningCertificateId: string | null;
+  @Column({ name: "learning_certificate_date", type: "date", nullable: true }) learningCertificateDate: string | null;
+  @Column({ name: "learning_finished_all_lessons", type: "boolean", nullable: true }) learningFinishedAllLessons: boolean | null;
+  @Column({ name: "learning_halfway_reached", type: "boolean", nullable: true }) learningHalfwayReached: boolean | null;
+  @Column({ name: "learning_imported_at", type: "timestamptz", nullable: true }) learningImportedAt: Date | null;
+
+  @Column({ name: "programme_opted_out", default: false }) programmeOptedOut: boolean;
+  @Column({ name: "programme_opted_out_at", type: "timestamptz", nullable: true }) programmeOptedOutAt: Date | null;
+  @Column({ name: "programme_opt_out_reason", type: "text", nullable: true }) programmeOptOutReason: string | null;
+  @Column({ name: "code_labs_completed", default: false }) codeLabsCompleted: boolean;
+  @Column({ name: "code_labs_verified_at", type: "timestamptz", nullable: true }) codeLabsVerifiedAt: Date | null;
+  @Column({ name: "code_labs_verified_by", type: "uuid", nullable: true }) codeLabsVerifiedBy: string | null;
+
+  @Column({ name: "profile_confirmed_at", type: "timestamptz", nullable: true }) profileConfirmedAt: Date | null;
+  @Column({ name: "github_account_status", type: "varchar", length: 20, nullable: true }) githubAccountStatus: "has_account" | "no_account" | null;
 
   @Column({ type: "jsonb", default: [] })
   skills: string[];

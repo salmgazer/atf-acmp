@@ -1,7 +1,8 @@
 "use client";
+import { formatUtcDeadline } from "@/lib/utc-deadline";
 
 import Link from "next/link";
-import { format, formatDistanceToNow, isFuture } from "date-fns";
+import { formatDistanceToNow, isFuture } from "date-fns";
 import {
   Users,
   FileText,
@@ -107,7 +108,7 @@ export function ActiveCohortCard({ cohort, statistics, isLoading }: ActiveCohort
               Next: {nextDeadline.label}
             </p>
             <p className="text-xs text-muted-foreground">
-              {format(nextDeadline.date, "EEEE, MMM d, yyyy")} • {formatDistanceToNow(nextDeadline.date, { addSuffix: true })}
+              {formatUtcDeadline(nextDeadline.date)} • {formatDistanceToNow(nextDeadline.date, { addSuffix: true })}
             </p>
           </div>
           <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-1 rounded">

@@ -1,6 +1,6 @@
 import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
 import {
-  IsString,
+  IsString, IsUUID,
   IsNotEmpty,
   IsOptional,
   IsEnum,
@@ -16,6 +16,7 @@ import { ApiProperty, ApiPropertyOptional, PartialType } from "@nestjs/swagger";
 import { CohortStatus } from "../../../database/entities/cohort.entity";
 
 export class DeadlinesDto {
+  @IsDateString() @IsOptional() learningCertificationEnd?: string;
   @ApiPropertyOptional({ description: "Team formation end date (ISO 8601)" })
   @IsDateString()
   @IsOptional()
@@ -96,6 +97,8 @@ export class RubricConfigDto {
 }
 
 export class CreateCohortDto {
+  @IsOptional() @IsUUID() teamJoiningStageId?: string | null;
+  @IsOptional() @IsUUID() learningCertificationStageId?: string | null;
   @ApiPropertyOptional({ description: "Participant and team group tags", type: [String] })
   @IsOptional() @IsArray() @IsString({ each: true })
   groups?: string[];
@@ -112,15 +115,15 @@ export class CreateCohortDto {
 
   @ApiPropertyOptional({ description: "Minimum team size", default: 3 })
   @IsNumber()
-  @Min(1)
-  @Max(10)
+  @Min(3)
+  @Max(5)
   @IsOptional()
   teamSizeMin?: number;
 
   @ApiPropertyOptional({ description: "Maximum team size", default: 5 })
   @IsNumber()
-  @Min(1)
-  @Max(15)
+  @Min(3)
+  @Max(5)
   @IsOptional()
   teamSizeMax?: number;
 

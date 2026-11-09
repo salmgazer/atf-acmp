@@ -160,6 +160,9 @@ export function useCreateStage() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: stageKeys.lists() });
       queryClient.invalidateQueries({ queryKey: stageKeys.withStats(variables.cohortId) });
+      queryClient.invalidateQueries({ queryKey: ["cohorts"] });
+      queryClient.invalidateQueries({ queryKey: ["team-eligibility"] });
+      queryClient.invalidateQueries({ queryKey: ["team-formation"] });
       toast.success("Stage created successfully");
     },
     onError: (error: Error) => {
@@ -180,6 +183,9 @@ export function useUpdateStage() {
       queryClient.invalidateQueries({ queryKey: stageKeys.lists() });
       queryClient.invalidateQueries({ queryKey: stageKeys.withStats(data.cohortId) });
       queryClient.setQueryData(stageKeys.detail(data.id), data);
+      queryClient.invalidateQueries({ queryKey: ["cohorts"] });
+      queryClient.invalidateQueries({ queryKey: ["team-eligibility"] });
+      queryClient.invalidateQueries({ queryKey: ["team-formation"] });
       toast.success("Stage updated successfully");
     },
     onError: (error: Error) => {
@@ -199,6 +205,9 @@ export function useDeleteStage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: stageKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: ["cohorts"] });
+      queryClient.invalidateQueries({ queryKey: ["team-eligibility"] });
+      queryClient.invalidateQueries({ queryKey: ["team-formation"] });
       toast.success("Stage deleted successfully");
     },
     onError: (error: Error) => {

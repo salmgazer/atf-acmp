@@ -149,6 +149,10 @@ export class UpdateTeamDto {
   githubRepoUrl?: string;
 }
 
+export class RegisterTeamDto {
+  @IsString() @MinLength(1) @MaxLength(255) competitionCountry: string;
+}
+
 export class AssignBriefDto {
   @ApiProperty()
   @IsUUID()

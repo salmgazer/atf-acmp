@@ -1,4 +1,5 @@
 "use client";
+import type { TeamRuleReport } from "@acmp/shared";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/client";
@@ -226,20 +227,9 @@ export interface FinalizeTeamFormationDto {
 }
 
 export interface ProposedTeam {
-  group?: string | null;
-  index: number;
-  members: {
-    participantId: string;
-    firstName: string;
-    lastName: string;
-    country: string;
-    skills: string[];
-    interests: string[];
-    isLead: boolean;
-  }[];
-  skillDiversity: number;
-  interestAlignment: number;
-  countryDistribution: Record<string, number>;
+  proposedTeamId: string; suggestedName: string; group?: string | null; competitionCountry?: string;
+  participantIds: string[]; participants: { id: string; participantId: string; firstName: string; lastName: string; country: string; skills: string[]; interests: string[]; isProposedLead: boolean }[];
+  leadParticipantId: string; coLeadParticipantId: string; compatibilityScore: number; eligibility?: TeamRuleReport;
 }
 
 export interface TeamFormationStats {

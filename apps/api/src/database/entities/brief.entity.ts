@@ -193,6 +193,7 @@ export function calculateBriefScores(answers: ScoringAnswers): {
 @Index(["verticalId"])
 @Index(["sessionId"])
 export class Brief extends BaseEntity {
+  @Column({ name: "problem_country", type: "varchar", length: 255, nullable: true }) problemCountry: string | null;
   @Column()
   title: string;
 

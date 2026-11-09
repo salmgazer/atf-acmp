@@ -13,6 +13,10 @@ import { OrganizationsController } from "@/modules/organizations/organizations.c
 import { OrganizationsService } from "@/modules/organizations/organizations.service";
 import { PartnerInvitesService } from "@/modules/organizations/partner-invites.service";
 import { SubmissionImportService } from "@/modules/organizations/submission-import.service";
+import { ParticipantsController } from "@/modules/participants/participants.controller";
+import { ParticipantsService } from "@/modules/participants/participants.service";
+import { ParticipantInvitesService } from "@/modules/participants/participant-invites.service";
+import { ParticipantImportService } from "@/modules/participants/participant-import.service";
 
 describe("Organization HTTP request body parsing", () => {
   let app: INestApplication;
@@ -25,18 +29,22 @@ describe("Organization HTTP request body parsing", () => {
     preview: jest.fn(async () => ({ valid: true })),
     apply: jest.fn(async () => ({ created: 1 })),
   };
+  const participantImports = { preview: jest.fn(async () => ({ ready: true })), enqueue: jest.fn(async () => ({ id: "batch" })) };
   beforeAll(async () => {
     const auth = { canActivate(context: ExecutionContext) {
       context.switchToHttp().getRequest().user = { id: actorId, role: "program_manager" };
       return true;
     } };
     const module = await Test.createTestingModule({
-      controllers: [OrganizationsController],
+      controllers: [OrganizationsController, ParticipantsController],
       providers: [
         { provide: OrganizationsService, useValue: organizations },
         { provide: UploadService, useValue: {} },
         { provide: PartnerInvitesService, useValue: invites },
         { provide: SubmissionImportService, useValue: submissions },
+        { provide: ParticipantsService, useValue: {} },
+        { provide: ParticipantInvitesService, useValue: {} },
+        { provide: ParticipantImportService, useValue: participantImports },
       ],
     })
       .overrideGuard(JwtAuthGuard).useValue(auth)
@@ -81,10 +89,26 @@ describe("Organization HTTP request body parsing", () => {
     expect(submissions[action]).toHaveBeenCalledWith(body, expect.objectContaining({ id: actorId }));
   });
 
+  it("retains selected update fields through HTTP validation and rejects unsupported, duplicated and non-array selections", async () => {
+    const body = { ...importBody(), mode: "update_existing", updateFields: ["industry"] };
+    expect((await post("/submission-import/preview", body)).status).toBe(200);
+    expect(submissions.preview).toHaveBeenCalledWith(body, expect.objectContaining({ id: actorId }));
+    submissions.preview.mockClear();
+    for (const updateFields of [["status"], ["industry", "industry"], [], "industry"]) expect((await post("/submission-import/preview", { ...body, updateFields })).status).toBe(400);
+    expect(submissions.preview).not.toHaveBeenCalled();
+  });
+
   it("keeps the normal JSON limit on other routes", async () => {
     const response = await post("/bulk-approve", { organizationIds: [partnerId], oversized: "a".repeat(150000) });
     expect(response.status).toBe(413);
     expect(organizations.bulkApprove).not.toHaveBeenCalled();
+  });
+
+  it("accepts a full-size participant feed only on the authenticated import route", async () => {
+    const input = { cohortId: partnerId, sourceName: "participants.csv", csv: "a".repeat(750000), sendWelcomeEmail: false };
+    const response = await fetch(`${base.replace(/\/organizations$/, "/participants")}/import/preview`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
+    expect(response.status).toBe(200);
+    expect(participantImports.preview).toHaveBeenCalledWith(expect.objectContaining(input), expect.objectContaining({ id: actorId }));
   });
 
   it("rejects malformed JSON before calling the approval service", async () => {

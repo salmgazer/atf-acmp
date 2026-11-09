@@ -4,9 +4,13 @@ node_modules
 
 # Build outputs
 dist
+**/dist
 build
+**/build
 .next
+**/.next
 out
+**/out
 
 # Environment files (use docker-compose environment instead)
 .env
@@ -34,10 +38,15 @@ npm-debug.log*
 
 # Testing
 coverage
+**/coverage
 .nyc_output
+**/.nyc_output
+**/test-results
+**/playwright-report
 
 # TypeScript
 *.tsbuildinfo
+**/*.tsbuildinfo
 
 # Docker
 Dockerfile*

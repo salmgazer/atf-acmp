@@ -115,6 +115,7 @@ const scoringAnswersSchema = z.object({
 });
 
 const briefFormSchema = z.object({
+  problemCountry: z.string().max(255).optional(),
   title: z.string().min(5, "Title must be at least 5 characters").max(255),
   description: z.string().min(20, "Description must be at least 20 characters").max(100000),
   problemStatement: z.string().min(20, "Problem statement must be at least 20 characters").max(100000),
@@ -252,6 +253,7 @@ export function BriefForm({
       problemStatement: brief?.problemStatement || "",
       expectedOutcomes: brief?.expectedOutcomes || "",
       verticalId: brief?.verticalId || "",
+      problemCountry: brief?.problemCountry || brief?.organization?.country || "",
       tags: brief?.tags || [],
       resources: brief?.resources || [],
       maxTeams: brief?.maxTeams || 25,
@@ -450,6 +452,11 @@ export function BriefForm({
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="problemCountry">Country where this problem is based</Label>
+              <Input id="problemCountry" placeholder="e.g. Ghana" {...register("problemCountry")} />
+              <p className="text-xs text-muted-foreground">Teams must compete in this country, with at least one resident member. If blank, the partner country is used.</p>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="verticalId">Vertical / Sector</Label>
               <select

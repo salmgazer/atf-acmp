@@ -57,7 +57,7 @@ export class CohortsController {
   @ApiResponse({ status: 201, description: "Cohort created", type: CohortResponseDto })
   @ApiResponse({ status: 400, description: "Validation error" })
   async create(@Body() createCohortDto: CreateCohortDto): Promise<CohortResponseDto> {
-    return this.cohortsService.create(createCohortDto);
+    return this.cohortsService.withTeamDeadlineView(await this.cohortsService.create(createCohortDto));
   }
 
   @Get()
@@ -65,7 +65,8 @@ export class CohortsController {
   @ApiOperation({ summary: "Get all cohorts (paginated)" })
   @ApiResponse({ status: 200, description: "List of cohorts", type: PaginatedCohortsResponseDto })
   async findAll(@Query() query: CohortQueryDto): Promise<PaginatedCohortsResponseDto> {
-    return this.cohortsService.findAll(query);
+    const result = await this.cohortsService.findAll(query);
+    return { ...result, data: await Promise.all(result.data.map(cohort => this.cohortsService.withTeamDeadlineView(cohort))) };
   }
 
   @Get("active")
@@ -74,7 +75,8 @@ export class CohortsController {
   @ApiResponse({ status: 200, description: "Active cohort", type: CohortResponseDto })
   @ApiResponse({ status: 404, description: "No active cohort" })
   async findActive(): Promise<CohortResponseDto | null> {
-    return this.cohortsService.findActive();
+    const cohort = await this.cohortsService.findActive();
+    return cohort ? this.cohortsService.withTeamDeadlineView(cohort) : null;
   }
 
   @Get(":id")
@@ -84,7 +86,7 @@ export class CohortsController {
   @ApiResponse({ status: 200, description: "Cohort details", type: CohortResponseDto })
   @ApiResponse({ status: 404, description: "Cohort not found" })
   async findOne(@Param("id") id: string): Promise<CohortResponseDto> {
-    return this.cohortsService.findOne(id);
+    return this.cohortsService.withTeamDeadlineView(await this.cohortsService.findOne(id));
   }
 
   @Get(":id/statistics")
@@ -113,7 +115,7 @@ export class CohortsController {
     @Param("id") id: string,
     @Body() updateCohortDto: UpdateCohortDto
   ): Promise<CohortResponseDto> {
-    return this.cohortsService.update(id, updateCohortDto);
+    return this.cohortsService.withTeamDeadlineView(await this.cohortsService.update(id, updateCohortDto));
   }
 
   @Patch(":id/status")
@@ -134,7 +136,7 @@ export class CohortsController {
     @Param("id") id: string,
     @Body() updateStatusDto: UpdateCohortStatusDto
   ): Promise<CohortResponseDto> {
-    return this.cohortsService.updateStatus(id, updateStatusDto.status);
+    return this.cohortsService.withTeamDeadlineView(await this.cohortsService.updateStatus(id, updateStatusDto.status));
   }
 
   @Post(":id/duplicate")
@@ -153,7 +155,7 @@ export class CohortsController {
     @Param("id") id: string,
     @Body("name") name: string
   ): Promise<CohortResponseDto> {
-    return this.cohortsService.duplicate(id, name);
+    return this.cohortsService.withTeamDeadlineView(await this.cohortsService.duplicate(id, name));
   }
 
   @Delete(":id")

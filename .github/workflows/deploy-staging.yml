@@ -52,10 +52,9 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
         image: redis:7-alpine
-        ports: [6379:6379]
+        ports: [6379/tcp]
     env:
       ACMP_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/acmp_regression_ci_test
-      ACMP_TEST_REDIS_URL: redis://localhost:6379
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -84,6 +83,8 @@ jobs:
         run: npm run build
 
       - name: Run tests
+        env:
+          ACMP_TEST_REDIS_URL: redis://localhost:${{ job.services.redis.ports['6379'] }}
         run: npm run test -w @acmp/api -- --runInBand
 
       - name: Install browser
@@ -328,8 +329,9 @@ jobs:
         env:
           RESEND_FROM_EMAIL: ${{ vars.RESEND_FROM_EMAIL }}
           RESEND_FROM_NAME: ${{ vars.RESEND_FROM_NAME }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
-          for name in RESEND_FROM_EMAIL RESEND_FROM_NAME; do
+          for name in RESEND_FROM_EMAIL RESEND_FROM_NAME RESEND_API_KEY; do
             if [ -z "${!name}" ]; then
               echo "::error::$name is required for invitation emails"
               exit 1
@@ -381,11 +383,13 @@ jobs:
               {"name": "FRONTEND_URL", "value": "${{ vars.FRONTEND_URL }}"},
               {"name": "MAILCHIMP_FROM_EMAIL", "value": "${{ vars.MAILCHIMP_FROM_EMAIL }}"},
               {"name": "MAILCHIMP_FROM_NAME", "value": "${{ vars.MAILCHIMP_FROM_NAME }}"},
-              {"name": "SMTP_HOST", "value": "${{ vars.SMTP_HOST }}"},
-              {"name": "SMTP_PORT", "value": "${{ vars.SMTP_PORT }}"},
-              {"name": "SMTP_SECURE", "value": "${{ vars.SMTP_SECURE }}"},
-              {"name": "SMTP_FROM_EMAIL", "value": "${{ vars.SMTP_FROM_EMAIL }}"},
-              {"name": "SMTP_FROM_NAME", "value": "${{ vars.SMTP_FROM_NAME }}"},
+              {"name": "SMTP_HOST", "value": ""},
+              {"name": "SMTP_PORT", "value": ""},
+              {"name": "SMTP_SECURE", "value": ""},
+              {"name": "SMTP_FROM_EMAIL", "value": ""},
+              {"name": "SMTP_FROM_NAME", "value": ""},
+              {"name": "SMTP_USER", "value": ""},
+              {"name": "SMTP_PASS", "value": ""},
               {"name": "RESEND_FROM_EMAIL", "value": ${{ toJSON(vars.RESEND_FROM_EMAIL) }}},
               {"name": "RESEND_FROM_NAME", "value": ${{ toJSON(vars.RESEND_FROM_NAME) }}},
               {"name": "RESEND_API_KEY", "value": "${{ secrets.RESEND_API_KEY }}"},
@@ -409,9 +413,7 @@ jobs:
               {"name": "GOOGLE_SERVICE_ACCOUNT_EMAIL", "valueFrom": "${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL_ARN }}"},
               {"name": "GOOGLE_PRIVATE_KEY", "valueFrom": "${{ secrets.GOOGLE_PRIVATE_KEY_ARN }}"},
               {"name": "GOOGLE_ADMIN_EMAIL", "valueFrom": "${{ secrets.GOOGLE_ADMIN_EMAIL_ARN }}"},
-              {"name": "GOOGLE_CALENDAR_EMAIL", "valueFrom": "${{ secrets.GOOGLE_CALENDAR_EMAIL_ARN }}"},
-              {"name": "SMTP_USER", "valueFrom": "${{ secrets.SMTP_USER_ARN }}"},
-              {"name": "SMTP_PASS", "valueFrom": "${{ secrets.SMTP_PASS_ARN }}"}
+              {"name": "GOOGLE_CALENDAR_EMAIL", "valueFrom": "${{ secrets.GOOGLE_CALENDAR_EMAIL_ARN }}"}
             ]
 
   # ----------------------------------------------------------------------------
@@ -520,16 +522,16 @@ jobs:
 
       - name: Verify endpoints
         run: |
-          echo "Verifying endpoints..."
-          API_STATUS=$(curl -sSL --max-time 10 https://api-staging.atfchallenge.org/api/health | jq -r '.status' 2>/dev/null || echo "FAILED")
-          WEB_STATUS=$(curl -sSL --max-time 10 -o /dev/null -w '%{http_code}' https://app-staging.atfchallenge.org 2>/dev/null || echo "FAILED")
-          
-          echo "API Status: $API_STATUS"
-          echo "Web Status: $WEB_STATUS"
-          
-          if [ "$API_STATUS" != "ok" ] || [ "$WEB_STATUS" != "200" ]; then
-            echo "WARNING: Some endpoints may not be responding correctly"
-            exit 1
-          fi
-          
-          echo "All endpoints verified successfully!"
+          for attempt in {1..12}; do
+            echo "Verifying staging endpoints (attempt $attempt of 12)..."
+            API_STATUS=$(curl -fsSL --max-time 10 https://api-staging.atfchallenge.org/api/health/ready | jq -r '.status' 2>/dev/null || true)
+            WEB_STATUS=$(curl -sSL --max-time 10 -o /dev/null -w '%{http_code}' https://app-staging.atfchallenge.org || true)
+            echo "API: $API_STATUS; web: $WEB_STATUS"
+            if [ "$API_STATUS" = "ok" ] && [ "$WEB_STATUS" = "200" ]; then
+              echo "All staging endpoints verified successfully!"
+              exit 0
+            fi
+            if [ "$attempt" -lt 12 ]; then sleep 5; fi
+          done
+          echo "::error::Staging endpoints did not become ready"
+          exit 1

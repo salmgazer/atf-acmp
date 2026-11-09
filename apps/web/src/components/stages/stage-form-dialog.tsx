@@ -283,8 +283,8 @@ export function StageFormDialog({
           description: data.description || undefined,
           instructions: data.instructions || undefined,
           type: data.type,
-          startDate: data.startDate || undefined,
-          deadline: data.deadline,
+          startDate: data.startDate ? new Date(`${data.startDate}Z`).toISOString() : undefined,
+          deadline: new Date(`${data.deadline}Z`).toISOString(),
           weightPercentage: data.weightPercentage,
           allowLateSubmissions: data.allowLateSubmissions,
           latePenaltyPercentage: data.latePenaltyPercentage,
@@ -304,8 +304,8 @@ export function StageFormDialog({
           description: data.description || undefined,
           instructions: data.instructions || undefined,
           type: data.type,
-          startDate: data.startDate || undefined,
-          deadline: data.deadline,
+          startDate: data.startDate ? new Date(`${data.startDate}Z`).toISOString() : undefined,
+          deadline: new Date(`${data.deadline}Z`).toISOString(),
           weightPercentage: data.weightPercentage,
           allowLateSubmissions: data.allowLateSubmissions,
           latePenaltyPercentage: data.latePenaltyPercentage,
@@ -420,7 +420,7 @@ export function StageFormDialog({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="deadline">Deadline</Label>
+                  <Label htmlFor="deadline">Deadline (UTC)</Label>
                   <Input
                     id="deadline"
                     type="datetime-local"

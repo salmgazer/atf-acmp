@@ -43,7 +43,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const participant = payload.role === Role.PARTICIPANT;
     if (!session || (participant ? session.participantId : session.userId) !== payload.sub) throw new UnauthorizedException("Session has ended");
     const account = await this.db.getRepository(participant ? "Participant" : "User").findOne({ where: { id: payload.sub }, ...(participant ? { relations: ["cohort"] } : {}) });
-    if (!account || (participant ? account.status === "inactive" : !account.isActive)) throw new UnauthorizedException("Account is deactivated");
+    if (!account || (participant ? account.status === "inactive" || account.programmeOptedOut : !account.isActive)) throw new UnauthorizedException("Account is deactivated");
     const principal: AuthenticatedUser = {
       id: account.id, sessionId: session.id, email: account.email,
       role: participant ? Role.PARTICIPANT : account.role,
