@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Refresh custom-domain routes from the active ECS Express Gateway listener.
-# Usage: DRY_RUN=true bash scripts/update-alb-rules.sh staging
+# Usage: DRY_RUN=true bash scripts/update-alb-rules.sh staging [all|api|web]
 set -euo pipefail
 
 ENVIRONMENT=${1:-staging}
+TARGET_SERVICE=${2:-all}
+case "$TARGET_SERVICE" in
+  all|api|web) ;;
+  *) echo "Unknown service selector: $TARGET_SERVICE" >&2; exit 1 ;;
+esac
 AWS_REGION=${AWS_REGION:-eu-central-1}
 LISTENER_ARN=${LISTENER_ARN:-"arn:aws:elasticloadbalancing:eu-central-1:338324195747:listener/app/ecs-express-gateway-alb-897d68bc/64625719adf9d240/ec30f9a1c834e7bc"}
 DRY_RUN=${DRY_RUN:-false}
@@ -62,15 +67,25 @@ get_service_target_group() {
 
 API_TG_ARN=""
 WEB_TG_ARN=""
+API_READY=false
+WEB_READY=false
 for attempt in 1 2 3 4 5; do
-  echo "Discovering active routing targets (attempt $attempt of 5)..."
-  API_TG_ARN=$(get_service_target_group "acmp-api-$ENVIRONMENT") || API_TG_ARN=""
-  WEB_TG_ARN=$(get_service_target_group "acmp-web-$ENVIRONMENT") || WEB_TG_ARN=""
-  if [ -n "$API_TG_ARN" ] && [ -n "$WEB_TG_ARN" ]; then break; fi
+  echo "Discovering active $TARGET_SERVICE routing targets (attempt $attempt of 5)..."
+  API_READY=true
+  WEB_READY=true
+  if [ "$TARGET_SERVICE" != "web" ]; then
+    API_TG_ARN=$(get_service_target_group "acmp-api-$ENVIRONMENT") || API_TG_ARN=""
+    if [ -z "$API_TG_ARN" ]; then API_READY=false; fi
+  fi
+  if [ "$TARGET_SERVICE" != "api" ]; then
+    WEB_TG_ARN=$(get_service_target_group "acmp-web-$ENVIRONMENT") || WEB_TG_ARN=""
+    if [ -z "$WEB_TG_ARN" ]; then WEB_READY=false; fi
+  fi
+  if [ "$API_READY" = "true" ] && [ "$WEB_READY" = "true" ]; then break; fi
   if [ "$attempt" -lt 5 ]; then sleep 20; fi
 done
-if [ -z "$API_TG_ARN" ] || [ -z "$WEB_TG_ARN" ]; then
-  echo "Could not determine stable API and web routing targets" >&2
+if [ "$API_READY" != "true" ] || [ "$WEB_READY" != "true" ]; then
+  echo "Could not determine stable $TARGET_SERVICE routing targets" >&2
   exit 1
 fi
 
@@ -92,8 +107,10 @@ update_domain() {
   fi
 }
 
-update_domain "$API_DOMAIN" "$API_TG_ARN"
-update_domain "$APP_DOMAIN" "$WEB_TG_ARN"
-if [ -n "$BUILT_DOMAIN" ]; then update_domain "$BUILT_DOMAIN" "$WEB_TG_ARN"; fi
-if [ -n "$BUILD_DOMAIN" ]; then update_domain "$BUILD_DOMAIN" "$WEB_TG_ARN"; fi
+if [ -n "$API_TG_ARN" ]; then update_domain "$API_DOMAIN" "$API_TG_ARN"; fi
+if [ -n "$WEB_TG_ARN" ]; then
+  update_domain "$APP_DOMAIN" "$WEB_TG_ARN"
+  if [ -n "$BUILT_DOMAIN" ]; then update_domain "$BUILT_DOMAIN" "$WEB_TG_ARN"; fi
+  if [ -n "$BUILD_DOMAIN" ]; then update_domain "$BUILD_DOMAIN" "$WEB_TG_ARN"; fi
+fi
 echo "Custom-domain routing check completed successfully"

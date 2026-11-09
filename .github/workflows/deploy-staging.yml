@@ -416,6 +416,12 @@ jobs:
               {"name": "GOOGLE_CALENDAR_EMAIL", "valueFrom": "${{ secrets.GOOGLE_CALENDAR_EMAIL_ARN }}"}
             ]
 
+      - name: Refresh API custom-domain routing
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          LISTENER_ARN: ${{ vars.ALB_LISTENER_ARN }}
+        run: bash scripts/update-alb-rules.sh staging api
+
   # ----------------------------------------------------------------------------
   # Build and Deploy Web
   # ----------------------------------------------------------------------------
@@ -479,6 +485,12 @@ jobs:
           max-task-count: 2
           auto-scaling-metric: AVERAGE_CPU
           auto-scaling-target-value: 70
+
+      - name: Refresh WEB custom-domain routing
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          LISTENER_ARN: ${{ vars.ALB_LISTENER_ARN }}
+        run: bash scripts/update-alb-rules.sh staging web
 
   # ----------------------------------------------------------------------------
   # Update ALB Rules for Custom Domains

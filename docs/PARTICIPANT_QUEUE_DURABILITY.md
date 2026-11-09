@@ -55,3 +55,5 @@ The persistence and eviction choices follow [BullMQ's production guidance](https
 ## Deployment email configuration
 
 Staging and production workflows explicitly set every SMTP value to an empty string (`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, `SMTP_USER`, `SMTP_PASS`) and do not inject SMTP credentials from Secrets Manager. Personal SMTP environment variables are removed from the GitHub environments. Resend API key, sender email and sender name are required by deployment preflight checks. Local development can still use Mailpit through Compose.
+
+Rollout verification on 2026-11-09 confirmed healthy API/web releases in staging and production, all seven SMTP values explicitly empty, no SMTP credential references, and retained Resend/Zoom configuration. Redis groups are in sync with no eviction and snapshot retention of one day in staging and seven days in production. Each service now refreshes its own custom-domain routes after rollout, followed by the combined routing/readiness check; this keeps a completed web release reachable while the API is still deploying.
