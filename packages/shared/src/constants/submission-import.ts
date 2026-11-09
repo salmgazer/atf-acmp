@@ -1,5 +1,6 @@
 export const SUBMISSION_UPDATE_FIELDS = [
   { key: "industry", label: "Partner industry", source: "Sector / Sector (if Other)", entity: "partner" },
+  { key: "verticalId", label: "Brief vertical", source: "Sector / Sector (if Other)", entity: "brief" },
   { key: "sector", label: "Partner sector and other-sector detail", source: "Sector / Sector (if Other)", entity: "partner" },
   { key: "city", label: "Partner city", source: "City or town", entity: "partner" },
   { key: "title", label: "Brief title", source: "Opportunity title", entity: "brief" },
