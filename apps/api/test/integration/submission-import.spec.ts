@@ -18,6 +18,7 @@ import { parseSubmissionCsv } from "@/modules/organizations/submission-import-pa
 import { ConfigService } from "@nestjs/config";
 import { RefreshToken } from "@/database/entities/refresh-token.entity";
 import { JwtStrategy } from "@/auth/strategies/jwt.strategy";
+import { Vertical } from "@/database/entities/vertical.entity";
 
 const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
 (databaseUrl ? describe : describe.skip)("Partner submission imports with PostgreSQL", () => {
@@ -89,6 +90,7 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     expect(await db.getRepository(User).findOneBy({ email: fixture.owner })).toBeNull();
     expect(await db.getRepository(Brief).countBy({ sessionId: fixture.sessionId })).toBe(0);
     expect(await db.getRepository(PartnerImportRecord).countBy({ sessionId: fixture.sessionId })).toBe(0);
+    expect(await db.getRepository(Vertical).countBy({ cohortId: cohort.id })).toBe(0);
   });
 
   it("blocks staff-email collisions, removed memberships and incompatible cohorts before any import", async () => {
@@ -230,5 +232,141 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     expect(preview).toMatchObject({ ready: true, updatedPartners: 1, unmatchedBriefs: 0 });
     await service.apply({ ...updateInput(), previewHash: preview.previewHash }, actor);
     expect((await db.getRepository(Organization).findOneByOrFail({ id: partner.id })).industry).toBe("Telecommunication");
+  });
+
+  it("previews missing verticals without writes, creates once per cohort, assigns briefs and counts submitted rows", async () => {
+    const preview = await service.preview(input(), actor);
+    expect(preview.verticals).toEqual([expect.objectContaining({ name: "Healthcare", isNew: true, projectedBriefCount: 3, briefCap: 10, rows: [2, 3, 4] })]);
+    expect(await db.getRepository(Vertical).countBy({ cohortId: cohort.id })).toBe(0);
+    expect((await service.preview(input(), actor)).previewHash).toBe(preview.previewHash);
+    const receipt = await service.apply({ ...input(), previewHash: preview.previewHash }, actor);
+    expect(receipt.createdVerticals).toBe(1);
+    const vertical = await db.getRepository(Vertical).findOneByOrFail({ cohortId: cohort.id });
+    expect(vertical).toMatchObject({ name: "Healthcare", briefCount: 3, briefCap: 10, isActive: true });
+    expect(await db.getRepository(Brief).countBy({ cohortId: cohort.id, verticalId: vertical.id })).toBe(3);
+    const repeat = await service.preview(input(), actor);
+    expect(repeat).toMatchObject({ ready: true, newBriefs: 0, verticals: [] });
+    expect(await service.apply({ ...input(), previewHash: repeat.previewHash }, actor)).toMatchObject({ createdVerticals: 0 });
+    expect(await db.getRepository(Vertical).countBy({ cohortId: cohort.id })).toBe(1);
+  });
+
+  it("reuses Health for Healthcare, preserves its settings, and never uses another cohort's vertical", async () => {
+    const other = await db.getRepository(Cohort).save({ name: "Other " + randomUUID(), status: CohortStatus.ACTIVE });
+    await db.getRepository(Vertical).save({ name: "Healthcare", cohortId: other.id });
+    const health = await db.getRepository(Vertical).save({ name: "Health", cohortId: cohort.id, briefCap: 50, displayOrder: 8 });
+    const preview = await service.preview(input(), actor);
+    expect(preview.verticals).toEqual([expect.objectContaining({ id: health.id, name: "Health", sectors: ["Healthcare"], isNew: false })]);
+    await service.apply({ ...input(), previewHash: preview.previewHash }, actor);
+    expect(await db.getRepository(Vertical).countBy({ cohortId: cohort.id })).toBe(1);
+    expect(await db.getRepository(Vertical).findOneByOrFail({ id: health.id })).toMatchObject({ briefCount: 3, briefCap: 50, displayOrder: 8 });
+    expect(await db.getRepository(Brief).countBy({ cohortId: cohort.id, verticalId: health.id })).toBe(3);
+  });
+
+  it("updates Industry and Vertical independently, creates missing Other verticals, and preserves source receipts and content", async () => {
+    const { partner } = await load();
+    const before = await db.getRepository(Brief).find({ where: { organizationId: partner.id }, order: { id: "ASC" } });
+    const original = before[0].verticalId;
+    const receipts = await db.getRepository(PartnerImportRecord).findBy({ cohortId: cohort.id });
+    const accountCount = await db.getRepository(User).count(), contactCount = await db.getRepository(BriefContact).count();
+    fixture.rows.forEach(row => { row["Sector"] = "Other"; row["Sector (if Other)"] = "Telecommunication"; });
+    const request = updateInput(["verticalId"]), preview = await service.preview(request, actor);
+    expect(preview).toMatchObject({ ready: true, updatedPartners: 0, updatedBriefs: 3 });
+    expect(preview.verticals).toEqual([expect.objectContaining({ name: "Telecommunication", isNew: true, projectedBriefCount: 3 })]);
+    expect(preview.updates[0].changes[0]).toMatchObject({ field: "verticalId", beforeLabel: "Healthcare", afterLabel: "Telecommunication" });
+    const receipt = await service.apply({ ...request, previewHash: preview.previewHash }, actor);
+    expect(receipt).toMatchObject({ createdPartners: 0, createdUsers: 0, createdBriefs: 0, createdVerticals: 1, updatedBriefs: 3 });
+    const target = await db.getRepository(Vertical).findOneByOrFail({ cohortId: cohort.id, name: "Telecommunication" });
+    expect(target.briefCount).toBe(3);
+    expect((await db.getRepository(Vertical).findOneByOrFail({ id: original })).briefCount).toBe(0);
+    const after = await db.getRepository(Brief).find({ where: { organizationId: partner.id }, order: { id: "ASC" } });
+    for (let index = 0; index < before.length; index++) {
+      expect(after[index]).toEqual({ ...before[index], verticalId: target.id, currentVersion: before[index].currentVersion + 1, updatedAt: expect.any(Date) });
+      expect(await db.getRepository(BriefRevision).findOneBy({ briefId: before[index].id })).toMatchObject({ previousData: { verticalId: original }, newData: { verticalId: target.id }, actorId: actor.id });
+    }
+    expect((await db.getRepository(Organization).findOneByOrFail({ id: partner.id })).industry).toBe("Healthcare");
+    expect(await db.getRepository(PartnerImportRecord).findBy({ cohortId: cohort.id })).toEqual(receipts);
+    expect(await db.getRepository(User).count()).toBe(accountCount);
+    expect(await db.getRepository(BriefContact).count()).toBe(contactCount);
+    expect(await service.preview(request, actor)).toMatchObject({ updatedBriefs: 0, unchangedBriefs: 3 });
+    expect(await service.preview(updateInput(["industry", "verticalId"]), actor)).toMatchObject({ updatedPartners: 1, updatedBriefs: 0 });
+  });
+
+  it("backfills empty verticals and industry together without changing approvals, and excludes drafts from capacity", async () => {
+    const { partner } = await load();
+    await db.getRepository(Organization).update(partner.id, { industry: "" });
+    await db.getRepository(Brief).createQueryBuilder().update().set({ verticalId: null as any }).where("cohort_id = :id", { id: cohort.id }).execute();
+    const draft = await db.getRepository(Brief).findOneByOrFail({ sessionId: fixture.sessionId, opportunityNumber: 1 });
+    await db.getRepository(Brief).update(draft.id, { status: BriefStatus.DRAFT });
+    fixture.rows.forEach(row => { row["Sector"] = "Education"; });
+    const request = updateInput(["industry", "verticalId"]), preview = await service.preview(request, actor);
+    expect(preview).toMatchObject({ ready: true, updatedPartners: 1, updatedBriefs: 3 });
+    expect(preview.verticals[0]).toMatchObject({ name: "Education", projectedBriefCount: 2 });
+    await service.apply({ ...request, previewHash: preview.previewHash }, actor);
+    expect(await db.getRepository(Organization).findOneByOrFail({ id: partner.id })).toMatchObject({ industry: "Education" });
+    expect((await db.getRepository(Brief).findOneByOrFail({ id: draft.id })).status).toBe(BriefStatus.DRAFT);
+    expect((await db.getRepository(Vertical).findOneByOrFail({ cohortId: cohort.id, name: "Education" })).briefCount).toBe(2);
+  });
+
+  it("does not create verticals for unmatched update rows or when Vertical is not selected", async () => {
+    const missing = await service.preview(updateInput(["verticalId"]), actor);
+    expect(missing).toMatchObject({ ready: true, unmatchedBriefs: 3, verticals: [] });
+    await service.apply({ ...updateInput(["verticalId"]), previewHash: missing.previewHash }, actor);
+    expect(await db.getRepository(Vertical).countBy({ cohortId: cohort.id })).toBe(0);
+    await load();
+    fixture.rows.forEach(row => { row["Sector"] = "Education"; });
+    const request = updateInput(["industry"]), preview = await service.preview(request, actor);
+    expect(preview.verticals).toEqual([]);
+    await service.apply({ ...request, previewHash: preview.previewHash }, actor);
+    expect(await db.getRepository(Vertical).countBy({ cohortId: cohort.id, name: "Education" })).toBe(0);
+  });
+
+  it("blocks insufficient capacity using actual submitted counts instead of stale cached counts", async () => {
+    await load();
+    const health = await db.getRepository(Vertical).findOneByOrFail({ cohortId: cohort.id });
+    const target = await db.getRepository(Vertical).save({ cohortId: cohort.id, name: "Education", briefCap: 3, briefCount: 0 });
+    await db.getRepository(Brief).save({ title: "Existing submitted brief", description: "Existing", problemStatement: "Existing problem", expectedOutcomes: "Existing outcome", organizationId: (await db.getRepository(Organization).findOneByOrFail({ name: fixture.name })).id, cohortId: cohort.id, verticalId: target.id, status: BriefStatus.SUBMITTED });
+    fixture.rows.forEach(row => { row["Sector"] = "Education"; });
+    const request = updateInput(["verticalId"]), preview = await service.preview(request, actor);
+    expect(preview.ready).toBe(false);
+    expect(preview.errors.some(error => error.message.includes("exceeding its capacity"))).toBe(true);
+    await expect(service.apply({ ...request, previewHash: preview.previewHash }, actor)).rejects.toThrow("conflicts");
+    expect((await db.getRepository(Vertical).findOneByOrFail({ id: health.id })).briefCount).toBe(3);
+  });
+
+  it("requires refreshed previews when a vertical is created or renamed or its capacity changes", async () => {
+    const first = await service.preview(input(), actor);
+    const target = await db.getRepository(Vertical).save({ cohortId: cohort.id, name: "Healthcare", briefCap: 50 });
+    await expect(service.apply({ ...input(), previewHash: first.previewHash }, actor)).rejects.toThrow("Refresh the preview");
+    for (const patch of [{ name: "Health" }, { briefCap: 20 }]) {
+      const preview = await service.preview(input(), actor);
+      await db.getRepository(Vertical).update(target.id, patch);
+      await expect(service.apply({ ...input(), previewHash: preview.previewHash }, actor)).rejects.toThrow("Refresh the preview");
+    }
+    expect(await db.getRepository(Brief).countBy({ cohortId: cohort.id })).toBe(0);
+  });
+
+  it("rejects inactive, deleted and ambiguous matching verticals rather than creating duplicates", async () => {
+    const target = await db.getRepository(Vertical).save({ cohortId: cohort.id, name: "Healthcare", isActive: false });
+    expect((await service.preview(input(), actor)).ready).toBe(false);
+    await db.getRepository(Vertical).update(target.id, { isActive: true });
+    await db.getRepository(Vertical).softDelete(target.id);
+    expect((await service.preview(input(), actor)).ready).toBe(false);
+    await db.getRepository(Vertical).restore(target.id);
+    await db.getRepository(Vertical).save({ cohortId: cohort.id, name: "healthcare" });
+    const preview = await service.preview(input(), actor);
+    expect(preview.errors.some(error => error.message.includes("ambiguous"))).toBe(true);
+  });
+
+  it("does not overwrite a previously auto-created vertical after staff rename it", async () => {
+    await load();
+    const original = await db.getRepository(Vertical).findOneByOrFail({ cohortId: cohort.id });
+    await db.getRepository(Vertical).update(original.id, { name: "Former sector" });
+    const request = updateInput(["verticalId"]), preview = await service.preview(request, actor);
+    expect(preview).toMatchObject({ ready: true, updatedBriefs: 3 });
+    expect(preview.verticals[0]).toMatchObject({ name: "Healthcare", isNew: true });
+    expect(preview.verticals[0].id).not.toBe(original.id);
+    await service.apply({ ...request, previewHash: preview.previewHash }, actor);
+    expect(await db.getRepository(Vertical).findOneByOrFail({ id: original.id })).toMatchObject({ name: "Former sector", briefCount: 0 });
+    expect(await db.getRepository(Vertical).countBy({ cohortId: cohort.id })).toBe(2);
   });
 });

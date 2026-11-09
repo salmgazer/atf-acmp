@@ -85,19 +85,20 @@ function ParticipantRow({ participant, selected, onSelect, onResend, busy }: {
         <Checkbox aria-label={`Select ${participant.firstName} ${participant.lastName}`} checked={selected}
           disabled={busy || !canResendParticipantInvite(participant)} onCheckedChange={checked => onSelect(checked === true)} />
       </td></StaffOnly>
-      <td className="p-4">
-        <div>
+      <td className="w-64 max-w-64 p-4">
+        <div className="max-w-56">
           <Link
             href={`/staff/participants/${participant.id}`}
-            className="font-medium text-foreground hover:underline"
+            className="block truncate font-medium text-foreground hover:underline"
+            title={`${participant.firstName} ${participant.lastName}`}
           >
             {participant.firstName} {participant.lastName}
           </Link>
-          <p className="text-sm text-muted-foreground">{participant.email}</p>
+          <p className="truncate text-sm text-muted-foreground" title={participant.email}>{participant.email}</p>
         </div>
       </td>
-      <td className="p-4">
-        <code className="text-xs bg-muted text-muted-foreground px-2 py-1 rounded">
+      <td className="whitespace-nowrap p-4">
+        <code className="whitespace-nowrap text-xs bg-muted text-muted-foreground px-2 py-1 rounded">
           {participant.participantId}
         </code>
       </td>
@@ -570,8 +571,8 @@ function ParticipantsContent() {
                       <Checkbox aria-label="Select all pending participants on this page" checked={allSelected ? true : someSelected ? "indeterminate" : false}
                         disabled={sending || !selectable.length} onCheckedChange={checked => setSelectedIds(checked === true ? selectable.map(participant => participant.id) : [])} />
                     </th></StaffOnly>
-                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Name</th>
-                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Participant ID</th>
+                    <th className="w-64 text-left p-4 text-sm font-medium text-muted-foreground">Name</th>
+                    <th className="w-48 whitespace-nowrap text-left p-4 text-sm font-medium text-muted-foreground">Participant ID</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Country</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Group</th>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Institution</th>
