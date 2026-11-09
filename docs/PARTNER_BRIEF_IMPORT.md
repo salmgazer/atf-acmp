@@ -13,6 +13,7 @@
 - [x] Verify Ghana dry run and database/browser regressions without importing application data or sending real emails.
 - [x] Populate partner Industry from Sector, including the specific Other-sector detail, on imports and public onboarding.
 - [x] Add update-only imports with explicit field selections, before/after preview, stale-preview protection and audited receipts.
+- [x] Map CSV sectors to cohort verticals, creating missing verticals on confirmation, with independently selectable vertical updates.
 
 One partner represents an organization within a cohort and country. Every brief retains its main contact and submitter. Only the selected partner main contact becomes an organization owner; other contacts use member logins and brief-specific hosting permission. Partners remain Pending and briefs Submitted on import. Consent absent from the CSV remains unconfirmed.
 
@@ -22,11 +23,12 @@ That repeat/skip behavior applies to **Create new partners and briefs**, the def
 
 ## Industry mapping and selective updates
 
-The CSV's sector describes the partner. The existing `organizations.industry` field is the Industry column shown on `/staff/partners`; it is distinct from `organizations.sector` and the brief's `verticalId`. No new database column or migration is needed. The prior importer saved sector but omitted Industry. Public `/onboard-partner` submissions now populate Industry through the same mapping.
+ATF confirmed that a CSV sector is also the brief's vertical. The existing `organizations.industry` field is the Industry column shown on `/staff/partners`; it is distinct from `organizations.sector` and the brief's `verticalId` foreign key. No new database column or migration is needed. New CSV imports populate Industry and assign cohort verticals. Public `/onboard-partner` submissions populate Industry; this CSV enhancement does not change that separate public flow.
 
 | CSV input | System destination | Rule |
 | --- | --- | --- |
 | Sector; Sector (if Other) | Partner `industry` | Use Sector; for Other, use its supplied detail. Preserve wording, including Legal services and Telecommunication. |
+| Sector; Sector (if Other) | Brief `verticalId` | Reuse the chosen cohort's matching active vertical or create it on confirmation. Use Other-sector detail. Healthcare reuses Health when no exact Healthcare match exists. |
 | Sector; Sector (if Other) | Partner `sector`, `sectorOther` | Preserve public-intake fields; normalize Local / Municipal Government to Local/Municipal Government. |
 | City or town | Partner `city` | Optional selected update. |
 | Opportunity title | Brief `title` | Optional selected update; matching never relies on the title. |
@@ -38,17 +40,21 @@ The CSV's sector describes the partner. The existing `organizations.industry` fi
 | Country lead notes | Brief `countryLeadNotes` | Optional selected update. |
 | Country | Brief `problemCountry` | Optional selected update; partner country remains part of identity validation. |
 
-To backfill Industry:
+To backfill Industry and/or Vertical:
 
 1. Open `/staff/partners/import` → **Partners and briefs**.
 2. Select **Update existing only**, the correct active cohort and source timezone.
-3. Keep only **Partner industry** checked (the update-mode default) and upload the original full CSV.
-4. Preview and review **Selected field changes**, then select **Update selected fields** and confirm.
+3. Check **Partner industry** (the update-mode default) and **Brief vertical** to repair both, or select either independently. Upload the original full CSV.
+4. Preview and review **Sector to cohort vertical** and **Selected field changes**, then select **Update selected fields** and confirm. Vertical changes show names rather than UUIDs.
 5. Download the receipt. Rerunning the update reports unchanged rows once the values match.
 
 Updates identify briefs by cohort + original Session ID + Opportunity #, using import receipts where available. Public-intake records without receipts can match the same exact source identity. Partner identity/country/cohort is verified before changes. Unknown source identities are skipped with warnings; deleted, reassigned or ambiguous matches block apply. Repeated partner rows are consolidated into one update. Conflicting selected values for the same partner block the import rather than choosing a submitter arbitrarily. Blank selected cells preserve existing data and cannot clear a field.
 
-The original complete CSV format and its validation still apply. Updates allow only the listed fields, leaving partner ownership, contacts, emails, credentials, consent, scoring, approval states, brief vertical assignments and source provenance untouched. Changing fields, file, mode or target data invalidates the preview. Selecting a field explicitly authorizes replacing its nonblank current value; review the before/after comparison before confirming.
+The original complete CSV format and its validation still apply. Updates allow only the listed fields, leaving partner ownership, contacts, emails, credentials, consent, scoring, approval states and source provenance untouched. Vertical assignments change only when **Brief vertical** is checked. Changing fields, file, mode, target data, vertical settings or capacity invalidates the preview. Selecting a field explicitly authorizes replacing its nonblank current value; review the before/after comparison before confirming.
+
+Vertical matching ignores case, repeated whitespace and spaces around slashes. Exact Healthcare matches take priority over the Health alias. Inactive, deleted or ambiguous matching verticals block import rather than creating duplicates or reactivating records. Only genuinely new briefs or matched update rows can cause vertical creation: skipped create-mode receipts and unmatched update rows do not. Missing specific detail for Other blocks vertical assignment.
+
+Preview remains read-only. New verticals, briefs, field updates, revisions, counts and the audit receipt commit or roll back together. Capacity uses actual nondeleted Submitted, In review and Approved briefs, not just the cached count. Draft/rejected/revision-requested assignments do not consume capacity. Moving briefs recounts both affected verticals. Existing caps/settings are never increased silently. New verticals start with capacity 10 or the submitted batch's required count, whichever is larger, capped at 100; larger batches require staff to create/configure the vertical first. Receipts include the created-vertical count and mapping details. No new environment values or migration are required.
 
 The Ghana reference has 31 brief rows representing 13 partners, with no conflicting sector values within a partner. Industries resolve to Healthcare (4 partners), Agriculture (3), Finance (2), and one each for Education, Legal services, Local/Municipal Government and Telecommunication. A disposable-database rehearsal backfilled exactly 13 Industry values while preserving all 31 briefs, accounts, contacts and original receipts. Its second preview reported 31 unchanged rows. No application records were changed and no real email was sent during verification.
 
@@ -100,3 +106,19 @@ All routes require Super Admin or Program Manager access. Import requests includ
 - [x] Workspace type checks, API/web builds and local API readiness passed. Lint has no errors; existing repository warnings remain.
 
 The application's existing partner records have not been reimported by this verification; reimport remains a deliberate staff preview/confirm action in each environment.
+
+## Sector/vertical verification on 2026-11-09
+
+- [x] ATF confirmed sector and vertical represent the same classification; missing cohort verticals may be created during CSV import.
+- [x] All 591 API tests and 99 browser tests passed, covering read-only previews, creation/reuse, independent field selection, immutable receipts, revisions, capacity, rollback, stale previews and renamed/deleted/inactive verticals.
+- [x] Workspace type checks and production API/web builds passed. Existing lint warnings remain; no new lint errors.
+- [x] Ghana rehearsed in a disposable database seeded with the local cohort's four vertical labels: backfilled 13 partner industries and 31 brief verticals; created Education, Legal services, Local/Municipal Government and Telecommunication; reused Health, Agriculture and Finance.
+- [x] Repeat preview reported 31 unchanged rows. Accounts, contacts, source receipts and unselected brief fields were preserved; no real emails were sent.
+
+The initial feature verification used disposable containers while application containers were stopped. No application records were imported and no migration is needed. Deployments use the staging-then-production GitHub Actions workflows; backfilling application records remains a separate staff preview/confirm action.
+
+### Local development runtime correction
+
+The API's TypeScript watcher compiled the updated shared sources, but Node resolved `@acmp/shared` to an older `packages/shared/dist` build. This caused HTTP validation to reject `verticalId` even though source-based tests and the web UI recognized it. The API development command now sets `TS_NODE_BASEURL=./dist/apps/api`, resolving both shared definitions and `@/` aliases from Nest's current compiled output. Production startup is unchanged. A subprocess regression verifies the real runtime resolver against a deliberately stale shared-package build, outside Jest's source aliases.
+
+The local API was restarted after this correction. Its running process uses the new runtime base, the compiled validation pipe accepts `["industry", "verticalId"]`, and `/api/health/ready` returns HTTP 200. All 592 API tests passed, including the development runtime regression. No import was applied.

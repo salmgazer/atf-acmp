@@ -13,6 +13,7 @@ import { SubmissionImportDto, ApplySubmissionImportDto } from "./dto/submission-
 import { ImportIssue, organizationKey, ParsedSubmission, parseSubmissionCsv, sourceHash } from "./submission-import-parser";
 import { planSubmissionUpdates, submissionImportOptions, SubmissionUpdate } from "./submission-import-updates";
 import { CacheService, CACHE_KEYS } from "@/common/cache/cache.service";
+import { appendVerticalUpdates, createSubmissionVerticals, planSubmissionVerticals, refreshSubmissionVerticalCounts, SubmissionVerticalPlan } from "./submission-import-verticals";
 
 interface ImportActor { id: string; email?: string; role: string }
 export interface OrganizationPlan {
@@ -21,7 +22,7 @@ export interface OrganizationPlan {
 }
 export interface ImportBriefPreview {
   row: number; title: string; partner: string; submittedAt: string; status: "new" | "skipped" | "updated" | "unchanged" | "unmatched";
-  industry?: string;
+  industry?: string; vertical?: string;
   submitter: { name: string; email: string }; host: { name: string; email: string; source: "brief" | "partner" };
   fitScore: number; impactScore: number | null;
 }
@@ -51,7 +52,7 @@ export class SubmissionImportService {
     for (const country of new Set(parsed.rows.map(row => row.org.country))) if (cohort?.countries?.length && !cohort.countries.includes(country)) errors.push({ message: `${country} is not enabled in this cohort` });
     const organizations: OrganizationPlan[] = [];
     const preview = { ready: false, previewHash: "", sourceName: dto.sourceName, cohortId: dto.cohortId, sourceTimezone: dto.sourceTimezone, mode, updateFields: fields,
-      totalBriefs: parsed.rows.length, newPartners: 0, newUsers: 0, newBriefs: 0, skippedBriefs: 0, updatedPartners: 0, updatedBriefs: 0, unchangedBriefs: 0, unmatchedBriefs: 0, updates: [] as SubmissionUpdate[], organizations, briefs: [] as ImportBriefPreview[], errors, warnings };
+      totalBriefs: parsed.rows.length, newPartners: 0, newUsers: 0, newBriefs: 0, skippedBriefs: 0, updatedPartners: 0, updatedBriefs: 0, unchangedBriefs: 0, unmatchedBriefs: 0, updates: [] as SubmissionUpdate[], verticals: [] as SubmissionVerticalPlan[], organizations, briefs: [] as ImportBriefPreview[], errors, warnings };
     if (errors.length) return { preview, rows: parsed.rows, skipped: new Set<string>() };
 
     const partners = await manager.find(Organization, { withDeleted: true });
@@ -59,6 +60,11 @@ export class SubmissionImportService {
     const existingBriefs = await manager.find(Brief, { where: [{ sessionId: In([...new Set(parsed.rows.map(row => row.sessionId))]) }, ...partners.filter(partner => partner.cohortId === dto.cohortId).map(partner => ({ organizationId: partner.id }))], withDeleted: true });
     if (mode === "update_existing") {
       const { updates, matched, versions } = planSubmissionUpdates(dto, parsed.rows, partners, receipts, existingBriefs, errors, warnings);
+      const verticalPlan = fields.includes("verticalId") ? await planSubmissionVerticals(manager, dto.cohortId, parsed.rows.filter(row => matched.has(row.key)).map(row => ({ row, brief: matched.get(row.key)!.brief })), errors) : undefined;
+      if (verticalPlan) {
+        preview.verticals = verticalPlan.plans;
+        appendVerticalUpdates(updates, matched, parsed.rows, verticalPlan);
+      }
       preview.updates = updates;
       preview.updatedPartners = updates.filter(update => update.entity === "partner").length;
       preview.updatedBriefs = updates.filter(update => update.entity === "brief").length;
@@ -68,11 +74,11 @@ export class SubmissionImportService {
       preview.briefs = parsed.rows.map(row => {
         const match = matched.get(row.key), contact = match?.brief.secondaryContact;
         return { row: row.row, title: match?.brief.title || row.opportunity.title, partner: match?.partner.name || row.org.orgName, industry: sectorToIndustry(row.org.sector, row.org.sectorOther), submittedAt: row.submittedAt.toISOString(),
-          status: !match ? "unmatched" : changedRows.has(row.row) ? "updated" : "unchanged",
+          status: !match ? "unmatched" : changedRows.has(row.row) ? "updated" : "unchanged", vertical: verticalPlan?.plans.find(vertical => vertical.id === verticalPlan.targets.get(row.key))?.name,
           submitter: { name: row.org.contactName, email: row.org.email }, host: contact?.email ? { name: contact.name || contact.email, email: contact.email, source: "brief" } : { name: match?.partner.contactPerson || row.org.contactName, email: match?.partner.email || row.org.email, source: "partner" }, fitScore: row.scores.fitScore, impactScore: row.scores.impactScore };
       });
       preview.ready = !errors.length;
-      preview.previewHash = sourceHash({ csv: dto.csv, sourceName: dto.sourceName, cohortId: dto.cohortId, timezone: dto.sourceTimezone, mode, fields, updates, versions, receipts: receipts.map(receipt => [receipt.id, receipt.briefId, receipt.deletedAt]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))) });
+      preview.previewHash = sourceHash({ csv: dto.csv, sourceName: dto.sourceName, cohortId: dto.cohortId, timezone: dto.sourceTimezone, mode, fields, updates, versions, verticals: preview.verticals, verticalVersions: verticalPlan?.versions, receipts: receipts.map(receipt => [receipt.id, receipt.briefId, receipt.deletedAt]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))) });
       return { preview, rows: parsed.rows, skipped: new Set<string>() };
     }
     const grouped = new Map<string, ParsedSubmission[]>();
@@ -116,16 +122,18 @@ export class SubmissionImportService {
       if (user.deletedAt || !user.isActive || user.role !== Role.ORGANIZATION || memberships.some(link => link.userId === user.id && (link.deletedAt || link.organizationId !== group?.organizationId))) errors.push({ message: `An account used by ${group?.name || "this CSV"} is unavailable, has another role or belongs to another partner` });
     }
     preview.newUsers = emails.filter(email => !users.some(user => user.email.toLowerCase() === email)).length;
+    const verticalPlan = await planSubmissionVerticals(manager, dto.cohortId, parsed.rows.filter(row => !skipped.has(row.key)).map(row => ({ row })), errors);
+    preview.verticals = verticalPlan.plans;
     preview.briefs = parsed.rows.map(row => {
       const group = organizations.find(item => item.key === row.organizationKey)!;
       const contact = row.opportunity.secondaryContact;
-      return { row: row.row, title: row.opportunity.title, partner: group.name, industry: sectorToIndustry(row.org.sector, row.org.sectorOther), submittedAt: row.submittedAt.toISOString(), status: skipped.has(row.key) ? "skipped" : "new",
+      return { row: row.row, title: row.opportunity.title, partner: group.name, industry: sectorToIndustry(row.org.sector, row.org.sectorOther), vertical: verticalPlan.plans.find(vertical => vertical.id === verticalPlan.targets.get(row.key))?.name, submittedAt: row.submittedAt.toISOString(), status: skipped.has(row.key) ? "skipped" : "new",
         submitter: { name: row.org.contactName, email: row.org.email }, host: contact?.email ? { name: contact.name || contact.email, email: contact.email, source: "brief" }
           : { name: group.primaryCandidates.find(candidate => candidate.email === group.primaryEmail)?.name || group.name, email: group.primaryEmail, source: "partner" },
         fitScore: row.scores.fitScore, impactScore: row.scores.impactScore };
     });
     preview.ready = !errors.length;
-    preview.previewHash = sourceHash({ csv: dto.csv, sourceName: dto.sourceName, cohortId: dto.cohortId, timezone: dto.sourceTimezone, mode, fields, organizations, users: users.map(user => ({ id: user.id, email: user.email, active: user.isActive, role: user.role })).sort((a, b) => a.email.localeCompare(b.email)), skipped: [...skipped].sort() });
+    preview.previewHash = sourceHash({ csv: dto.csv, sourceName: dto.sourceName, cohortId: dto.cohortId, timezone: dto.sourceTimezone, mode, fields, organizations, verticals: preview.verticals, verticalVersions: verticalPlan.versions, users: users.map(user => ({ id: user.id, email: user.email, active: user.isActive, role: user.role })).sort((a, b) => a.email.localeCompare(b.email)), skipped: [...skipped].sort() });
     return { preview, rows: parsed.rows, skipped };
   }
 
@@ -139,19 +147,23 @@ export class SubmissionImportService {
       if (!preview.ready) throw new ConflictException({ message: "Import conflicts must be resolved before loading records", errors: preview.errors });
       if (dto.previewHash !== preview.previewHash) throw new ConflictException("The file, contact selections or existing data changed. Refresh the preview before importing.");
       const batchId = randomUUID(), briefIds: string[] = [];
+      await createSubmissionVerticals(manager, dto.cohortId, preview.verticals);
       if (preview.mode === "update_existing") {
+        const affectedVerticals: string[] = [];
         for (const update of preview.updates) {
           const patch = Object.assign({}, ...update.changes.map(change => change.after));
           if (update.entity === "partner") await manager.update(Organization, update.id, patch);
           else {
             const brief = await manager.findOneByOrFail(Brief, { id: update.id });
+            if (patch.verticalId) affectedVerticals.push(...[brief.verticalId, patch.verticalId].filter(Boolean));
             await manager.update(Brief, update.id, { ...patch, currentVersion: brief.currentVersion + 1 });
             await manager.save(BriefRevision, manager.create(BriefRevision, { briefId: brief.id, action: BriefRevisionAction.UPDATED, version: brief.currentVersion + 1, actorId: actor.id, actorName: account.email, actorType: BriefRevisionActorType.STAFF,
               comment: `Selected-field CSV update from ${dto.sourceName}`, previousData: Object.assign({}, ...update.changes.map(change => change.before)), newData: patch }));
             briefIds.push(brief.id);
           }
         }
-        const result = { batchId, mode: preview.mode, createdPartners: 0, createdUsers: 0, createdBriefs: 0, skippedBriefs: preview.unchangedBriefs + preview.unmatchedBriefs, updatedPartners: preview.updatedPartners, updatedBriefs: preview.updatedBriefs, unchangedBriefs: preview.unchangedBriefs, unmatchedBriefs: preview.unmatchedBriefs, updateFields: preview.updateFields, updates: preview.updates, briefIds };
+        await refreshSubmissionVerticalCounts(manager, affectedVerticals);
+        const result = { batchId, mode: preview.mode, createdPartners: 0, createdUsers: 0, createdBriefs: 0, createdVerticals: preview.verticals.filter(vertical => vertical.isNew).length, verticals: preview.verticals, skippedBriefs: preview.unchangedBriefs + preview.unmatchedBriefs, updatedPartners: preview.updatedPartners, updatedBriefs: preview.updatedBriefs, unchangedBriefs: preview.unchangedBriefs, unmatchedBriefs: preview.unmatchedBriefs, updateFields: preview.updateFields, updates: preview.updates, briefIds };
         await manager.save(AuditLog, manager.create(AuditLog, { actorId: actor.id, actorEmail: account.email, action: AuditAction.BULK_IMPORT, entityType: "PartnerSubmissionImport", entityId: batchId,
           description: `Updated ${result.updatedPartners} partners and ${result.updatedBriefs} briefs from ${dto.sourceName}`, metadata: { ...result, sourceHash: sourceHash(dto.csv), cohortId: dto.cohortId, sourceTimezone: dto.sourceTimezone } }));
         return result;
@@ -173,7 +185,7 @@ export class SubmissionImportService {
           const opp = row.opportunity;
           const brief = await manager.save(Brief, manager.create(Brief, {
             title: opp.title, description: opp.description, problemStatement: opp.description, expectedOutcomes: opp.whatChanges,
-            organizationId: partner.id, cohortId: dto.cohortId, status: BriefStatus.SUBMITTED, sessionId: row.sessionId,
+            organizationId: partner.id, cohortId: dto.cohortId, verticalId: preview.verticals.find(vertical => vertical.rows.includes(row.row))!.id, status: BriefStatus.SUBMITTED, sessionId: row.sessionId,
             opportunityNumber: row.opportunityNumber, whatChanges: opp.whatChanges, affectedCount: opp.howMany,
             dataDescription: opp.dataDescription, dataAccess: opp.dataAccess, secondaryContact: opp.secondaryContact,
             scoringAnswers: opp.scoringAnswers, ...row.scores,
@@ -188,7 +200,8 @@ export class SubmissionImportService {
           briefIds.push(brief.id);
         }
       }
-      const result = { batchId, createdPartners: preview.newPartners, createdUsers: preview.newUsers, createdBriefs: briefIds.length, skippedBriefs: skipped.size, briefIds };
+      await refreshSubmissionVerticalCounts(manager, preview.verticals.map(vertical => vertical.id));
+      const result = { batchId, createdPartners: preview.newPartners, createdUsers: preview.newUsers, createdBriefs: briefIds.length, createdVerticals: preview.verticals.filter(vertical => vertical.isNew).length, verticals: preview.verticals, skippedBriefs: skipped.size, briefIds };
       await manager.save(AuditLog, manager.create(AuditLog, { actorId: actor.id, actorEmail: account.email, action: AuditAction.BULK_IMPORT,
         entityType: "PartnerSubmissionImport", entityId: batchId, description: `Imported ${briefIds.length} briefs from ${dto.sourceName}`, metadata: { ...result, sourceHash: sourceHash(dto.csv), cohortId: dto.cohortId, sourceTimezone: dto.sourceTimezone } }));
       return result;

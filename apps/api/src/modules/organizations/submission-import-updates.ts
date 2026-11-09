@@ -6,7 +6,7 @@ import { PartnerImportRecord } from "@/database/entities/partner-import-record.e
 import { SubmissionImportDto } from "./dto/submission-import.dto";
 import { ImportIssue, organizationKey, ParsedSubmission } from "./submission-import-parser";
 
-export interface SubmissionFieldChange { field: SubmissionUpdateField; label: string; before: Record<string, unknown>; after: Record<string, string> }
+export interface SubmissionFieldChange { field: SubmissionUpdateField; label: string; before: Record<string, unknown>; after: Record<string, string>; beforeLabel?: string; afterLabel?: string }
 export interface SubmissionUpdate {
   entity: "partner" | "brief"; id: string; name: string; rows: number[]; updatedAt: string;
   changes: SubmissionFieldChange[];
@@ -23,6 +23,8 @@ export function submissionImportOptions(dto: SubmissionImportDto) {
 function incoming(row: ParsedSubmission, field: SubmissionUpdateField): Record<string, string> {
   switch (field) {
     case "industry": return { industry: sectorToIndustry(row.org.sector, row.org.sectorOther) };
+    // Resolved against the cohort after stable source identities have matched.
+    case "verticalId": return {};
     case "sector": return { sector: row.org.sector, ...(row.org.sectorOther ? { sectorOther: row.org.sectorOther } : {}) };
     case "city": return { city: row.org.city };
     case "title": return { title: row.opportunity.title };
