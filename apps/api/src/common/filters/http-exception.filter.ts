@@ -21,6 +21,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = "Internal server error";
     let errors: any[] | undefined;
+    let retryAfterSeconds: number | undefined;
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -32,6 +33,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         const responseObj = exceptionResponse as Record<string, any>;
         message = responseObj.message || message;
         errors = responseObj.errors;
+        if (status === HttpStatus.TOO_MANY_REQUESTS && Number.isInteger(responseObj.retryAfterSeconds) && responseObj.retryAfterSeconds > 0) retryAfterSeconds = responseObj.retryAfterSeconds;
       }
     } else if (exception instanceof QueryFailedError && (exception.driverError as any)?.code === "23514") {
       status = HttpStatus.BAD_REQUEST;
@@ -56,6 +58,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       statusCode: status,
       message,
       ...(errors && { errors }),
+      ...(retryAfterSeconds && { retryAfterSeconds }),
       timestamp: new Date().toISOString(),
       path: request.url,
     };

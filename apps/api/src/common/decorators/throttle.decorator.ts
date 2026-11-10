@@ -1,4 +1,6 @@
 import { Throttle, SkipThrottle } from "@nestjs/throttler";
+import { applyDecorators, SetMetadata } from "@nestjs/common";
+import { AUTH_RATE_LIMIT } from "../guards/rate-limit.guard";
 
 /**
  * Rate limiting decorators for different endpoint types
@@ -8,11 +10,11 @@ import { Throttle, SkipThrottle } from "@nestjs/throttler";
  * Auth endpoints: 5 requests per minute (login, register, password reset)
  */
 export const AuthThrottle = () =>
-  Throttle({
+  applyDecorators(SetMetadata(AUTH_RATE_LIMIT, true), Throttle({
     short: { limit: 3, ttl: 1000 },      // 3 per second
     medium: { limit: 5, ttl: 60000 },    // 5 per minute
     long: { limit: 20, ttl: 3600000 },   // 20 per hour
-  });
+  }));
 
 /**
  * File upload endpoints: 10 requests per minute
@@ -38,11 +40,11 @@ export const ApiThrottle = () =>
  * Strict rate limiting for sensitive operations: 3 requests per minute
  */
 export const StrictThrottle = () =>
-  Throttle({
+  applyDecorators(SetMetadata(AUTH_RATE_LIMIT, true), Throttle({
     short: { limit: 1, ttl: 1000 },      // 1 per second
     medium: { limit: 3, ttl: 60000 },    // 3 per minute
     long: { limit: 10, ttl: 3600000 },   // 10 per hour
-  });
+  }));
 
 /**
  * Bulk operations: 5 requests per minute
@@ -57,4 +59,4 @@ export const BulkThrottle = () =>
 /**
  * Skip rate limiting (for health checks, public static content)
  */
-export const NoThrottle = () => SkipThrottle();
+export const NoThrottle = () => SkipThrottle({ short: true, medium: true, long: true });

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuthStore, canAccessPortal, getLoginPath, getDashboardPath, type Portal, type Role } from "@/lib/stores/auth-store";
 import { signOut, refreshAccessToken } from "@/lib/auth";
 import { api } from "@/lib/api/client";
+import { rateLimitRetrySeconds } from "@/lib/api/rate-limit";
 
 interface UseAuthOptions {
   portal: Portal;
@@ -59,6 +60,7 @@ export function useAuth(options?: UseAuthOptions) {
           router.push(getDashboardPath(portal));
         }
       } catch (error: any) {
+        if (rateLimitRetrySeconds(error) !== null) return;
         // Token verification failed - try to refresh the token
         if (error?.response?.status === 401 || error?.message?.includes("401") || error?.message?.includes("Session expired")) {
           try {
@@ -69,6 +71,7 @@ export function useAuth(options?: UseAuthOptions) {
               return;
             }
           } catch (refreshError) {
+            if (rateLimitRetrySeconds(refreshError) !== null) return;
             console.error("[useAuth] Token refresh failed:", refreshError);
           }
         }

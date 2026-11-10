@@ -14,6 +14,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { signInWithEmail } from "@/lib/auth";
 import { useAuthStore, type Portal, getDashboardPath } from "@/lib/stores/auth-store";
 import { toast } from "sonner";
+import { RateLimitNotice, useRateLimitCooldown } from "./rate-limit-notice";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -34,6 +35,7 @@ export function EmailPasswordForm({ portal, onForgotPassword }: EmailPasswordFor
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [cohortBlocked, setCohortBlocked] = useState(false);
+  const cooldown = useRateLimitCooldown();
 
   const returnTo = searchParams.get("returnTo");
 
@@ -46,6 +48,7 @@ export function EmailPasswordForm({ portal, onForgotPassword }: EmailPasswordFor
   });
 
   const onSubmit = async (data: LoginForm) => {
+    if (cooldown.seconds) return;
     setIsLoading(true);
     setCohortBlocked(false);
     try {
@@ -57,6 +60,7 @@ export function EmailPasswordForm({ portal, onForgotPassword }: EmailPasswordFor
       const redirectTo = safeReturnPath(returnTo, portal);
       router.push(redirectTo);
     } catch (error: any) {
+      if (cooldown.capture(error)) return;
       console.error("Login error:", error);
       
       const message = error.response?.data?.message || error.message || "Login failed. Please try again.";
@@ -170,7 +174,8 @@ export function EmailPasswordForm({ portal, onForgotPassword }: EmailPasswordFor
         )}
       </div>
 
-      <Button type="submit" className="w-full" disabled={isLoading}>
+      <RateLimitNotice seconds={cooldown.seconds} />
+      <Button type="submit" className="w-full" disabled={isLoading || cooldown.seconds > 0}>
         {isLoading ? (
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />

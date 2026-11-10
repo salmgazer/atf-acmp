@@ -350,6 +350,11 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:staging-${{ env.IMAGE_TAG }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_API }}:staging-latest
 
+      - name: Validate trusted proxy configuration
+        env:
+          TRUST_PROXY_CIDRS: ${{ vars.TRUST_PROXY_CIDRS }}
+        run: test -n "$TRUST_PROXY_CIDRS" || { echo "::error::TRUST_PROXY_CIDRS must identify the ALB subnets"; exit 1; }
+
       - name: Deploy API to ECS Express Mode
         uses: aws-actions/amazon-ecs-deploy-express-service@v1
         with:
@@ -371,6 +376,7 @@ jobs:
             [
               {"name": "NODE_ENV", "value": "staging"},
               {"name": "PORT", "value": "3000"},
+              {"name": "TRUST_PROXY_CIDRS", "value": ${{ toJSON(vars.TRUST_PROXY_CIDRS) }}},
               {"name": "DATABASE_HOST", "value": "${{ vars.DATABASE_HOST }}"},
               {"name": "DATABASE_PORT", "value": "5432"},
               {"name": "DATABASE_USER", "value": "${{ vars.DATABASE_USER }}"},

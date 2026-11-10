@@ -145,6 +145,8 @@ services:
       ONESIGNAL_APP_ID: ${ONESIGNAL_APP_ID:-}
       ONESIGNAL_REST_API_KEY: ${ONESIGNAL_REST_API_KEY:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      # Local direct connections do not trust forwarded IPs by default.
+      TRUST_PROXY_CIDRS: ${TRUST_PROXY_CIDRS:-}
       # Enable polling for file watching in Docker
       CHOKIDAR_USEPOLLING: "true"
     depends_on:
