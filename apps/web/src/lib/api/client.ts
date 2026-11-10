@@ -1,6 +1,7 @@
 import { useAuthStore } from "@/lib/stores/auth-store";
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import { toast } from "sonner";
+import { rateLimitError } from "./rate-limit";
 
 // API configuration
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
@@ -64,6 +65,8 @@ async function tryRefreshToken(): Promise<string | null> {
 
     return accessToken;
   } catch (error: any) {
+    const limited = rateLimitError(error);
+    if (limited) throw limited;
     console.error("[tryRefreshToken] Refresh failed:", error?.response?.status, error?.message);
     return null;
   }
@@ -144,6 +147,8 @@ const createApiClient = (): AxiosInstance => {
               return client(originalRequest);
             }
           } catch (refreshError) {
+            const limited = rateLimitError(refreshError);
+            if (limited) return Promise.reject(limited);
             // Refresh failed, fall through to logout
           }
         } else {
@@ -164,6 +169,8 @@ const createApiClient = (): AxiosInstance => {
           } catch (refreshError) {
             isRefreshing = false;
             refreshPromise = null;
+            const limited = rateLimitError(refreshError);
+            if (limited) return Promise.reject(limited);
           }
         }
         
@@ -210,6 +217,8 @@ const createApiClient = (): AxiosInstance => {
       }
 
       // Handle network errors
+      const limited = rateLimitError(error);
+      if (limited) return Promise.reject(limited);
       if (!error.response) {
         const networkError = new Error("Network error. Please check your connection.") as Error & {
           statusCode?: number;

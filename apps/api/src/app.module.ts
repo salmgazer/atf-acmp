@@ -2,7 +2,8 @@ import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
-import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
+import { ThrottlerModule } from "@nestjs/throttler";
+import { DEFAULT_RATE_LIMITS, RateLimitGuard } from "./common/guards/rate-limit.guard";
 import { ScheduleModule } from "@nestjs/schedule";
 import { AuthModule } from "./auth/auth.module";
 import { JwtAuthGuard } from "./auth/guards/jwt-auth.guard";
@@ -54,24 +55,8 @@ import { dataSourceOptions } from "./database/data-source";
       load: [configuration],
     }),
 
-    // Rate limiting - default 100 requests per minute
-    ThrottlerModule.forRoot([
-      {
-        name: "short",
-        ttl: 1000, // 1 second
-        limit: 10, // 10 requests per second
-      },
-      {
-        name: "medium",
-        ttl: 60000, // 1 minute
-        limit: 100, // 100 requests per minute
-      },
-      {
-        name: "long",
-        ttl: 3600000, // 1 hour
-        limit: 1000, // 1000 requests per hour
-      },
-    ]),
+    // Per verified account (or client IP for anonymous, non-auth endpoints).
+    ThrottlerModule.forRoot(DEFAULT_RATE_LIMITS),
 
     // Task Scheduling
     ScheduleModule.forRoot(),
@@ -135,7 +120,7 @@ import { dataSourceOptions } from "./database/data-source";
     // Global rate limiting guard
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: RateLimitGuard,
     },
     // Global activity logging interceptor
     {

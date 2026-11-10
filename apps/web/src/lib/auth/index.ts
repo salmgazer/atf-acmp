@@ -1,5 +1,6 @@
 import { apiClient, withSessionRenewal } from "@/lib/api/client";
 import { useAuthStore, type AuthUser, type Portal } from "@/lib/stores/auth-store";
+import { rateLimitError } from "@/lib/api/rate-limit";
 
 interface LoginResponse {
   accessToken: string;
@@ -59,6 +60,8 @@ try {
     return accessToken;
   } catch (error) {
     // Refresh failed, logout
+    const limited = rateLimitError(error);
+    if (limited) throw limited;
     signOut();
     return null;
   }

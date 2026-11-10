@@ -5,6 +5,7 @@ import { DataSource } from "typeorm";
 import { ConfigService } from "@nestjs/config";
 import { Public } from "@/common/decorators/public.decorator";
 import Redis from "ioredis";
+import { NoThrottle } from "@/common/decorators/throttle.decorator";
 
 interface HealthStatus {
   status: "ok" | "error";
@@ -40,6 +41,7 @@ interface FullHealthStatus extends HealthStatus {
 
 @ApiTags("health")
 @Controller("health")
+@NoThrottle()
 export class HealthController {
   private readonly startTime = Date.now();
   private redisClient: Redis | null = null;
