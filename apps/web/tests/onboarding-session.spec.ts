@@ -117,3 +117,48 @@ test("an incorrect current password does not refresh or log out the participant"
   expect(await page.evaluate(() => localStorage.getItem("auth_token"))).toBe("old-access-token");
   expect(state.refreshRequests()).toBe(0);
 });
+
+test("password throttling preserves entries/session and allows continuation after the countdown", async ({ context, page }) => {
+  await page.clock.install();
+  await setup(context, page);
+  let attempts = 0;
+  await page.route("**/api/auth/change-password", route => {
+    attempts++;
+    return attempts === 1 ? route.fulfill({ status: 429, headers: { "Retry-After": "3" }, json: { statusCode: 429, retryAfterSeconds: 3, message: "Too many requests" } }) : route.fallback();
+  });
+  await page.goto("/participant/onboarding");
+  await submitPassword(page);
+  await expect(page.getByRole("alert").filter({ hasText: "Too many requests" })).toContainText("Try again in 3 seconds");
+  const button = page.getByRole("button", { name: "Change Password & Continue" });
+  await expect(button).toBeDisabled();
+  await expect(page.getByPlaceholder("Create a strong password")).toHaveValue("New-password-456!");
+  expect(await page.evaluate(() => localStorage.getItem("auth_token"))).toBe("old-access-token");
+  await page.clock.fastForward(3100);
+  await expect(button).toBeEnabled(); expect(attempts).toBe(1);
+  await button.click();
+  await expect(page.getByRole("heading", { name: "Personal Information" })).toBeVisible();
+  expect(attempts).toBe(2);
+});
+
+test("a rate-limited session refresh does not log out or clear the onboarding profile", async ({ context, page }) => {
+  await setup(context, page);
+  let refreshes = 0, logouts = 0, rejected = false;
+  await page.goto("/participant/onboarding");
+  await expect(page.getByRole("heading", { name: "Secure Your Account" })).toBeVisible();
+  await page.route("**/api/auth/refresh", route => {
+    refreshes++;
+    return route.fulfill({ status: 429, json: { statusCode: 429, message: "Too many requests", retryAfterSeconds: 5 } });
+  });
+  await page.route("**/api/auth/logout", route => { logouts++; return route.fulfill({ json: {} }); });
+  await page.route("**/api/participants/me", route => {
+    if (rejected) return route.fallback();
+    rejected = true; return route.fulfill({ status: 401, json: { message: "Access token expired" } });
+  });
+  await page.clock.setFixedTime(new Date(Date.now() + 60000));
+  await page.evaluate(() => { window.dispatchEvent(new Event("offline")); window.dispatchEvent(new Event("online")); });
+  await expect(page.getByRole("alert").filter({ hasText: "Too many requests" })).toContainText("Try again in");
+  await expect(page.getByRole("heading", { name: "Secure Your Account" })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("auth_token"))).toBe("old-access-token");
+  expect(refreshes).toBe(1); expect(logouts).toBe(0);
+  await expect(page).toHaveURL(/\/participant\/onboarding$/);
+});

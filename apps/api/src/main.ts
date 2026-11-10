@@ -6,11 +6,13 @@ import helmet from "helmet";
 import { AppModule } from "./app.module";
 import { RedisSocketAdapter } from "./common/services/redis-socket.adapter";
 import { configureBodyParsers } from "./common/configure-body-parsers";
+import { configureProxy } from "./common/configure-proxy";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   configureBodyParsers(app);
   const configService = app.get(ConfigService);
+  configureProxy(app, configService);
   const sockets = new RedisSocketAdapter(app, configService);
   await sockets.connect();
   app.useWebSocketAdapter(sockets);
@@ -58,7 +60,7 @@ async function bootstrap() {
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-    exposedHeaders: ["X-Total-Count", "X-Page", "X-Per-Page"],
+    exposedHeaders: ["X-Total-Count", "X-Page", "X-Per-Page", "Retry-After"],
     maxAge: 86400, // 24 hours
   });
 
