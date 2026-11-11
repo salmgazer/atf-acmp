@@ -123,7 +123,8 @@ export class ResourceAccessGuard implements CanActivate {
     } else if (base === "teams") {
       if (staff) staffOnly();
       else if (user.role === "participant") {
-        if (!route && req.method === "POST") { body.creatorId = user.id; ownCohort(body.cohortId); }
+        // Nest stores a bare @Post() path as "/", not an empty string.
+        if ((route === "" || route === "/") && req.method === "POST") { body.creatorId = user.id; ownCohort(body.cohortId); }
         else if (route === "join") { body.participantId = user.id; }
         else if (route === "my/:participantId") { if (params.participantId !== user.id) return this.deny(); }
         else if (route.startsWith("invite/")) {
