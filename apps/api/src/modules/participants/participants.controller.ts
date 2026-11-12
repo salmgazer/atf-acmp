@@ -58,6 +58,7 @@ import { AuditInterceptor } from "@/common/interceptors/audit.interceptor";
 import { AuditAction } from "@/database/entities/audit-log.entity";
 import { ParticipantImportService } from "./participant-import.service";
 import { ParticipantImportDto, ApplyParticipantImportDto } from "./dto/participant-import.dto";
+import { StaffParticipantProfileDto } from "./dto/staff-participant-profile.dto";
 
 @ApiTags("participants")
 @Controller("participants")
@@ -245,6 +246,13 @@ export class ParticipantsController {
     @Body() dto: UpdateParticipantDto
   ) {
     return this.participantsService.update(id, dto);
+  }
+
+  @Patch(":id/profile")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @ApiOperation({ summary: "Edit participant profile and learning records as staff" })
+  updateStaffProfile(@Param("id", ParseUUIDPipe) id: string, @Body() dto: StaffParticipantProfileDto, @CurrentUser() actor: { id: string; role: string; email?: string }) {
+    return this.participantsService.updateStaffProfile(id, dto, actor);
   }
 
   @Patch(':id/group')

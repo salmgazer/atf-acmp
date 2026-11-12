@@ -75,7 +75,7 @@ export class HealthController {
       status: "ok",
       timestamp: new Date().toISOString(),
       uptime: Math.floor((Date.now() - this.startTime) / 1000),
-      version: process.env.npm_package_version || "0.1.3",
+      version: process.env.npm_package_version || "0.1.4",
     };
   }
 
@@ -186,7 +186,7 @@ export class HealthController {
       status: allHealthy ? "ok" : "error",
       timestamp: new Date().toISOString(),
       uptime: Math.floor((Date.now() - this.startTime) / 1000),
-      version: process.env.npm_package_version || "0.1.3",
+      version: process.env.npm_package_version || "0.1.4",
       database: dbHealth.database,
       redis: redisHealth.redis,
       memory: {
