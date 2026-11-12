@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, ILike, In, Raw } from "typeorm";
-import { COUNTRY_NAMES } from "@acmp/shared";
+import { BRIEF_COUNTRY_SQL, countryValues, participantBriefScope } from "@/common/services/brief-country-access";
 import { Brief, BriefStatus, BriefRevision, BriefRevisionAction, BriefRevisionActorType, calculateBriefScores, ScoringAnswers } from "@/database/entities/brief.entity";
 import { Vertical } from "@/database/entities/vertical.entity";
 import { BriefEvent } from "@/database/entities/brief-event.entity";
@@ -26,12 +26,6 @@ import {
   PaginatedBriefsDto,
   StaffUpdateBriefDto,
 } from "./dto/brief.dto";
-
-function countryValues(value: string): string[] {
-  const country = value.trim().toLowerCase();
-  const match = Object.entries(COUNTRY_NAMES).find(([code, name]) => code.toLowerCase() === country || name.toLowerCase() === country);
-  return match ? match.map(item => item.toLowerCase()) : [country];
-}
 
 @Injectable()
 export class BriefsService {
@@ -97,7 +91,9 @@ export class BriefsService {
     });
   }
 
-  async findAll(query: BriefQueryDto): Promise<PaginatedBriefsDto> {
+  async findAll(query: BriefQueryDto, participantId?: string): Promise<PaginatedBriefsDto> {
+    const scope = participantId ? await participantBriefScope(this.briefRepository.manager, participantId) : null;
+    if (scope) query = { ...query, cohortId: scope.cohortId, status: BriefStatus.APPROVED };
     const page = query.page || 1;
     const limit = query.limit || 20;
     const skip = (page - 1) * limit;
@@ -144,8 +140,13 @@ export class BriefsService {
     }
 
     let scopedWhere = where;
-    if (query.country?.trim()) {
-      const match = () => Raw(alias => `LOWER(BTRIM(${alias})) IN (:...briefCountryValues)`, { briefCountryValues: countryValues(query.country!) });
+    let countries = scope?.countries;
+    if (query.country?.trim()) countries = countries
+      ? countries.filter(country => countryValues(country).some(value => countryValues(query.country!).includes(value)))
+      : [query.country];
+    if (countries) {
+      const values = [...new Set(countries.flatMap(countryValues))];
+      const match = () => values.length ? Raw(alias => `LOWER(BTRIM(${alias})) IN (:...briefCountryValues)`, { briefCountryValues: values }) : In([]);
       scopedWhere = [
         { ...where, problemCountry: match() },
         { ...where, problemCountry: Raw(alias => `NULLIF(BTRIM(${alias}), '') IS NULL`), organization: { country: match() } },
@@ -168,9 +169,11 @@ export class BriefsService {
     };
   }
 
-  async findApproved(cohortId: string, verticalId?: string, search?: string): Promise<Brief[]> {
+  async findApproved(cohortId: string, verticalId?: string, search?: string, participantId?: string): Promise<Brief[]> {
+    const scope = participantId ? await participantBriefScope(this.briefRepository.manager, participantId) : null;
+    if (scope) cohortId = scope.cohortId;
     // Only use cache if no filters (most common case)
-    if (!verticalId && !search) {
+    if (!participantId && !verticalId && !search) {
       const cacheKey = this.cacheService.buildKey(CACHE_KEYS.BRIEFS_BY_COHORT, cohortId, "approved");
       const cached = await this.cacheService.get<Brief[]>(cacheKey);
       if (cached) {
@@ -184,6 +187,11 @@ export class BriefsService {
       .leftJoinAndSelect("brief.organization", "organization")
       .where("brief.cohortId = :cohortId", { cohortId })
       .andWhere("brief.status = :status", { status: BriefStatus.APPROVED });
+
+    if (scope) {
+      const values = [...new Set(scope.countries.flatMap(countryValues))];
+      queryBuilder.andWhere(values.length ? `${BRIEF_COUNTRY_SQL} IN (:...memberCountryValues)` : "1=0", { memberCountryValues: values });
+    }
 
     if (verticalId) {
       queryBuilder.andWhere("brief.verticalId = :verticalId", { verticalId });
@@ -201,7 +209,7 @@ export class BriefsService {
       .getMany();
 
     // Cache results if no filters
-    if (!verticalId && !search) {
+    if (!participantId && !verticalId && !search) {
       const cacheKey = this.cacheService.buildKey(CACHE_KEYS.BRIEFS_BY_COHORT, cohortId, "approved");
       await this.cacheService.set(cacheKey, results, CACHE_TTL.MEDIUM);
     }
@@ -584,7 +592,7 @@ export class BriefsService {
     return this.briefRepository.save(brief);
   }
 
-  async getStatistics(cohortId?: string, country?: string): Promise<{
+  async getStatistics(cohortId?: string, country?: string, participantId?: string): Promise<{
     total: number;
     draft: number;
     submitted: number;
@@ -593,13 +601,23 @@ export class BriefsService {
     rejected: number;
     revisionRequested: number;
   }> {
+    const scope = participantId ? await participantBriefScope(this.briefRepository.manager, participantId) : null;
+    if (scope) cohortId = scope.cohortId;
     const countsQuery = this.briefRepository
       .createQueryBuilder("brief")
       .select("brief.status", "status")
       .addSelect("COUNT(*)", "count")
       .where(cohortId ? "brief.cohort_id = :cohortId" : "1=1", { cohortId });
-    if (country?.trim()) countsQuery.leftJoin("brief.organization", "organization")
-      .andWhere("LOWER(BTRIM(COALESCE(NULLIF(BTRIM(brief.problem_country), ''), organization.country))) IN (:...briefCountryValues)", { briefCountryValues: countryValues(country) });
+    if (scope) {
+      const values = [...new Set(scope.countries.flatMap(countryValues))];
+      countsQuery.leftJoin("brief.organization", "organization")
+        .andWhere("brief.status = :visibleStatus", { visibleStatus: BriefStatus.APPROVED })
+        .andWhere(values.length ? `${BRIEF_COUNTRY_SQL} IN (:...memberCountryValues)` : "1=0", { memberCountryValues: values });
+    }
+    if (country?.trim()) {
+      if (!scope) countsQuery.leftJoin("brief.organization", "organization");
+      countsQuery.andWhere(`${BRIEF_COUNTRY_SQL} IN (:...briefCountryValues)`, { briefCountryValues: countryValues(country) });
+    }
     const statusCounts = await countsQuery.groupBy("brief.status").getRawMany();
 
     const countMap: Record<string, number> = {};

@@ -1,4 +1,5 @@
 import { assertChallengeStarted } from "../services/team-rules";
+import { isBriefCountryAllowed, participantBriefScope } from "../services/brief-country-access";
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { PATH_METADATA } from "@nestjs/common/constants";
@@ -116,7 +117,12 @@ export class ResourceAccessGuard implements CanActivate {
       } else {
         if (!read || !["participant", "mentor"].includes(user.role)) return this.deny();
         if (params.id) {
-          if (!await find("Brief", { id: params.id, cohortId: user.cohortId, status: "approved" })) return this.deny();
+          const brief = await repo("Brief").findOne({ where: { id: params.id, cohortId: user.cohortId, status: "approved" }, relations: ["organization"] });
+          if (!brief) return this.deny();
+          if (user.role === "participant") {
+            const scope = await participantBriefScope(this.db.manager, user.id);
+            if (brief.cohortId !== scope.cohortId || !isBriefCountryAllowed(brief, scope.countries)) return this.deny();
+          }
         } else if (params.cohortId) ownCohort(params.cohortId);
         else { query.cohortId = user.cohortId; query.status = "approved"; }
       }

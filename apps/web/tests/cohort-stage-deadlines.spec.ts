@@ -76,6 +76,6 @@ test.describe('UTC stage editor', () => {
     const request = page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/admin/stages'));
     await dialog.getByRole('button', { name: 'Create', exact: true }).click();
     expect((await request).postDataJSON().deadline).toBe('2032-07-08T16:45:00.000Z');
-    expect(state.writes.at(-1)?.body.deadline).toBe('2032-07-08T16:45:00.000Z');
+    await expect.poll(() => state.writes.at(-1)?.body.deadline).toBe('2032-07-08T16:45:00.000Z');
   });
 });

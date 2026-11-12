@@ -1,6 +1,7 @@
 import { assertParticipantTeamAdmission, assertMemberAdmission, teamRuleContext, clearTeamRegistration } from "@/common/services/team-rules";
 import { ATF_TEAM_MAX, canShareTeam, evaluateTeamRules, normalizeTeamCountry } from "@acmp/shared";
 import { resolveCohortGroup } from "@/common/services/cohort-groups";
+import { briefCountry, confirmedTeamCountries, isBriefCountryAllowed } from "@/common/services/brief-country-access";
 import { Transactional, afterCommit } from "@/common/decorators/transactional.decorator";
 import { SocketSessionsService } from "@/auth/socket-sessions.service";
 import { Optional } from "@nestjs/common";
@@ -28,7 +29,7 @@ import {
 } from "@/database/entities/team.entity";
 import { Participant, ParticipantStatus } from "@/database/entities/participant.entity";
 import { Cohort } from "@/database/entities/cohort.entity";
-import { Brief } from "@/database/entities/brief.entity";
+import { Brief, BriefStatus } from "@/database/entities/brief.entity";
 import { ChatChannel, ChannelMember, ChannelType, SenderType } from "@/database/entities/chat.entity";
 import { ScheduledSession, ScheduledSessionStatus } from "@/database/entities/mentor.entity";
 import {
@@ -910,7 +911,7 @@ export class TeamsService {
     const { team, members } = await teamRuleContext(this.teamRepository.manager, id);
     if (team.status === TeamStatus.DISQUALIFIED) throw new BadRequestException("Disqualified teams cannot register");
     const country = normalizeTeamCountry(competitionCountry);
-    const report = evaluateTeamRules(team.cohort, members, { competitionCountry: country, hasBrief: !!team.briefId, problemCountry: team.brief?.problemCountry || team.brief?.organization?.country });
+    const report = evaluateTeamRules(team.cohort, members, { competitionCountry: country, hasBrief: !!team.briefId, problemCountry: team.brief ? briefCountry(team.brief) : undefined });
     if (!report.canRegister) throw new BadRequestException(report.registrationIssues.map(issue => issue.message).join("; "));
     await this.teamRepository.update(id, { competitionCountry: country, registeredAt: new Date(), challengeStartedAt: null, status: TeamStatus.FORMING });
     return this.findOne(id);
@@ -932,7 +933,8 @@ export class TeamsService {
     const previousBriefId = team.briefId;
 
     const brief = await this.briefRepository.findOne({
-      where: { id: briefId },
+      where: { id: briefId, cohortId: team.cohortId, status: BriefStatus.APPROVED },
+      relations: ["organization"],
     });
     if (!brief) {
       throw new NotFoundException("Brief not found");
@@ -950,9 +952,8 @@ export class TeamsService {
     }
 
     // Update team with new brief
-    const updateData: any = { briefId };
-    const briefCountry = normalizeTeamCountry(brief.problemCountry || brief.organization?.country || (await this.briefRepository.findOne({ where: { id: briefId }, relations: ["organization"] }))?.organization?.country);
-    if (team.competitionCountry && briefCountry !== normalizeTeamCountry(team.competitionCountry)) throw new BadRequestException("The brief's problem country must match the team's competition country");
+    if (!isBriefCountryAllowed(brief, confirmedTeamCountries(team.members, team.cohortId))) throw new BadRequestException("The brief's problem country must match a confirmed team member's country");
+    const updateData: any = { briefId, competitionCountry: briefCountry(brief) };
     updateData.challengeStartedAt = null;
     updateData.status = TeamStatus.FORMING;
     await this.teamRepository.update(id, updateData);
