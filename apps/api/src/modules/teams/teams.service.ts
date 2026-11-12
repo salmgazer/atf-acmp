@@ -1,5 +1,5 @@
 import { assertParticipantTeamAdmission, assertMemberAdmission, teamRuleContext, clearTeamRegistration } from "@/common/services/team-rules";
-import { evaluateTeamRules, normalizeTeamCountry } from "@acmp/shared";
+import { ATF_TEAM_MAX, canShareTeam, evaluateTeamRules, normalizeTeamCountry } from "@acmp/shared";
 import { resolveCohortGroup } from "@/common/services/cohort-groups";
 import { Transactional, afterCommit } from "@/common/decorators/transactional.decorator";
 import { SocketSessionsService } from "@/auth/socket-sessions.service";
@@ -282,7 +282,7 @@ export class TeamsService {
     const confirmedMemberCount = team.members.filter(
       (m) => m.status === TeamMemberStatus.CONFIRMED
     ).length;
-    if (confirmedMemberCount >= (cohort?.teamSizeMax || 5)) {
+    if (confirmedMemberCount >= Math.min(ATF_TEAM_MAX, cohort?.teamSizeMax || ATF_TEAM_MAX)) {
       throw new BadRequestException("Team has reached maximum capacity");
     }
 
@@ -401,17 +401,17 @@ export class TeamsService {
     const confirmedMemberCount = team.members.filter(
       (m) => m.status === TeamMemberStatus.CONFIRMED
     ).length;
-    if (confirmedMemberCount >= (cohort?.teamSizeMax || 5)) {
+    if (confirmedMemberCount >= Math.min(ATF_TEAM_MAX, cohort?.teamSizeMax || ATF_TEAM_MAX)) {
       throw new BadRequestException("Team has reached maximum capacity");
     }
 
     await assertMemberAdmission(this.teamRepository.manager, teamId, pendingMember.participantId);
 
-    // Update member status to CONFIRMED
-    pendingMember.status = TeamMemberStatus.CONFIRMED;
-    pendingMember.confirmedAt = new Date();
-    pendingMember.confirmedBy = confirmedBy;
-    await this.memberRepository.save(pendingMember);
+    // Atomic transition: a concurrent withdrawal must never be resurrected by save().
+    const confirmation = { status: TeamMemberStatus.CONFIRMED, confirmedAt: new Date(), confirmedBy };
+    const updated = await this.memberRepository.update({ id: pendingMember.id, teamId, status: TeamMemberStatus.PENDING }, confirmation);
+    if (!updated.affected) throw new ConflictException("This join request changed. Refresh the team before confirming it.");
+    Object.assign(pendingMember, confirmation);
     await clearTeamRegistration(this.teamRepository.manager, teamId);
 
     // Now update participant status to ASSIGNED
@@ -827,17 +827,20 @@ export class TeamsService {
     return savedRequest;
   }
 
-  async findOpenTeams(cohortId: string, search?: string): Promise<Team[]> {
+  async findOpenTeams(cohortId: string, search?: string, participantId?: string): Promise<Team[]> {
     // Get cohort for max team size
     const cohort = await this.cohortRepository.findOne({
       where: { id: cohortId },
     });
-    const maxTeamSize = cohort?.teamSizeMax || 5;
+    const maxTeamSize = Math.min(ATF_TEAM_MAX, cohort?.teamSizeMax || ATF_TEAM_MAX);
+    const requester = participantId ? await this.participantRepository.findOne({ where: { id: participantId, cohortId }, relations: ["preference"] }) : null;
+    if (participantId && !requester) throw new NotFoundException("Participant not found in this cohort");
 
     const queryBuilder = this.teamRepository
       .createQueryBuilder("team")
       .leftJoinAndSelect("team.members", "member")
       .leftJoinAndSelect("member.participant", "participant")
+      .leftJoinAndSelect("team.cohort", "cohort")
       .where("team.cohortId = :cohortId", { cohortId })
       .andWhere("team.status = :status", { status: TeamStatus.FORMING });
 
@@ -849,19 +852,30 @@ export class TeamsService {
     }
 
     const teams = await queryBuilder.getMany();
+    // Preferences are used internally only; do not attach matching profiles to
+    // the returned team/member objects or trust caller-supplied consent flags.
+    const ids = [...new Set(teams.flatMap(team => team.members.filter(member => member.status === TeamMemberStatus.CONFIRMED).map(member => member.participantId)))];
+    const profiles = requester && ids.length ? await this.participantRepository.find({ where: { id: In(ids), cohortId }, relations: ["preference"] }) : [];
+    const byId = new Map(profiles.map(profile => [profile.id, profile]));
 
     // Filter to only teams with available spots (count only confirmed members)
     return teams.filter((team) => {
-      const confirmedCount = team.members.filter(
+      const confirmed = team.members.filter(
         (m) => m.status === TeamMemberStatus.CONFIRMED
-      ).length;
-      return confirmedCount < maxTeamSize;
+      );
+      if (confirmed.length >= maxTeamSize) return false;
+      if (!requester) return true;
+      const members = confirmed.map(member => byId.get(member.participantId));
+      return (team.group || null) === (requester.group || null)
+        && members.every((member): member is Participant => !!member)
+        && canShareTeam([...members, requester]);
     });
   }
 
   async findParticipantTeam(participantId: string): Promise<Team | null> {
-    const membership = await this.memberRepository.findOne({
-      where: { participantId },
+    const confirmed = await this.memberRepository.findOne({ where: { participantId, status: TeamMemberStatus.CONFIRMED } });
+    const membership = confirmed || await this.memberRepository.findOne({
+      where: { participantId, status: TeamMemberStatus.PENDING },
       relations: ["team"],
     });
 
@@ -1028,7 +1042,7 @@ export class TeamsService {
     });
 
     // Check team size
-    if (team.members.length >= (cohort?.teamSizeMax || 5)) {
+    if (team.members.filter(member => member.status === TeamMemberStatus.CONFIRMED).length >= Math.min(ATF_TEAM_MAX, cohort?.teamSizeMax || ATF_TEAM_MAX)) {
       throw new BadRequestException("Team has reached maximum capacity");
     }
 
@@ -1071,6 +1085,12 @@ export class TeamsService {
     await this.addMemberToTeamChat(teamId, participant);
 
     return member;
+  }
+
+  @Transactional()
+  async withdrawJoinRequest(teamId: string, participantId: string): Promise<void> {
+    const removed = await this.memberRepository.delete({ teamId, participantId, status: TeamMemberStatus.PENDING });
+    if (!removed.affected) throw new ConflictException("This join request was already approved or withdrawn. Refresh your team before trying again.");
   }
 
   @Transactional()
@@ -1151,7 +1171,7 @@ export class TeamsService {
     const cohort = await this.cohortRepository.findOne({
       where: { id: team.cohortId },
     });
-    if (team.members.length >= (cohort?.teamSizeMax || 5)) {
+    if (team.members.filter(member => member.status === TeamMemberStatus.CONFIRMED).length >= Math.min(ATF_TEAM_MAX, cohort?.teamSizeMax || ATF_TEAM_MAX)) {
       throw new BadRequestException("Team has reached maximum capacity");
     }
 
@@ -1311,7 +1331,7 @@ export class TeamsService {
     const cohort = await this.cohortRepository.findOne({
       where: { id: invitation.team.cohortId },
     });
-    if (invitation.team.members.length >= (cohort?.teamSizeMax || 5)) {
+    if (invitation.team.members.filter(member => member.status === TeamMemberStatus.CONFIRMED).length >= Math.min(ATF_TEAM_MAX, cohort?.teamSizeMax || ATF_TEAM_MAX)) {
       throw new BadRequestException("Team has reached maximum capacity");
     }
 

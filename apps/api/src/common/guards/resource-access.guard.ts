@@ -121,6 +121,7 @@ export class ResourceAccessGuard implements CanActivate {
         else { query.cohortId = user.cohortId; query.status = "approved"; }
       }
     } else if (base === "teams") {
+      if (route === ":id/join-request" && user.role !== "participant") return this.deny();
       if (staff) staffOnly();
       else if (user.role === "participant") {
         // Nest stores a bare @Post() path as "/", not an empty string.
@@ -131,6 +132,10 @@ export class ResourceAccessGuard implements CanActivate {
           if (!await find("Team", { inviteCode: params.inviteCode, cohortId: user.cohortId })) return this.deny();
         } else if (route.startsWith("open/")) ownCohort(params.cohortId);
         else if (route === "search/participants") { query.cohortId = user.cohortId; }
+        else if (req.method === "DELETE" && route === ":id/join-request") {
+          // Withdrawing one's own pending request grants no team read/management access.
+          if (!params.id || !await find("TeamMember", { teamId: params.id, participantId: user.id })) return this.deny();
+        }
         else {
           const member = await teamId();
           if (!params.id || member.teamId !== params.id || route.startsWith("admin/")) return this.deny();
