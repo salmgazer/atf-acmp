@@ -8,7 +8,7 @@ function team(id: string, count: number, pending = false, max = 5) {
     ...(pending ? [{ id: 'pending-self', teamId: id, participantId: selfId, role: 'member', status: 'pending', participant: { ...self, firstName: 'PendingApplicant' } }] : []),
   ] };
 }
-async function setup(page: Page, context: BrowserContext, options: { current?: ReturnType<typeof team>; open?: ReturnType<typeof team>[]; failWithdraw?: boolean; approveDuringWithdrawal?: boolean } = {}) {
+async function setup(page: Page, context: BrowserContext, options: { current?: ReturnType<typeof team>; open?: ReturnType<typeof team>[]; noTeamResponse?: 'empty' | 'json-null'; failWithdraw?: boolean; approveDuringWithdrawal?: boolean } = {}) {
   let current = options.current || null;
   const open = options.open || [], requests: { method: string; path: string }[] = [];
   let withdrawals = 0;
@@ -19,7 +19,13 @@ async function setup(page: Page, context: BrowserContext, options: { current?: R
     requests.push({ path, method });
     let data: unknown = [];
     if (path.endsWith('/auth/me') || path.endsWith('/participants/me')) data = self;
-    else if (path.endsWith(`/teams/my/${selfId}`)) data = current;
+    else if (path.endsWith(`/teams/my/${selfId}`)) {
+      // NestJS sends an empty HTTP body when the controller returns null.
+      if (!current && options.noTeamResponse !== 'json-null') {
+        await route.fulfill({ status: 200, body: '' }); return;
+      }
+      data = current;
+    }
     else if (path.endsWith(`/teams/open/${cohortId}`)) data = open;
     else if (path.endsWith('/teams/join') && method === 'POST') {
       current = { ...team('requested-team', 1, true), name: 'Requested team' }; data = current;
@@ -36,6 +42,19 @@ async function setup(page: Page, context: BrowserContext, options: { current?: R
   });
   await page.goto('/participant/team');
   return { requests, withdrawals: () => withdrawals };
+}
+
+for (const noTeamResponse of ['empty', 'json-null'] as const) {
+  test(`participants without a team can use Find Team with a ${noTeamResponse} response`, async ({ page, context }) => {
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await setup(page, context, { noTeamResponse, open: [team('Available team', 1)] });
+    await expect(page.getByRole('heading', { name: 'Find a Team', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Create Team', exact: true })).toBeVisible();
+    await expect(page.getByPlaceholder('Enter 8-character code')).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Available team', exact: true }).getByRole('button', { name: 'Join', exact: true })).toBeEnabled();
+    expect(errors).toEqual([]);
+  });
 }
 
 test('cards count confirmed members only and disable full teams', async ({ page, context }) => {

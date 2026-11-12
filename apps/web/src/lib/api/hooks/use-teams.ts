@@ -275,7 +275,11 @@ export function useTeam(id: string) {
 export function useMyTeam(participantId: string) {
   return useQuery({
     queryKey: teamKeys.my(participantId),
-    queryFn: () => api.get<Team | null>(`/teams/my/${participantId}`),
+    queryFn: async () => {
+      const team = await api.get<Team | null | "">(`/teams/my/${participantId}`);
+      // NestJS returns an empty HTTP body for null; Axios exposes it as "".
+      return team === "" ? null : team;
+    },
     enabled: !!participantId,
   });
 }
