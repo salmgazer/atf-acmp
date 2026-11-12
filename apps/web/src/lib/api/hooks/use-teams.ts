@@ -364,9 +364,9 @@ export function useJoinTeamByCode() {
     mutationFn: ({ inviteCode, participantId }: { inviteCode: string; participantId: string }) =>
       api.post<Team>("/teams/join", { inviteCode, participantId }),
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: teamKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: teamKeys.all });
       queryClient.invalidateQueries({ queryKey: teamKeys.my(variables.participantId) });
-      toast.success(`You've joined ${data.name}!`);
+      toast.success(`Request sent to ${data.name}. Waiting for team lead approval.`);
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to join team");
@@ -453,14 +453,16 @@ export function useLeaveTeam() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ teamId, participantId }: { teamId: string; participantId: string }) =>
-      api.delete(`/teams/${teamId}/members/${participantId}`),
+    mutationFn: ({ teamId, participantId, pending }: { teamId: string; participantId: string; pending?: boolean }) =>
+      api.delete(pending ? `/teams/${teamId}/join-request` : `/teams/${teamId}/members/${participantId}`),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: teamKeys.all });
       queryClient.invalidateQueries({ queryKey: teamKeys.my(variables.participantId) });
-      toast.success("Left team successfully");
+      queryClient.invalidateQueries({ queryKey: ["participants"] });
+      toast.success(variables.pending ? "Join request withdrawn" : "Left team successfully");
     },
-    onError: (error: Error) => {
+    onError: (error: Error & { statusCode?: number }, variables) => {
+      if (variables.pending && [403, 409].includes(error.statusCode || 0)) queryClient.invalidateQueries({ queryKey: teamKeys.my(variables.participantId) });
       toast.error(error.message || "Failed to leave team");
     },
   });

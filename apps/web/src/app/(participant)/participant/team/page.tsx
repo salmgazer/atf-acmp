@@ -1004,10 +1004,12 @@ function OpenTeamCard({
   onJoin: () => void;
   isJoining: boolean;
 }) {
-  const spotsLeft = 5 - team.members.length; // Assuming max 5 for now
+  const confirmedMembers = team.members.filter(member => member.status === "confirmed");
+  const capacity = Math.min(5, team.cohort?.teamSizeMax || 5);
+  const spotsLeft = Math.max(0, capacity - confirmedMembers.length);
 
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <article aria-label={team.name} className="rounded-lg border bg-card p-4">
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold truncate">{team.name}</h3>
@@ -1019,36 +1021,36 @@ function OpenTeamCard({
           <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
             <div className="flex items-center gap-1">
               <Users className="h-3.5 w-3.5" />
-              <span>{team.members.length} members</span>
+              <span>{confirmedMembers.length} confirmed members</span>
             </div>
-            <span className="text-green-600">{spotsLeft} spots left</span>
+            <span className="text-green-600">{spotsLeft} {spotsLeft === 1 ? "spot" : "spots"} left</span>
           </div>
           {/* Show member names */}
           <div className="flex flex-wrap gap-1 mt-2">
-            {team.members.slice(0, 3).map((member) => (
+            {confirmedMembers.slice(0, 3).map((member) => (
               <Badge key={member.id} variant="secondary" className="text-xs">
                 {member.participant.firstName}
               </Badge>
             ))}
-            {team.members.length > 3 && (
+            {confirmedMembers.length > 3 && (
               <Badge variant="secondary" className="text-xs">
-                +{team.members.length - 3} more
+                +{confirmedMembers.length - 3} more
               </Badge>
             )}
           </div>
         </div>
-        <Button size="sm" onClick={onJoin} disabled={isJoining}>
+        <Button size="sm" onClick={onJoin} disabled={isJoining || spotsLeft === 0}>
           {isJoining ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <>
-              Join
+              {spotsLeft === 0 ? "Full" : "Join"}
               <ChevronRight className="ml-1 h-4 w-4" />
             </>
           )}
         </Button>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -1107,6 +1109,30 @@ function InvitationCard({ invitation }: { invitation: TeamInvitation }) {
   );
 }
 
+function PendingTeamRequest({ team, participantId }: { team: Team; participantId: string }) {
+  const [confirming, setConfirming] = useState(false);
+  const withdraw = useLeaveTeam();
+  return <div className="space-y-5">
+    <h1 className="text-xl font-bold">Team request pending</h1>
+    <div className="rounded-lg border bg-card p-6 space-y-4">
+      <h2 className="font-semibold">{team.name}</h2>
+      <p className="text-sm text-muted-foreground">Your join request is waiting for a team lead to approve it. You are not a confirmed member yet.</p>
+      <p className="text-sm text-muted-foreground">To request another team or create your own, withdraw this request first.</p>
+      <Button variant="outline" onClick={() => setConfirming(true)}>Withdraw join request</Button>
+    </div>
+    <Dialog open={confirming} onOpenChange={setConfirming}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Withdraw join request?</DialogTitle><DialogDescription>Cancel your pending request to join {team.name}. This will not remove any confirmed team member.</DialogDescription></DialogHeader>
+        {withdraw.isError && <p role="alert" className="text-sm text-destructive">{withdraw.error.message || "Could not withdraw your request. Try again."}</p>}
+        <DialogFooter>
+          <Button variant="outline" disabled={withdraw.isPending} onClick={() => setConfirming(false)}>Keep request</Button>
+          <Button disabled={withdraw.isPending} onClick={() => withdraw.mutate({ teamId: team.id, participantId, pending: true })}>{withdraw.isPending ? "Withdrawing…" : "Withdraw request"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </div>;
+}
+
 function TeamPageContent() {
   const { data: participant, isLoading: participantLoading } = useCurrentParticipant();
   const { data: team, isLoading: teamLoading } = useMyTeam(participant?.id || "");
@@ -1135,7 +1161,9 @@ function TeamPageContent() {
 
   return (
     <ParticipantLayout>
-      {team ? (
+      {team?.members.some(member => member.participantId === participant.id && member.status === "pending") ? (
+        <PendingTeamRequest team={team} participantId={participant.id} />
+      ) : team ? (
         <TeamDashboard team={team} participantId={participant.id} />
       ) : (
         <NoTeamView participantId={participant.id} cohortId={participant.cohortId} group={participant.group || null} />
