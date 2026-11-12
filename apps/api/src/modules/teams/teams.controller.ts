@@ -112,9 +112,10 @@ export class TeamsController {
   @ApiResponse({ status: 200, description: "List of open teams" })
   async findOpenTeams(
     @Param("cohortId", ParseUUIDPipe) cohortId: string,
-    @Query("search") search?: string
+    @Query("search") search: string | undefined,
+    @CurrentUser() user: { id: string; role: string },
   ) {
-    return this.teamsService.findOpenTeams(cohortId, search);
+    return this.teamsService.findOpenTeams(cohortId, search, user.role === "participant" ? user.id : undefined);
   }
 
   // ============ Staff: Removal Request Management ============
@@ -278,6 +279,14 @@ export class TeamsController {
   }
 
   // ============ Member Management ============
+
+  @Delete(":id/join-request")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Audit({ action: AuditAction.UPDATE, entityType: "TeamMember", getDescription: () => "Withdrew own pending team join request" })
+  @ApiOperation({ summary: "Withdraw your pending team join request" })
+  async withdrawJoinRequest(@Param("id", ParseUUIDPipe) id: string, @CurrentUser() user: { id: string }) {
+    return this.teamsService.withdrawJoinRequest(id, user.id);
+  }
 
   @Post(":id/members")
   @Audit({
