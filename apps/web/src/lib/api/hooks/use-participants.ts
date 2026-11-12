@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/client";
 import { toast } from "sonner";
-import type { ParticipantLearningProfile, ParticipantMatchingProfile, BuildDeployAbility, MatchingRole, MatchingSector, MatchingTeamStatus } from "@acmp/shared";
+import type { ParticipantLearningProfile, ParticipantMatchingProfile, BuildDeployAbility, MatchingRole, MatchingSector, MatchingTeamStatus, PARTICIPANT_PROFILE_IMPORT_FIELDS, PARTICIPANT_LEARNING_FIELDS } from "@acmp/shared";
 
 // Types
 export type ParticipantStatus =
@@ -311,6 +311,21 @@ export function useUpdateParticipant() {
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to update participant");
+    },
+  });
+}
+
+type StaffProfileField = typeof PARTICIPANT_PROFILE_IMPORT_FIELDS[number] | typeof PARTICIPANT_LEARNING_FIELDS[number] | "country" | "lmsEmail" | "skills" | "interests";
+export type StaffParticipantProfileChanges = Partial<Pick<Participant, StaffProfileField>>;
+export function useUpdateStaffParticipantProfile() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, changes, expectedUpdatedAt, allowLearningCorrections }: { id: string; changes: StaffParticipantProfileChanges; expectedUpdatedAt: string; allowLearningCorrections?: boolean }) =>
+      api.patch<Participant>(`/participants/${id}/profile`, { ...changes, expectedUpdatedAt, allowLearningCorrections }),
+    onSuccess: participant => {
+      cache.setQueryData(participantKeys.detail(participant.id), participant);
+      void cache.invalidateQueries({ predicate: query => ["participants", "teams", "briefs", "matching", "team-formation"].includes(String(query.queryKey[0])) });
+      toast.success("Participant profile updated");
     },
   });
 }
