@@ -11,10 +11,12 @@ import {
   IsUrl,
   ValidateNested,
   IsEmail,
+  IsBoolean,
   Min,
   Max,
 } from "class-validator";
 import { Type } from "class-transformer";
+import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import { BriefStatus } from "@/database/entities/brief.entity";
 
 class ResourceDto {
@@ -396,6 +398,8 @@ export class RestoreRevisionDto {
 }
 
 export class BriefQueryDto {
+  @IsOptional() @IsString() @MaxLength(255) country?: string;
+  @IsOptional() @IsBoolean() @StrictBoolean() pendingReview?: boolean;
   @IsOptional()
   @IsUUID()
   cohortId?: string;

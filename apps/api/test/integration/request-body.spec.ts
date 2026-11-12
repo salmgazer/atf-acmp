@@ -17,6 +17,9 @@ import { ParticipantsController } from "@/modules/participants/participants.cont
 import { ParticipantsService } from "@/modules/participants/participants.service";
 import { ParticipantInvitesService } from "@/modules/participants/participant-invites.service";
 import { ParticipantImportService } from "@/modules/participants/participant-import.service";
+import { BriefsController } from "@/modules/briefs/briefs.controller";
+import { BriefsService } from "@/modules/briefs/briefs.service";
+import { VerticalsService } from "@/modules/verticals/verticals.service";
 
 describe("Organization HTTP request body parsing", () => {
   let app: INestApplication;
@@ -30,13 +33,15 @@ describe("Organization HTTP request body parsing", () => {
     apply: jest.fn(async () => ({ created: 1 })),
   };
   const participantImports = { preview: jest.fn(async () => ({ ready: true })), enqueue: jest.fn(async () => ({ id: "batch" })) };
+  const briefs = { findAll: jest.fn(async () => ({ data: [], total: 0 })), getStatistics: jest.fn(async () => ({ total: 0 })) };
   beforeAll(async () => {
     const auth = { canActivate(context: ExecutionContext) {
-      context.switchToHttp().getRequest().user = { id: actorId, role: "program_manager" };
+      const request = context.switchToHttp().getRequest();
+      request.user = { id: actorId, role: request.headers["x-test-role"] || "program_manager", cohortId: partnerId };
       return true;
     } };
     const module = await Test.createTestingModule({
-      controllers: [OrganizationsController, ParticipantsController],
+      controllers: [OrganizationsController, ParticipantsController, BriefsController],
       providers: [
         { provide: OrganizationsService, useValue: organizations },
         { provide: UploadService, useValue: {} },
@@ -45,6 +50,8 @@ describe("Organization HTTP request body parsing", () => {
         { provide: ParticipantsService, useValue: {} },
         { provide: ParticipantInvitesService, useValue: {} },
         { provide: ParticipantImportService, useValue: participantImports },
+        { provide: BriefsService, useValue: briefs },
+        { provide: VerticalsService, useValue: {} },
       ],
     })
       .overrideGuard(JwtAuthGuard).useValue(auth)
@@ -115,5 +122,27 @@ describe("Organization HTTP request body parsing", () => {
     const response = await fetch(`${base}/bulk-approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: '{"organizationIds":' });
     expect(response.status).toBe(400);
     expect(organizations.bulkApprove).not.toHaveBeenCalled();
+  });
+
+  it("retains country and pending-review query fields through real HTTP validation", async () => {
+    const url = base.replace(/\/organizations$/, "/briefs");
+    expect((await fetch(`${url}?country=Ghana&pendingReview=true&cohortId=${partnerId}&page=2&limit=100`)).status).toBe(200);
+    expect(briefs.findAll).toHaveBeenLastCalledWith(expect.objectContaining({ country: "Ghana", pendingReview: true, cohortId: partnerId, page: 2, limit: 100 }));
+    expect((await fetch(`${url}?country=Kenya&pendingReview=false`)).status).toBe(200);
+    expect(briefs.findAll).toHaveBeenLastCalledWith(expect.objectContaining({ country: "Kenya", pendingReview: false }));
+    briefs.findAll.mockClear();
+    expect((await fetch(`${url}?pendingReview=invalid`)).status).toBe(400);
+    expect(briefs.findAll).not.toHaveBeenCalled();
+    expect((await fetch(`${url}/statistics?cohortId=${partnerId}&country=Kenya`)).status).toBe(200);
+    expect(briefs.getStatistics).toHaveBeenCalledWith(partnerId, "Kenya");
+  });
+
+  it("preserves participant cohort and approved-only boundaries when filtering pending briefs", async () => {
+    const url = base.replace(/\/organizations$/, "/briefs");
+    const response = await fetch(`${url}?country=Kenya&pendingReview=true&status=submitted&cohortId=${actorId}`, { headers: { "x-test-role": "participant" } });
+    expect(response.status).toBe(200);
+    expect(briefs.findAll).toHaveBeenCalledWith(expect.objectContaining({ country: "Kenya", pendingReview: true, cohortId: partnerId, status: "approved" }));
+    expect((await fetch(`${url}/statistics?country=Kenya`, { headers: { "x-test-role": "participant" } })).status).toBe(200);
+    expect(briefs.getStatistics).toHaveBeenCalledWith(partnerId, "Kenya");
   });
 });
