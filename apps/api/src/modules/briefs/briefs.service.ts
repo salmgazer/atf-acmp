@@ -6,7 +6,8 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, ILike, In } from "typeorm";
+import { Repository, ILike, In, Raw } from "typeorm";
+import { COUNTRY_NAMES } from "@acmp/shared";
 import { Brief, BriefStatus, BriefRevision, BriefRevisionAction, BriefRevisionActorType, calculateBriefScores, ScoringAnswers } from "@/database/entities/brief.entity";
 import { Vertical } from "@/database/entities/vertical.entity";
 import { BriefEvent } from "@/database/entities/brief-event.entity";
@@ -25,6 +26,12 @@ import {
   PaginatedBriefsDto,
   StaffUpdateBriefDto,
 } from "./dto/brief.dto";
+
+function countryValues(value: string): string[] {
+  const country = value.trim().toLowerCase();
+  const match = Object.entries(COUNTRY_NAMES).find(([code, name]) => code.toLowerCase() === country || name.toLowerCase() === country);
+  return match ? match.map(item => item.toLowerCase()) : [country];
+}
 
 @Injectable()
 export class BriefsService {
@@ -112,6 +119,11 @@ export class BriefsService {
     if (query.status) {
       where.status = query.status;
     }
+    if (query.pendingReview) {
+      const pending = [BriefStatus.SUBMITTED, BriefStatus.IN_REVIEW];
+      // Intersect rather than override statuses imposed by authorization guards.
+      where.status = query.status ? In(pending.filter(status => status === query.status)) : In(pending);
+    }
 
     if (query.search) {
       where.title = ILike(`%${query.search}%`);
@@ -131,8 +143,16 @@ export class BriefsService {
       order = { updatedAt: query.sortOrder === "asc" ? "ASC" : "DESC" };
     }
 
+    let scopedWhere = where;
+    if (query.country?.trim()) {
+      const match = () => Raw(alias => `LOWER(BTRIM(${alias})) IN (:...briefCountryValues)`, { briefCountryValues: countryValues(query.country!) });
+      scopedWhere = [
+        { ...where, problemCountry: match() },
+        { ...where, problemCountry: Raw(alias => `NULLIF(BTRIM(${alias}), '') IS NULL`), organization: { country: match() } },
+      ];
+    }
     const [data, total] = await this.briefRepository.findAndCount({
-      where,
+      where: scopedWhere,
       relations: ["vertical", "organization"],
       order,
       skip,
@@ -564,7 +584,7 @@ export class BriefsService {
     return this.briefRepository.save(brief);
   }
 
-  async getStatistics(cohortId?: string): Promise<{
+  async getStatistics(cohortId?: string, country?: string): Promise<{
     total: number;
     draft: number;
     submitted: number;
@@ -573,18 +593,14 @@ export class BriefsService {
     rejected: number;
     revisionRequested: number;
   }> {
-    const where: any = {};
-    if (cohortId) {
-      where.cohortId = cohortId;
-    }
-
-    const statusCounts = await this.briefRepository
+    const countsQuery = this.briefRepository
       .createQueryBuilder("brief")
       .select("brief.status", "status")
       .addSelect("COUNT(*)", "count")
-      .where(cohortId ? "brief.cohort_id = :cohortId" : "1=1", { cohortId })
-      .groupBy("brief.status")
-      .getRawMany();
+      .where(cohortId ? "brief.cohort_id = :cohortId" : "1=1", { cohortId });
+    if (country?.trim()) countsQuery.leftJoin("brief.organization", "organization")
+      .andWhere("LOWER(BTRIM(COALESCE(NULLIF(BTRIM(brief.problem_country), ''), organization.country))) IN (:...briefCountryValues)", { briefCountryValues: countryValues(country) });
+    const statusCounts = await countsQuery.groupBy("brief.status").getRawMany();
 
     const countMap: Record<string, number> = {};
     statusCounts.forEach((row) => {
