@@ -106,6 +106,22 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     expect((await db.getRepository(TeamMember).findOneByOrFail({ id: pending.id })).status).toBe(TeamMemberStatus.PENDING);
   });
 
+  it("withdraws only pending requests without changing confirmed teams, then permits a new request", async () => {
+    const lead = await builder(), applicant = await person(), team = await teams.create({ name: "Request lifecycle", cohortId: cohort.id, creatorId: lead.id });
+    await teams.joinByInviteCode(team.inviteCode, applicant.id);
+    expect((await teams.findParticipantTeam(applicant.id))?.id).toBe(team.id);
+    await teams.withdrawJoinRequest(team.id, applicant.id);
+    expect(await teams.findParticipantTeam(applicant.id)).toBeNull();
+    expect(await db.getRepository(TeamMember).countBy({ teamId: team.id, participantId: lead.id, status: TeamMemberStatus.CONFIRMED })).toBe(1);
+    expect((await db.getRepository(Participant).findOneByOrFail({ id: applicant.id })).status).toBe(ParticipantStatus.READY);
+    await expect(teams.withdrawJoinRequest(team.id, lead.id)).rejects.toThrow("already approved or withdrawn");
+    await teams.joinByInviteCode(team.inviteCode, applicant.id);
+    const pending = await db.getRepository(TeamMember).findOneByOrFail({ teamId: team.id, participantId: applicant.id });
+    await teams.confirmPendingMember(team.id, pending.id, lead.id);
+    await expect(teams.withdrawJoinRequest(team.id, applicant.id)).rejects.toThrow("already approved or withdrawn");
+    expect(await db.getRepository(TeamMember).countBy({ teamId: team.id, participantId: applicant.id, status: TeamMemberStatus.CONFIRMED })).toBe(1);
+  });
+
   it("requires everyone's cross-country consent, including when accepting an old invitation", async () => {
     const { team, lead, members } = await roster();
     const foreign = await person({ country: "Nigeria" }, { crossCountryWilling: true });

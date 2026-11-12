@@ -38,7 +38,9 @@ export async function assertParticipantTeamAdmission(manager: EntityManager, coh
   if (!participant) throw new NotFoundException("Participant not found");
   const issues = participantTeamIssues(participant, cohort);
   if (issues.length) throw new BadRequestException(issues.map(issue => issue.message).join("; "));
-  if (!canShareTeam([...members.filter(member => member.id !== participant.id), participant])) throw new BadRequestException("Members must share a group, and every member must opt in to a cross-country team");
+  const roster = [...members.filter(member => member.id !== participant.id), participant];
+  if (new Set(roster.map(member => member.group || null)).size > 1) throw new BadRequestException("Participants must belong to the same cohort group as the team");
+  if (!canShareTeam(roster)) throw new BadRequestException("Cross-country teams require every member, including you, to opt in to cross-country teaming in their matching preferences");
   return participant;
 }
 export async function assertMemberAdmission(manager: EntityManager, teamId: string, participantId: string) {
