@@ -36,6 +36,7 @@ import {
 import { UploadService } from "@/common/services/upload.service";
 import { VerticalsService } from "../verticals/verticals.service";
 import { Audit } from "@/common/decorators/audit.decorator";
+import { CurrentUser } from "@/common/decorators/current-user.decorator";
 import { AuditInterceptor } from "@/common/interceptors/audit.interceptor";
 import { AuditAction } from "@/database/entities/audit-log.entity";
 
@@ -68,8 +69,8 @@ export class BriefsController {
   @Get()
   @ApiOperation({ summary: "Get all briefs with pagination and filters" })
   @ApiResponse({ status: 200, description: "List of briefs" })
-  findAll(@Query() query: BriefQueryDto) {
-    return this.briefsService.findAll(query);
+  findAll(@Query() query: BriefQueryDto, @CurrentUser() user?: { id: string; role: string }) {
+    return user?.role === "participant" ? this.briefsService.findAll(query, user.id) : this.briefsService.findAll(query);
   }
 
   @Get("approved")
@@ -81,9 +82,10 @@ export class BriefsController {
   findApproved(
     @Query("cohortId") cohortId: string,
     @Query("verticalId") verticalId?: string,
-    @Query("search") search?: string
+    @Query("search") search?: string,
+    @CurrentUser() user?: { id: string; role: string },
   ) {
-    return this.briefsService.findApproved(cohortId, verticalId, search);
+    return this.briefsService.findApproved(cohortId, verticalId, search, user?.role === "participant" ? user.id : undefined);
   }
 
   @Get("verticals/:cohortId")
@@ -98,8 +100,8 @@ export class BriefsController {
   @ApiOperation({ summary: "Get brief statistics" })
   @ApiQuery({ name: "cohortId", required: false, description: "Filter by cohort" })
   @ApiResponse({ status: 200, description: "Brief statistics" })
-  getStatistics(@Query() query: BriefQueryDto) {
-    return this.briefsService.getStatistics(query.cohortId, query.country);
+  getStatistics(@Query() query: BriefQueryDto, @CurrentUser() user?: { id: string; role: string }) {
+    return user?.role === "participant" ? this.briefsService.getStatistics(query.cohortId, query.country, user.id) : this.briefsService.getStatistics(query.cohortId, query.country);
   }
 
   @Get(":id")
