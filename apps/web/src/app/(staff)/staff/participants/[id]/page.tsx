@@ -5,6 +5,7 @@ import { ParticipantGroupEditor } from "@/components/cohorts/participant-group-e
 import { MatchingProfile } from "@/components/participants/matching-profile";
 import { ParticipantProgrammeControls } from "@/components/participants/participant-programme-controls";
 import { LearningProfile } from "@/components/participants/learning-profile";
+import { StaffParticipantProfileEditor } from "@/components/participants/staff-participant-profile-editor";
 
 import { use, useState } from "react";
 import Link from "next/link";
@@ -167,7 +168,7 @@ function ParticipantDetailContent({ id }: { id: string }) {
     <StaffLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-start justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-4">
             <Button asChild variant="ghost" size="icon">
               <Link href="/staff/participants">
@@ -207,7 +208,8 @@ function ParticipantDetailContent({ id }: { id: string }) {
               </div>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <StaffOnly permission="manage"><StaffParticipantProfileEditor participant={participant} countries={cohort?.countries || []} /></StaffOnly>
             <StaffOnly permission="manage"><Button
               variant="outline"
               onClick={() => {

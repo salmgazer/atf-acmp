@@ -9,11 +9,12 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
-import { Repository, ILike, In, IsNull } from "typeorm";
+import { Repository, ILike, In, IsNull, Not, Raw } from "typeorm";
 import * as bcrypt from "bcrypt";
 import {
   Participant,
@@ -23,7 +24,8 @@ import {
 import { AuditLog, AuditAction } from "@/database/entities/audit-log.entity";
 import { Cohort } from "@/database/entities/cohort.entity";
 import { Vertical } from "@/database/entities/vertical.entity";
-import { COUNTRY_NAMES, MATCHING_CONSENT_VERSION } from "@acmp/shared";
+import { COUNTRY_NAMES, MATCHING_CONSENT_VERSION, PARTICIPANT_LEARNING_FIELDS, normalizeTeamCountry } from "@acmp/shared";
+import { STAFF_PARTICIPANT_PROFILE_FIELDS, StaffParticipantProfileDto } from "./dto/staff-participant-profile.dto";
 import { NotificationsService } from "@/modules/notifications/notifications.service";
 import { NotificationRecipientType, NotificationType, NotificationPriority } from "@/database/entities/notification.entity";
 import { EmailService } from "@/email/email.service";
@@ -262,6 +264,69 @@ export class ParticipantsService {
     const participant = await this.findOne(id);
     Object.assign(participant, dto);
     return this.participantRepository.save(participant);
+  }
+
+  @Transactional()
+  async updateStaffProfile(id: string, dto: StaffParticipantProfileDto, actor: { id: string; role: string; email?: string }): Promise<Participant> {
+    if (!["super_admin", "program_manager"].includes(actor.role)) throw new ForbiddenException("Only staff managers may edit participant profiles");
+    const manager = this.participantRepository.manager;
+    // Coordinate with manual LMS imports as well as concurrent profile saves.
+    await manager.query("SELECT pg_advisory_xact_lock(hashtext('participant-learning-import'))");
+    const participant = await this.participantRepository.findOne({ where: { id }, lock: { mode: "pessimistic_write" } });
+    if (!participant) throw new NotFoundException("Participant not found");
+    if (participant.updatedAt.toISOString() !== new Date(dto.expectedUpdatedAt).toISOString()) throw new ConflictException("Participant changed since this editor was opened. Reload the profile and review your edits.");
+    const patch: Record<string, any> = {};
+    for (const field of STAFF_PARTICIPANT_PROFILE_FIELDS) {
+      const value = dto[field];
+      if (value !== undefined) patch[field] = typeof value === "string" ? value.trim() || null : Array.isArray(value) ? [...new Set(value.map(item => item.trim()).filter(Boolean))] : value;
+    }
+    for (const field of ["firstName", "lastName", "country"]) if (field in patch && !patch[field]) throw new BadRequestException(`${field} is required`);
+    if ("country" in patch) {
+      patch.country = normalizeTeamCountry(patch.country);
+      const cohort = await this.cohortRepository.findOne({ where: { id: participant.cohortId } });
+      if (!cohort) throw new NotFoundException("Cohort not found");
+      if (cohort.countries?.length && !cohort.countries.some(country => normalizeTeamCountry(country).toLowerCase() === patch.country.toLowerCase())) throw new BadRequestException("Choose a country enabled for this cohort");
+    }
+    if (patch.lmsEmail) {
+      patch.lmsEmail = patch.lmsEmail.toLowerCase();
+      const owner = await this.participantRepository.findOne({ where: { id: Not(id), lmsEmail: Raw(alias => `LOWER(${alias}) = :profileLmsEmail`, { profileLmsEmail: patch.lmsEmail }) } });
+      if (owner && owner.id !== id) throw new ConflictException("LMS email belongs to another participant");
+    }
+    const learningChanged = PARTICIPANT_LEARNING_FIELDS.some(field => field in patch && patch[field] !== participant[field]);
+    if (learningChanged) {
+      const correction = ["learningCertificateIssued", "learningFinishedAllLessons", "learningHalfwayReached"].some(field => (participant as any)[field] === true && field in patch && patch[field] !== true)
+        || ["learningCertificateId", "learningCertificateDate"].some(field => (participant as any)[field] && field in patch && patch[field] !== (participant as any)[field]);
+      if (correction && !dto.allowLearningCorrections) throw new BadRequestException("Review and confirm the learning correction before saving");
+      if ("learningCertificateIssued" in patch && patch.learningCertificateIssued !== true) { patch.learningCertificateId = null; patch.learningCertificateDate = null; }
+      const final = { ...participant, ...patch };
+      if (final.learningCertificateIssued === true && !final.learningCertificateId) throw new BadRequestException("A learning certificate marked Yes requires a certificate ID");
+      if (final.learningCertificateIssued !== true && (final.learningCertificateId || final.learningCertificateDate)) throw new BadRequestException("Set learning certificate issued to Yes when providing a certificate ID or date");
+      if (final.learningCertificateDate) {
+        const date = new Date(final.learningCertificateDate);
+        if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== final.learningCertificateDate) throw new BadRequestException("Enter a valid learning certificate date");
+      }
+      if (final.learningCertificateId) {
+        const owner = await this.participantRepository.findOne({ where: { learningCertificateId: final.learningCertificateId }, withDeleted: true });
+        if (owner && owner.id !== id) throw new ConflictException("Learning certificate ID belongs to another participant");
+      }
+    }
+    if ("githubUsername" in patch) patch.githubAccountStatus = patch.githubUsername ? "has_account" : "no_account";
+    const changes = Object.entries(patch).filter(([field, value]) => JSON.stringify(value) !== JSON.stringify((participant as any)[field] ?? null));
+    if (!changes.length) return this.findOne(id);
+    const before = Object.fromEntries(changes.map(([field]) => [field, (participant as any)[field] ?? null]));
+    Object.assign(participant, patch);
+    try { await this.participantRepository.save(participant); }
+    catch (error) {
+      if ((error as { code?: string }).code === "23505") throw new ConflictException("A participant already uses this learning certificate ID");
+      throw error;
+    }
+    await manager.save(AuditLog, manager.create(AuditLog, {
+      actorId: actor.id, actorEmail: actor.email, action: AuditAction.UPDATE, entityType: "Participant", entityId: id,
+      description: "Updated participant profile and learning records",
+      before,
+      after: Object.fromEntries(changes), metadata: { source: "staff-profile-editor", learningCorrectionReviewed: !!dto.allowLearningCorrections },
+    }));
+    return this.findOne(id);
   }
 
   @Transactional()

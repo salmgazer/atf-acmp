@@ -33,6 +33,7 @@ describe("Organization HTTP request body parsing", () => {
     apply: jest.fn(async () => ({ created: 1 })),
   };
   const participantImports = { preview: jest.fn(async () => ({ ready: true })), enqueue: jest.fn(async () => ({ id: "batch" })) };
+  const participantProfiles = { updateStaffProfile: jest.fn(async (id: string, dto: any) => ({ id, city: dto.city })) };
   const briefs = { findAll: jest.fn(async () => ({ data: [], total: 0 })), getStatistics: jest.fn(async () => ({ total: 0 })) };
   beforeAll(async () => {
     const auth = { canActivate(context: ExecutionContext) {
@@ -47,7 +48,7 @@ describe("Organization HTTP request body parsing", () => {
         { provide: UploadService, useValue: {} },
         { provide: PartnerInvitesService, useValue: invites },
         { provide: SubmissionImportService, useValue: submissions },
-        { provide: ParticipantsService, useValue: {} },
+        { provide: ParticipantsService, useValue: participantProfiles },
         { provide: ParticipantInvitesService, useValue: {} },
         { provide: ParticipantImportService, useValue: participantImports },
         { provide: BriefsService, useValue: briefs },
@@ -144,5 +145,28 @@ describe("Organization HTTP request body parsing", () => {
     expect(briefs.findAll).toHaveBeenCalledWith(expect.objectContaining({ country: "Kenya", pendingReview: true, cohortId: partnerId, status: "approved" }), actorId);
     expect((await fetch(`${url}/statistics?country=Kenya`, { headers: { "x-test-role": "participant" } })).status).toBe(200);
     expect(briefs.getStatistics).toHaveBeenCalledWith(partnerId, "Kenya", actorId);
+  });
+
+  const patchProfile = (body: unknown, role = "program_manager") => fetch(base.replace(/\/organizations$/, `/participants/${actorId}/profile`), { method: "PATCH", headers: { "Content-Type": "application/json", "x-test-role": role }, body: JSON.stringify(body) });
+  const profileBody = () => ({ expectedUpdatedAt: "2026-11-12T20:00:00.000Z", city: " Newtown ", learningCertificateIssued: false });
+  it.each(["program_manager", "super_admin"])("allows %s to save the staff profile using its authenticated identity", async role => {
+    expect((await patchProfile(profileBody(), role)).status).toBe(200);
+    expect(participantProfiles.updateStaffProfile).toHaveBeenCalledWith(actorId, expect.objectContaining({ city: "Newtown", learningCertificateIssued: false }), expect.objectContaining({ id: actorId, role }));
+  });
+  it.each(["participant", "mentor", "organization", "viewer", "evaluator"])("rejects staff profile edits from %s", async role => {
+    expect((await patchProfile(profileBody(), role)).status).toBe(403);
+    expect(participantProfiles.updateStaffProfile).not.toHaveBeenCalled();
+  });
+  it.each(["email", "passwordHash", "participantId", "cohortId", "group", "status", "mustChangePassword", "matchingProfileConsent", "learningImportedAt", "actorId"])("rejects attempts to edit protected field %s", async field => {
+    expect((await patchProfile({ ...profileBody(), [field]: actorId })).status).toBe(400);
+    expect(participantProfiles.updateStaffProfile).not.toHaveBeenCalled();
+  });
+  it("validates profile values and preserves explicit false correction flags", async () => {
+    for (const patch of [{ firstName: " " }, { lastName: null }, { skills: null }, { lmsEmail: "not-an-email" }, { githubUsername: "https://github.com/example" }, { city: "a".repeat(151) }, { learningHalfwayReached: "maybe" }, { expectedUpdatedAt: "invalid" }]) {
+      expect((await patchProfile({ ...profileBody(), ...patch })).status).toBe(400);
+    }
+    expect(participantProfiles.updateStaffProfile).not.toHaveBeenCalled();
+    expect((await patchProfile({ ...profileBody(), learningCertificateIssued: "false", allowLearningCorrections: "false" })).status).toBe(200);
+    expect(participantProfiles.updateStaffProfile).toHaveBeenCalledWith(actorId, expect.objectContaining({ learningCertificateIssued: false, allowLearningCorrections: false }), expect.anything());
   });
 });

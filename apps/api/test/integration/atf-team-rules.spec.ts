@@ -80,6 +80,17 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     await expect(assertChallengeStarted(db.manager, team.id)).rejects.toThrow("certificate checks");
   });
 
+  it("rechecks eligibility after staff profile corrections without clearing timely registration", async () => {
+    const { team, lead, members } = await roster();
+    const registered = await teams.registerTeam(team.id, "Ghana");
+    const problem = await brief(); await teams.assignBrief(team.id, problem.id); await certify(members); await teams.startChallenge(team.id);
+    const current = await db.getRepository(Participant).findOneByOrFail({ id: lead.id });
+    await participants.updateStaffProfile(lead.id, { expectedUpdatedAt: current.updatedAt.toISOString(), pythonSkill: "Beginner" }, actor);
+    expect((await teams.findOne(team.id)).registeredAt).toEqual(registered.registeredAt);
+    await expect(assertChallengeStarted(db.manager, team.id)).rejects.toThrow("qualified builder");
+    expect(await db.getRepository(TeamMember).countBy({ teamId: team.id, status: TeamMemberStatus.CONFIRMED })).toBe(3);
+  });
+
   it("requires builder and non-computing coverage, a resident competition country and a problem based in that country", async () => {
     const { team, lead, members } = await roster();
     await expect(teams.registerTeam(team.id, "Kenya")).rejects.toThrow("where at least one member lives");
