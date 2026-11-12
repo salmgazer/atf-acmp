@@ -98,8 +98,8 @@ export class BriefsController {
   @ApiOperation({ summary: "Get brief statistics" })
   @ApiQuery({ name: "cohortId", required: false, description: "Filter by cohort" })
   @ApiResponse({ status: 200, description: "Brief statistics" })
-  getStatistics(@Query("cohortId") cohortId?: string) {
-    return this.briefsService.getStatistics(cohortId);
+  getStatistics(@Query() query: BriefQueryDto) {
+    return this.briefsService.getStatistics(query.cohortId, query.country);
   }
 
   @Get(":id")

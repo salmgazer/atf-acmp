@@ -186,6 +186,8 @@ export interface ReviewBriefDto {
 }
 
 export interface BriefQueryParams {
+  country?: string;
+  pendingReview?: boolean;
   cohortId?: string;
   organizationId?: string;
   verticalId?: string;
@@ -226,7 +228,7 @@ export const briefKeys = {
   detail: (id: string) => [...briefKeys.details(), id] as const,
   revisions: (id: string) => [...briefKeys.detail(id), "revisions"] as const,
   revision: (briefId: string, revisionId: string) => [...briefKeys.revisions(briefId), revisionId] as const,
-  statistics: (cohortId?: string) => [...briefKeys.all, "statistics", cohortId] as const,
+  statistics: (cohortId?: string, country?: string) => [...briefKeys.all, "statistics", cohortId, country] as const,
 };
 
 // Hooks
@@ -240,6 +242,8 @@ export function useBriefs(params?: BriefQueryParams) {
       if (params?.verticalId) searchParams.set("verticalId", params.verticalId);
       if (params?.status) searchParams.set("status", params.status);
       if (params?.search) searchParams.set("search", params.search);
+      if (params?.country) searchParams.set("country", params.country);
+      if (params?.pendingReview !== undefined) searchParams.set("pendingReview", String(params.pendingReview));
       if (params?.page) searchParams.set("page", String(params.page));
       if (params?.limit) searchParams.set("limit", String(params.limit));
       if (params?.sortBy) searchParams.set("sortBy", params.sortBy);
@@ -285,13 +289,14 @@ export function useBriefRevisions(id: string) {
   });
 }
 
-export function useBriefStatistics(cohortId?: string | null) {
+export function useBriefStatistics(cohortId?: string | null, country?: string) {
   return useQuery({
-    queryKey: briefKeys.statistics(cohortId ?? undefined),
+    queryKey: briefKeys.statistics(cohortId ?? undefined, country),
     queryFn: async (): Promise<BriefStatistics> => {
-      const url = cohortId 
-        ? `/briefs/statistics?cohortId=${cohortId}`
-        : "/briefs/statistics";
+      const params = new URLSearchParams();
+      if (cohortId) params.set("cohortId", cohortId);
+      if (country) params.set("country", country);
+      const url = `/briefs/statistics?${params.toString()}`;
       const result = await api.get<BriefStatistics>(url);
       return result ?? {
         total: 0,
