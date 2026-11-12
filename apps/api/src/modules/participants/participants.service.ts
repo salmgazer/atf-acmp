@@ -1,6 +1,8 @@
 import { SocketSessionsService } from "@/auth/socket-sessions.service";
 import { applyProgrammeOptOut } from "@/common/services/team-rules";
 import { resolveCohortGroup } from "@/common/services/cohort-groups";
+import { isBriefCountryAllowed, participantBriefScope } from "@/common/services/brief-country-access";
+import { Brief, BriefStatus } from "@/database/entities/brief.entity";
 import { afterCommit, Transactional } from "@/common/decorators/transactional.decorator";
 import {
   Injectable, Optional,
@@ -599,6 +601,7 @@ export class ParticipantsService {
     participantId: string,
     dto: OnboardingPreferencesDto
   ): Promise<ParticipantPreference> {
+    if (dto.briefRankings?.length) await this.validateBriefRankings(participantId, dto.briefRankings);
     let preference = await this.preferenceRepository.findOne({
       where: { participantId },
     });
@@ -682,6 +685,7 @@ export class ParticipantsService {
     participantId: string,
     briefRankings: string[]
   ): Promise<ParticipantPreference> {
+    if (briefRankings.length) await this.validateBriefRankings(participantId, briefRankings);
     let preference = await this.preferenceRepository.findOne({
       where: { participantId },
     });
@@ -698,6 +702,16 @@ export class ParticipantsService {
     preference.preferencesUpdatedAt = new Date();
 
     return this.preferenceRepository.save(preference);
+  }
+
+  private async validateBriefRankings(participantId: string, briefRankings: string[]): Promise<void> {
+    const scope = await participantBriefScope(this.participantRepository.manager, participantId);
+    const briefs = await this.participantRepository.manager.getRepository(Brief).find({
+      where: { id: In(briefRankings), cohortId: scope.cohortId, status: BriefStatus.APPROVED }, relations: ["organization"],
+    });
+    if (briefs.length !== new Set(briefRankings).size || briefs.some(brief => !isBriefCountryAllowed(brief, scope.countries))) {
+      throw new BadRequestException("Rank only approved briefs from the countries of your confirmed team members");
+    }
   }
 
   /**

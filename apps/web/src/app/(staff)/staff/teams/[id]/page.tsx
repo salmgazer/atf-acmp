@@ -1,7 +1,7 @@
 "use client";
 
 import { TeamEligibility } from "@/components/teams/team-eligibility";
-import { hasStaffPermission } from "@acmp/shared";
+import { hasStaffPermission, normalizeTeamCountry } from "@acmp/shared";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { StaffOnly } from "@/components/auth/staff-only";
 import { use, useState } from "react";
@@ -246,11 +246,13 @@ function TeamDetailContent({ id }: { id: string }) {
   const StatusIcon = config.icon;
   const isDisqualified = team.status === "disqualified";
 
-  // For changing briefs, show all briefs with capacity OR the currently assigned brief
+  const memberCountries = new Set(team.members.filter(member => member.status === "confirmed")
+    .map(member => normalizeTeamCountry(member.participant?.country).toLowerCase()).filter(Boolean));
+  // Include each confirmed member's country, preserving the existing capacity rule.
   const availableBriefs = briefs?.filter((b) => {
     const assignedCount = b.teamsCount || 0;
-    // Include if has capacity OR is the currently assigned brief
-    return assignedCount < b.maxTeams || b.id === team.briefId;
+    const country = normalizeTeamCountry(b.problemCountry?.trim() || b.organization?.country);
+    return memberCountries.has(country.toLowerCase()) && (assignedCount < b.maxTeams || b.id === team.briefId);
   });
 
   const copyInviteCode = () => {
@@ -632,7 +634,7 @@ function TeamDetailContent({ id }: { id: string }) {
           <DialogHeader>
             <DialogTitle>Assign Brief to Team</DialogTitle>
             <DialogDescription>
-              Select a brief to assign to &quot;{team.name}&quot;
+              Choose a brief from any confirmed member&apos;s country for &quot;{team.name}&quot;. The team&apos;s competition country will follow the selected brief.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -648,7 +650,7 @@ function TeamDetailContent({ id }: { id: string }) {
                       <div>
                         <div>{brief.title}</div>
                         <div className="text-xs text-muted-foreground">
-                          {brief.organization?.name} • {brief.teamsCount}/{brief.maxTeams} teams
+                          {normalizeTeamCountry(brief.problemCountry?.trim() || brief.organization?.country)} • {brief.organization?.name} • {brief.teamsCount}/{brief.maxTeams} teams
                         </div>
                       </div>
                     </SelectItem>

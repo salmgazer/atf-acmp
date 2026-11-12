@@ -141,8 +141,8 @@ describe("Organization HTTP request body parsing", () => {
     const url = base.replace(/\/organizations$/, "/briefs");
     const response = await fetch(`${url}?country=Kenya&pendingReview=true&status=submitted&cohortId=${actorId}`, { headers: { "x-test-role": "participant" } });
     expect(response.status).toBe(200);
-    expect(briefs.findAll).toHaveBeenCalledWith(expect.objectContaining({ country: "Kenya", pendingReview: true, cohortId: partnerId, status: "approved" }));
+    expect(briefs.findAll).toHaveBeenCalledWith(expect.objectContaining({ country: "Kenya", pendingReview: true, cohortId: partnerId, status: "approved" }), actorId);
     expect((await fetch(`${url}/statistics?country=Kenya`, { headers: { "x-test-role": "participant" } })).status).toBe(200);
-    expect(briefs.getStatistics).toHaveBeenCalledWith(partnerId, "Kenya");
+    expect(briefs.getStatistics).toHaveBeenCalledWith(partnerId, "Kenya", actorId);
   });
 });

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   useApprovedBriefs,
+  participantBriefScopeKey,
   type Brief,
 } from "@/lib/api/hooks/use-briefs";
 import { useCurrentParticipant } from "@/lib/api/hooks/use-participants";
@@ -37,6 +38,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDebounce } from "@/lib/hooks/use-debounce";
+import { normalizeTeamCountry } from "@acmp/shared";
 
 function BriefCard({ brief, onClick }: { brief: Brief; onClick: () => void }) {
   const hasVideo = !!brief.videoUrl;
@@ -85,6 +87,7 @@ function BriefCard({ brief, onClick }: { brief: Brief; onClick: () => void }) {
       )}
 
       <div className="p-4 space-y-3">
+        {(brief.problemCountry?.trim() || brief.organization?.country) && <Badge variant="outline">{normalizeTeamCountry(brief.problemCountry?.trim() || brief.organization?.country)}</Badge>}
         {/* Title and Org */}
         <div>
           <h3 className="font-semibold line-clamp-2 leading-tight">{brief.title}</h3>
@@ -147,7 +150,8 @@ function BriefsContent() {
   const { data: briefs, isLoading: briefsLoading } = useApprovedBriefs(
     participant?.cohortId || "",
     selectedVerticalId || undefined,
-    debouncedSearch || undefined
+    debouncedSearch || undefined,
+    participantBriefScopeKey(participant, team),
   );
 
   const isLoading = participantLoading || teamLoading || (briefsLoading && !briefs);
@@ -179,7 +183,7 @@ function BriefsContent() {
         <div>
           <h1 className="text-xl font-bold">Browse Briefs</h1>
           <p className="text-sm text-muted-foreground">
-            Explore challenges from partner organizations
+            Explore challenges from the countries of your confirmed team members. Before joining a team, browse briefs from your own country.
           </p>
         </div>
 

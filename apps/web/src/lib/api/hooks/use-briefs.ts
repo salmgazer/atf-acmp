@@ -2,8 +2,13 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/client";
+import type { Team } from "./use-teams";
 import { toast } from "sonner";
 
+export function participantBriefScopeKey(participant?: { id: string; country: string }, team?: Team | null): string {
+  return JSON.stringify([participant?.id, participant?.country,
+    team?.members.filter(member => member.status === "confirmed").map(member => [member.participantId, member.participant?.country]).sort()]);
+}
 // Types
 export type BriefStatus = 
   | "draft" 
@@ -257,9 +262,9 @@ export function useBriefs(params?: BriefQueryParams) {
   });
 }
 
-export function useApprovedBriefs(cohortId: string, verticalId?: string, search?: string) {
+export function useApprovedBriefs(cohortId: string, verticalId?: string, search?: string, countryScopeKey?: string) {
   return useQuery({
-    queryKey: briefKeys.approved(cohortId, verticalId, search),
+    queryKey: [...briefKeys.approved(cohortId, verticalId, search), countryScopeKey],
     queryFn: async () => {
       const searchParams = new URLSearchParams();
       searchParams.set("cohortId", cohortId);
@@ -269,7 +274,8 @@ export function useApprovedBriefs(cohortId: string, verticalId?: string, search?
       return api.get<Brief[]>(`/briefs/approved?${searchParams.toString()}`);
     },
     enabled: !!cohortId,
-    placeholderData: (previousData) => previousData, // Keep previous data while fetching to prevent UI flicker
+    // Keep search/filter results while fetching, but never retain a former roster's country scope.
+    placeholderData: (previousData, previousQuery) => previousQuery?.queryKey.at(-1) === countryScopeKey ? previousData : undefined,
   });
 }
 

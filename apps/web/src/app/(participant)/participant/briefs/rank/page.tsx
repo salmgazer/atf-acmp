@@ -17,6 +17,8 @@ import {
   useUpdateBriefRankings,
 } from "@/lib/api/hooks/use-participants";
 import { useMyTeam } from "@/lib/api/hooks/use-teams";
+import { participantBriefScopeKey } from "@/lib/api/hooks/use-briefs";
+import { normalizeTeamCountry } from "@acmp/shared";
 import {
   ArrowLeft,
   GripVertical,
@@ -109,6 +111,7 @@ function SortableBriefItem({ brief, rank, isTopRanked }: SortableBriefItemProps)
       {/* Brief Info */}
       <div className="flex-1 min-w-0">
         <h3 className="font-medium text-sm line-clamp-1">{brief.title}</h3>
+        {(brief.problemCountry?.trim() || brief.organization?.country) && <span className="text-xs text-muted-foreground">{normalizeTeamCountry(brief.problemCountry?.trim() || brief.organization?.country)}</span>}
         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
           {brief.organization && (
             <span className="text-xs text-muted-foreground truncate max-w-[150px]">
@@ -200,7 +203,7 @@ function RankingContent() {
     participant?.id || ""
   );
   const { data: briefs, isLoading: briefsLoading } = useApprovedBriefs(
-    participant?.cohortId || ""
+    participant?.cohortId || "", undefined, undefined, participantBriefScopeKey(participant, team),
   );
   const updateRankingsMutation = useUpdateBriefRankings();
 
@@ -231,25 +234,17 @@ function RankingContent() {
     })
   );
 
-  // Initialize ordered briefs from preferences and available briefs
+  // Reconcile visibility when the confirmed roster changes, preserving local ranking order.
   useEffect(() => {
-    if (briefs && !initialized) {
-      const existingRankings = preferences?.briefRankings || [];
-      
-      // Start with briefs that were previously ranked (in order)
-      const rankedBriefs = existingRankings
-        .map((id) => briefs.find((b) => b.id === id))
-        .filter(Boolean) as Brief[];
-      
-      // Add remaining briefs that weren't ranked
-      const unrankedBriefs = briefs.filter(
-        (b) => !existingRankings.includes(b.id)
-      );
-      
-      setOrderedBriefs([...rankedBriefs, ...unrankedBriefs]);
+    if (briefs && !preferencesLoading && !teamLoading) {
+      setOrderedBriefs(current => {
+        const existingRankings = initialized ? current.map(brief => brief.id) : preferences?.briefRankings || [];
+        const rankedBriefs = existingRankings.map(id => briefs.find(brief => brief.id === id)).filter(Boolean) as Brief[];
+        return [...rankedBriefs, ...briefs.filter(brief => !existingRankings.includes(brief.id))];
+      });
       setInitialized(true);
     }
-  }, [briefs, preferences, initialized]);
+  }, [briefs, preferences, initialized, preferencesLoading, teamLoading]);
 
   // Handle drag start
   const handleDragStart = (event: DragStartEvent) => {

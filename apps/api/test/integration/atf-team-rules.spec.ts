@@ -176,6 +176,18 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     expect(found).toHaveLength(2); expect(found.every(t => t.registeredAt && !t.challengeStartedAt && t.status === TeamStatus.FORMING)).toBe(true);
   });
 
+  it("previews and finalizes an existing team's brief from a teammate's country instead of its old competition country", async () => {
+    const { team, impact, members } = await roster();
+    await teams.registerTeam(team.id, "Ghana");
+    for (const participant of members) await db.getRepository(ParticipantPreference).update({ participantId: participant.id }, { crossCountryWilling: true });
+    await db.getRepository(Participant).update(impact.id, { country: "Nigeria" });
+    const problem = await brief("Nigeria");
+    const preview = await formation.runTeamFormation(cohort.id, { config: { useBriefCentricAssignment: true } });
+    expect(preview.proposedBriefAssignments).toEqual(expect.arrayContaining([expect.objectContaining({ teamId: team.id, briefId: problem.id })]));
+    await formation.finalizeTeamFormation(cohort.id);
+    expect(await db.getRepository(Team).findOneByOrFail({ id: team.id })).toMatchObject({ briefId: problem.id, competitionCountry: "Nigeria" });
+  });
+
   it("revalidates a stale formation preview and rolls back every team if one member opts out", async () => {
     const people = [await builder(), await person({ fieldOfStudy: "Medicine" }), await person()];
     await formation.runTeamFormation(cohort.id);
