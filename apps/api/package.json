@@ -1,6 +1,6 @@
 {
   "name": "@acmp/api",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "scripts": {
     "dev": "TS_NODE_BASEURL=./dist/apps/api nest start --watch --exec \"node -r tsconfig-paths/register\"",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { COUNTRY_NAMES, SUPPORTED_COUNTRIES } from "@acmp/shared";
 import Link from "next/link";
 import { StaffLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -10,6 +11,7 @@ import {
   type Brief,
   type BriefStatus,
   type BriefQueryParams,
+  type PaginatedBriefs,
 } from "@/lib/api/hooks/use-briefs";
 import { useCohorts } from "@/lib/api/hooks/use-cohorts";
 import { useStaffCohortStore } from "@/lib/stores/staff-cohort-store";
@@ -62,6 +64,12 @@ const statusTabs: { value: BriefStatus | "all" | "pending"; label: string }[] = 
   { value: "revision_requested", label: "Revision Requested" },
 ];
 
+function countryName(value?: string | null): string {
+  const text = value?.trim() || "";
+  return Object.entries(COUNTRY_NAMES).find(([code, name]) => code.toLowerCase() === text.toLowerCase() || name.toLowerCase() === text.toLowerCase())?.[1] || text;
+}
+const briefCountry = (brief: Brief) => countryName(brief.problemCountry?.trim() || brief.organization?.country);
+
 // Priority score badge styling based on score range
 function getPriorityBadgeStyle(score?: number | null): { bgClass: string; textClass: string; label: string } {
   if (score === undefined || score === null) {
@@ -112,6 +120,9 @@ function BriefRow({ brief }: { brief: Brief }) {
           <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
           <span className="text-sm truncate max-w-[140px]">{brief.organization?.name || "Unknown"}</span>
         </div>
+      </td>
+      <td className="p-4">
+        <span className="text-sm text-muted-foreground whitespace-nowrap">{briefCountry(brief) || "—"}</span>
       </td>
       <td className="p-4">
         {brief.vertical ? (
@@ -169,6 +180,7 @@ function BriefsReviewContent() {
   const [hasInitialized, setHasInitialized] = useState(false);
   const [statusFilter, setStatusFilter] = useState<BriefStatus | "all" | "pending">("all");
   const [search, setSearch] = useState("");
+  const [countryFilter, setCountryFilter] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
   const [sortBy, setSortBy] = useState<BriefQueryParams["sortBy"]>("createdAt");
   const [sortOrder, setSortOrder] = useState<BriefQueryParams["sortOrder"]>("desc");
@@ -176,6 +188,7 @@ function BriefsReviewContent() {
 
   const { data: cohortsData } = useCohorts({ limit: 100 });
   const cohorts = cohortsData?.data || [];
+  const countries = [...new Set([...SUPPORTED_COUNTRIES, ...cohorts.flatMap(cohort => cohort.countries || [])].map(countryName))].filter(Boolean).sort();
 
   // Initialize local cohort from global when component mounts (if not yet set locally)
   useEffect(() => {
@@ -198,20 +211,20 @@ function BriefsReviewContent() {
     cohortId: effectiveCohortId,
     status: apiStatus,
     search: search || undefined,
+    country: countryFilter === "all" ? undefined : countryFilter,
+    pendingReview: statusFilter === "pending" ? true : undefined,
     limit: 100,
     sortBy,
     sortOrder,
   });
   
-  const { data: stats } = useBriefStatistics(effectiveCohortId);
+  const { data: stats } = useBriefStatistics(effectiveCohortId, countryFilter === "all" ? undefined : countryFilter);
 
-  let briefs = briefsData?.data || [];
-  if (statusFilter === "pending") {
-    briefs = briefs.filter(b => ["submitted", "in_review"].includes(b.status));
-  }
+  const briefs = briefsData?.data || [];
 
   const pendingCount = (stats?.submitted || 0) + (stats?.inReview || 0);
-  const hasActiveFilters = statusFilter !== "all" || (selectedCohortId !== null && selectedCohortId !== globalCohortId);
+  const activeFilterCount = Number(statusFilter !== "all") + Number(countryFilter !== "all") + Number(selectedCohortId !== null && selectedCohortId !== globalCohortId);
+  const hasActiveFilters = activeFilterCount > 0;
 
   // Toggle sort order or change sort field
   const handleSort = (field: BriefQueryParams["sortBy"]) => {
@@ -240,15 +253,20 @@ function BriefsReviewContent() {
       if (effectiveCohortId) params.set("cohortId", effectiveCohortId);
       if (apiStatus) params.set("status", apiStatus);
       if (search) params.set("search", search);
-      params.set("limit", "10000");
-
-      const response = await api.get<{ data: Brief[] }>(`/briefs?${params.toString()}`);
-      let allBriefs = response.data;
-
-      // Apply pending filter if needed
-      if (statusFilter === "pending") {
-        allBriefs = allBriefs.filter(b => ["submitted", "in_review"].includes(b.status));
-      }
+      if (countryFilter !== "all") params.set("country", countryFilter);
+      if (statusFilter === "pending") params.set("pendingReview", "true");
+      params.set("limit", "500");
+      if (sortBy) params.set("sortBy", sortBy);
+      if (sortOrder) params.set("sortOrder", sortOrder);
+      const allBriefs: Brief[] = [];
+      let page = 1, totalPages = 1;
+      do {
+        params.set("page", String(page));
+        const response = await api.get<PaginatedBriefs>(`/briefs?${params.toString()}`);
+        allBriefs.push(...response.data);
+        totalPages = response.totalPages || 1;
+        page++;
+      } while (page <= totalPages);
 
       if (allBriefs.length === 0) {
         toast.error("No briefs to export");
@@ -258,6 +276,7 @@ function BriefsReviewContent() {
       const headers = [
         "Title",
         "Partner",
+        "Country",
         "Vertical",
         "Status",
         "Priority Score",
@@ -271,6 +290,7 @@ function BriefsReviewContent() {
       const rows = allBriefs.map((b) => [
         b.title,
         b.organization?.name || "",
+        briefCountry(b),
         b.vertical?.name || "",
         b.status,
         b.priorityScore !== null && b.priorityScore !== undefined ? String(b.priorityScore) : "",
@@ -356,7 +376,7 @@ function BriefsReviewContent() {
         </div>
 
         {/* Search and Filter Toggle */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
@@ -367,6 +387,13 @@ function BriefsReviewContent() {
               className="w-full h-10 pl-11 pr-4 text-sm bg-transparent border border-border rounded-full focus:border-zinc-400 focus:outline-none placeholder:text-muted-foreground"
             />
           </div>
+          <Select value={countryFilter} onValueChange={setCountryFilter}>
+            <SelectTrigger aria-label="Filter briefs by country" className="w-48 h-10"><SelectValue placeholder="All countries" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All countries</SelectItem>
+              {countries.map(country => <SelectItem key={country} value={country}>{country}</SelectItem>)}
+            </SelectContent>
+          </Select>
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={`inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
@@ -379,7 +406,7 @@ function BriefsReviewContent() {
             Filters
             {hasActiveFilters && (
               <span className="flex items-center justify-center w-5 h-5 text-xs rounded-full bg-card text-foreground">
-                1
+                {activeFilterCount}
               </span>
             )}
           </button>
@@ -448,6 +475,7 @@ function BriefsReviewContent() {
                 onClick={() => {
                   setStatusFilter("all");
                   setSelectedCohortId(null);
+                  setCountryFilter("all");
                 }}
                 className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
               >
@@ -476,12 +504,13 @@ function BriefsReviewContent() {
             </p>
           </div>
         ) : (
-          <div className="rounded-xl border border-border bg-card overflow-hidden">
+          <div className="rounded-xl border border-border bg-card overflow-x-auto">
             <table className="w-full">
               <thead className="bg-muted">
                 <tr>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Brief</th>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Partner</th>
+                  <th className="text-left p-4 text-sm font-medium text-muted-foreground">Country</th>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Vertical</th>
                   <th 
                     className="text-left p-4 text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
