@@ -34,7 +34,7 @@ describe("MatchingService", () => {
     maxTeams: 3,
     verticalId: "vertical-1",
     tags: ["javascript", "react"],
-    organization: { name: "Test Org" },
+    organization: { name: "Test Org", country: "Ghana" },
     vertical: { name: "Tech" },
   };
 
@@ -47,7 +47,8 @@ describe("MatchingService", () => {
     members: [
       {
         participantId: "participant-1",
-        participant: { skills: ["javascript", "python"] },
+        status: "confirmed",
+        participant: { skills: ["javascript", "python"], country: "Ghana", cohortId: "cohort-123" },
       },
     ],
   });
@@ -531,13 +532,21 @@ describe("MatchingService", () => {
       expect(result.statistics).toHaveProperty("topThreePercentage");
     });
   });
-  it("keeps a registered team's brief matching within its competition country even when a foreign brief ranks higher", () => {
+  it("excludes briefs outside the confirmed roster's countries even when ranked higher", () => {
     const team = { team: { ...mockTeam, competitionCountry: "Ghana" }, briefRankings: ["foreign", "local"], verticalPreferences: [], skills: [], interests: [] };
     const foreign = { ...mockBrief, id: "foreign", problemCountry: "Nigeria" }, local = { ...mockBrief, id: "local", problemCountry: "GH" };
     const config = (service as any).normalizeConfig();
     const result = (service as any).executeMatching([team], [{ brief: foreign, availableSlots: 1 }, { brief: local, availableSlots: 1 }], config);
     expect(result.matches).toHaveLength(1); expect(result.matches[0].briefId).toBe("local");
     expect((service as any).executeMatching([team], [{ brief: foreign, availableSlots: 1 }], config).matches).toHaveLength(0);
+  });
+
+  it("matches a teammate's country ahead of the previously selected competition country", () => {
+    const team = { team: { ...mockTeam, competitionCountry: "Ghana", members: [{ participantId: "ghanaian", status: "confirmed", participant: { country: "GH", cohortId: "cohort-123" } }, { participantId: "nigerian", status: "confirmed", participant: { country: "NG", cohortId: "cohort-123" } }] }, briefRankings: ["nigeria", "ghana"], verticalPreferences: [], skills: [], interests: [] };
+    const briefs = [{ ...mockBrief, id: "nigeria", problemCountry: "Nigeria" }, { ...mockBrief, id: "ghana", problemCountry: "GH" }].map(brief => ({ brief, availableSlots: 1 }));
+    expect((service as any).executeMatching([team], briefs, (service as any).normalizeConfig()).matches[0].briefId).toBe("nigeria");
+    team.team.members[1].status = "pending";
+    expect((service as any).executeMatching([team], briefs, (service as any).normalizeConfig()).matches[0].briefId).toBe("ghana");
   });
 
 });

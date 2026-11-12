@@ -6,6 +6,7 @@ import { Participant, ParticipantStatus } from "@/database/entities/participant.
 import { Team, TeamMember, TeamMemberStatus, TeamRole, TeamStatus, TeamInvitation, InvitationStatus } from "@/database/entities/team.entity";
 import { RefreshToken } from "@/database/entities/refresh-token.entity";
 import { Cohort } from "@/database/entities/cohort.entity";
+import { briefCountry } from "./brief-country-access";
 
 export async function teamRuleContext(manager: EntityManager, teamId: string) {
   const team = await manager.findOne(Team, { where: { id: teamId }, relations: ["cohort", "brief", "brief.organization", "members", "members.participant", "members.participant.preference"] });
@@ -13,7 +14,7 @@ export async function teamRuleContext(manager: EntityManager, teamId: string) {
   if (!team.cohort) throw new BadRequestException("The team cohort is no longer active");
   const members = team.members.filter(member => member.status === TeamMemberStatus.CONFIRMED).sort((a, b) => Number(b.role === TeamRole.LEAD) - Number(a.role === TeamRole.LEAD)).map(member => member.participant || Object.assign(new Participant(), { id: member.participantId, cohortId: team.cohortId, country: "", status: ParticipantStatus.INACTIVE, onboardingComplete: false }));
   await resolveCohortTeamDeadlines(manager, team.cohort);
-  const problemCountry = team.brief?.problemCountry || team.brief?.organization?.country;
+  const problemCountry = team.brief ? briefCountry(team.brief) : undefined;
   const report = evaluateTeamRules(team.cohort, members, { competitionCountry: team.competitionCountry, problemCountry, hasBrief: !!team.briefId,
     registeredAt: team.registeredAt, challengeStartedAt: team.challengeStartedAt });
   if (team.briefId && (!team.brief || team.brief.status !== "approved")) {

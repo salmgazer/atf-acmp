@@ -1,4 +1,4 @@
-import { normalizeTeamCountry } from "@acmp/shared";
+import { briefCountry, confirmedTeamCountries, isBriefCountryAllowed } from "@/common/services/brief-country-access";
 import { Inject } from "@nestjs/common";
 import { CACHE_MANAGER, Cache } from "@nestjs/cache-manager";
 import { Transactional } from "@/common/decorators/transactional.decorator";
@@ -389,7 +389,7 @@ export class MatchingService {
     skills: string[];
     interests: string[];
   }> {
-    const participantIds = team.members.map((m) => m.participantId);
+    const participantIds = team.members.filter(member => member.status === "confirmed" && member.participant).map((m) => m.participantId);
 
     const preferences = await this.preferenceRepository.find({
       where: { participantId: In(participantIds) },
@@ -501,9 +501,7 @@ export class MatchingService {
     for (const teamData of teams) {
       for (const briefData of briefs) {
         if (briefData.availableSlots > 0) {
-          const country = normalizeTeamCountry(teamData.team.competitionCountry);
-          const problemCountry = normalizeTeamCountry(briefData.brief.problemCountry || briefData.brief.organization?.country);
-          if (country && country.toLowerCase() !== problemCountry.toLowerCase()) continue;
+          if (!isBriefCountryAllowed(briefData.brief, confirmedTeamCountries(teamData.team.members, teamData.team.cohortId))) continue;
           const candidate = this.calculateMatchScore(
             teamData,
             briefData.brief,
@@ -696,6 +694,7 @@ export class MatchingService {
   ): Promise<void> {
     const team = await this.teamRepository.findOne({
       where: { id: teamId },
+      relations: ["members", "members.participant"],
     });
 
     if (!team) {
@@ -707,7 +706,8 @@ export class MatchingService {
     }
 
     const brief = await this.briefRepository.findOne({
-      where: { id: briefId },
+      where: { id: briefId, cohortId: team.cohortId, status: BriefStatus.APPROVED },
+      relations: ["organization"],
     });
 
     if (!brief) {
@@ -725,13 +725,13 @@ export class MatchingService {
       );
     }
 
-    const problem = await this.briefRepository.findOne({ where: { id: briefId }, relations: ["organization"] });
-    if (team.competitionCountry && normalizeTeamCountry(team.competitionCountry) !== normalizeTeamCountry(problem?.problemCountry || problem?.organization?.country)) throw new BadRequestException("The brief's problem country must match the competition country");
+    if (!isBriefCountryAllowed(brief, confirmedTeamCountries(team.members, team.cohortId))) throw new BadRequestException("The brief's problem country must match a confirmed team member's country");
 
     // Assign brief and update status
     team.briefId = briefId;
+    team.competitionCountry = briefCountry(brief);
     team.status = TeamStatus.FORMING;
-    team.registeredAt = null;
+    // A brief from a resident member's country preserves an existing timely registration.
     team.challengeStartedAt = null;
 
     await this.teamRepository.save(team);
