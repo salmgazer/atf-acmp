@@ -203,13 +203,16 @@ The ATF Team`;
     firstName?: string;
     portal: string;
   }): Promise<void> {
-    const frontendUrl = this.configService.get<string>("FRONTEND_URL", "https://challenge.atf.africa");
-    const resetUrl = `${frontendUrl}/${params.portal}/reset-password?token=${params.token}`;
+    this.requireDeliveryConfiguration();
+    const frontendUrl = this.frontendUrl.replace(/\/+$/, "");
+    const resetUrl = `${frontendUrl}/${params.portal}/reset-password?token=${encodeURIComponent(params.token)}`;
     
     const subject = "Reset Your ATF Password";
-    const html = this.getPasswordResetLinkTemplate(resetUrl, params.firstName);
+    const firstName = params.firstName?.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
+    const html = this.getPasswordResetLinkTemplate(resetUrl, firstName);
+    const text = `Hi ${params.firstName || "there"},\n\nReset your ATF Build Challenge password: ${resetUrl}\n\nThis link expires in 1 hour. If you requested more than one reset email, use the newest link. If you did not request this, ignore this email.\n\nThe ATF Team`;
 
-    await this.sendEmail(params.to, subject, html);
+    await this.sendEmail(params.to, subject, html, text, undefined, true);
   }
 
   /**

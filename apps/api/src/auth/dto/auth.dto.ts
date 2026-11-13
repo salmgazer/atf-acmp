@@ -1,5 +1,6 @@
 import { IsEmail, IsString, IsNotEmpty, MinLength, IsEnum, IsOptional, Length } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { Transform } from "class-transformer";
 
 export enum PortalType {
   STAFF = "staff",
@@ -70,6 +71,7 @@ export class ChangePasswordDto {
 
 export class ForgotPasswordDto {
   @ApiProperty({ description: "User email address" })
+  @Transform(({ value }) => typeof value === "string" ? value.trim().toLowerCase() : value)
   @IsEmail()
   email: string;
 
