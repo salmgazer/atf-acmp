@@ -1,4 +1,4 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Get, Req, Res, UnauthorizedException, Logger } from "@nestjs/common";
+import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards, Get, Req, Res, UnauthorizedException, ServiceUnavailableException, Logger } from "@nestjs/common";
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from "@nestjs/swagger";
 import { Request, Response } from "express";
 import { AuthService } from "./auth.service";
@@ -189,6 +189,9 @@ export class AuthController {
   @ApiOperation({ summary: "Request password reset email" })
   @ApiResponse({ status: 200, description: "If the email exists, a reset link will be sent" })
   async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<{ message: string }> {
+    // Check configuration for every request, so this error cannot reveal account existence.
+    try { this.emailService.requireDeliveryConfiguration(); }
+    catch { throw new ServiceUnavailableException("Password reset is temporarily unavailable. Please try again later."); }
     const result = await this.authService.requestPasswordReset(dto.email, dto.portal);
     
     // Always return success to prevent email enumeration
@@ -204,7 +207,7 @@ export class AuthController {
           firstName: result.firstName,
           portal: portalPath,
         });
-        this.logger.log(`Password reset email sent to ${dto.email}`);
+        this.logger.log(`Password reset email accepted by provider for ${dto.email}`);
       } catch (error) {
         this.logger.error(`Failed to send password reset email to ${dto.email}: ${error.message}`);
         // Don't reveal the error to the user

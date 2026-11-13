@@ -33,7 +33,10 @@ describe("Organization HTTP request body parsing", () => {
     apply: jest.fn(async () => ({ created: 1 })),
   };
   const participantImports = { preview: jest.fn(async () => ({ ready: true })), enqueue: jest.fn(async () => ({ id: "batch" })) };
-  const participantProfiles = { updateStaffProfile: jest.fn(async (id: string, dto: any) => ({ id, city: dto.city })) };
+  const participantProfiles = {
+    updateStaffProfile: jest.fn(async (id: string, dto: any) => ({ id, city: dto.city })),
+    updateCrossCountryPreference: jest.fn(async (participantId: string, crossCountryWilling: boolean) => ({ participantId, crossCountryWilling })),
+  };
   const briefs = { findAll: jest.fn(async () => ({ data: [], total: 0 })), getStatistics: jest.fn(async () => ({ total: 0 })) };
   beforeAll(async () => {
     const auth = { canActivate(context: ExecutionContext) {
@@ -70,6 +73,23 @@ describe("Organization HTTP request body parsing", () => {
   afterAll(async () => { if (app) await app.close(); });
   const post = (path: string, body: unknown) => fetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const importBody = () => ({ cohortId: partnerId, sourceName: "large.csv", sourceTimezone: "Africa/Accra", csv: "a".repeat(150000) });
+
+  const crossCountry = (id: string, body: unknown, role = "participant") => fetch(`${base.replace(/organizations$/, "participants")}/${id}/cross-country-preference`, { method: "PATCH", headers: { "Content-Type": "application/json", "x-test-role": role }, body: JSON.stringify(body) });
+  it.each([true, false])("saves an explicit %s cross-country preference through the authenticated HTTP route", async crossCountryWilling => {
+    const response = await crossCountry(actorId, { crossCountryWilling });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ participantId: actorId, crossCountryWilling });
+    expect(participantProfiles.updateCrossCountryPreference).toHaveBeenCalledWith(actorId, crossCountryWilling);
+  });
+  it.each([{}, { crossCountryWilling: null }, { crossCountryWilling: "maybe" }, { crossCountryWilling: 1 }, { crossCountryWilling: true, briefRankings: [] }, { crossCountryWilling: false, matchingProfileConsent: true }])("rejects invalid or unrelated cross-country preference fields: %j", async body => {
+    expect((await crossCountry(actorId, body)).status).toBe(400);
+    expect(participantProfiles.updateCrossCountryPreference).not.toHaveBeenCalled();
+  });
+  it("blocks staff and other participants from changing a participant's cross-country preference", async () => {
+    expect((await crossCountry(partnerId, { crossCountryWilling: true })).status).toBe(403);
+    expect((await crossCountry(actorId, { crossCountryWilling: true }, "program_manager")).status).toBe(403);
+    expect(participantProfiles.updateCrossCountryPreference).not.toHaveBeenCalled();
+  });
 
   it("passes selected UUIDs and authenticated staff identity through the real bulk approval HTTP route", async () => {
     const response = await post("/bulk-approve", { organizationIds: [partnerId] });

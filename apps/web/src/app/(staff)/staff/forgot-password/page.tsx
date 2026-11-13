@@ -13,7 +13,7 @@ import { api } from "@/lib/api/client";
 import { Loader2, ArrowLeft, Mail } from "lucide-react";
 
 const forgotPasswordSchema = z.object({
-  email: z.string().email("Please enter a valid email address"),
+  email: z.string().trim().toLowerCase().email("Please enter a valid email address"),
 });
 
 type ForgotPasswordForm = z.infer<typeof forgotPasswordSchema>;
@@ -44,9 +44,8 @@ export default function ForgotPasswordPage() {
         portal: "staff",
       });
       setIsSubmitted(true);
-    } catch (err: any) {
-      // Always show success to prevent email enumeration
-      setIsSubmitted(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not request a password reset. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -56,7 +55,7 @@ export default function ForgotPasswordPage() {
     return (
       <LoginLayout
         title="Check your email"
-        subtitle="We've sent you a password reset link"
+        subtitle="If your account is registered, a reset link will be emailed to you"
         portalName="Staff Portal"
         portalType="staff"
         imageSide="left"
@@ -72,7 +71,7 @@ export default function ForgotPasswordPage() {
               If an account exists for <strong>{email}</strong>, you will receive a password reset link shortly.
             </p>
             <p className="text-sm text-muted-foreground">
-              The link will expire in 1 hour.
+              The link will expire in 1 hour. If you requested more than one email, use the newest link.
             </p>
           </div>
           <div className="space-y-3">
@@ -123,7 +122,7 @@ export default function ForgotPasswordPage() {
         </div>
 
         {error && (
-          <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          <div role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
             {error}
           </div>
         )}

@@ -35,7 +35,7 @@ describe("Participant onboarding validation and privacy boundaries", () => {
     dto.profile.githubUsername = "example-user"; expect(await errorsFor(dto)).toHaveLength(0);
   });
   it.each(["program_manager", "super_admin", "viewer", "evaluator", "mentor", "organization"])("does not allow %s to choose another participant's matching consent", role => {
-    for (const method of ["updateMatchingConsent", "completeOnboarding"] as const) {
+    for (const method of ["updateMatchingConsent", "updateCrossCountryPreference", "completeOnboarding"] as const) {
       const context = { getClass: () => ParticipantsController, getHandler: () => ParticipantsController.prototype[method], switchToHttp: () => ({ getRequest: () => ({ user: { id: "staff", role } }) }) } as any;
       expect(() => new RolesGuard(new Reflector()).canActivate(context)).toThrow(ForbiddenException);
     }
@@ -44,6 +44,15 @@ describe("Participant onboarding validation and privacy boundaries", () => {
     const req = { method: "PATCH", user: { id: "self", role: "participant" }, params: { id: "other" }, body: { consent: true }, query: {} };
     const context = { getClass: () => ParticipantsController, getHandler: () => ParticipantsController.prototype.updateMatchingConsent, switchToHttp: () => ({ getRequest: () => req }) } as any;
     await expect(new ResourceAccessGuard(new Reflector(), {} as any).canActivate(context)).rejects.toThrow(ForbiddenException);
+  });
+  it("allows only the participant to change their own cross-country preference", async () => {
+    for (const id of ["self", "other"]) {
+      const req = { method: "PATCH", user: { id: "self", role: "participant" }, params: { id }, body: { crossCountryWilling: false }, query: {} };
+      const context = { getClass: () => ParticipantsController, getHandler: () => ParticipantsController.prototype.updateCrossCountryPreference, switchToHttp: () => ({ getRequest: () => req }) } as any;
+      const authorize = new ResourceAccessGuard(new Reflector(), {} as any).canActivate(context);
+      if (id === "self") await expect(authorize).resolves.toBe(true);
+      else await expect(authorize).rejects.toThrow(ForbiddenException);
+    }
   });
   it("requires participant-search consent in the public-facing controller while preserving staff search", async () => {
     const service = { searchAvailableParticipants: jest.fn() };
