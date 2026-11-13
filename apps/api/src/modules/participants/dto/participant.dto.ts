@@ -352,6 +352,11 @@ export class UpdateMatchingConsentDto {
   @IsBoolean() @StrictBoolean() consent: boolean;
 }
 
+export class UpdateCrossCountryPreferenceDto {
+  @ApiProperty({ description: "Whether the participant is open to a cross-country team" })
+  @IsBoolean() @StrictBoolean() crossCountryWilling: boolean;
+}
+
 export class CompleteOnboardingDto {
   @ApiProperty()
   @ValidateNested()

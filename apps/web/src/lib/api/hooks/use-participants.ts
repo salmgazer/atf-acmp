@@ -471,6 +471,19 @@ export function useUpdateMatchingConsent() {
     onError: (error: Error) => toast.error(error.message || "Could not update consent") });
 }
 
+export function useUpdateCrossCountryPreference() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, crossCountryWilling }: { id: string; crossCountryWilling: boolean }) =>
+      api.patch<ParticipantPreference>(`/participants/${id}/cross-country-preference`, { crossCountryWilling }),
+    onSuccess: (preference, { id }) => {
+      cache.setQueryData(participantKeys.preferences(id), preference);
+      void cache.invalidateQueries({ predicate: query => ["participants", "teams", "matching", "team-formation"].includes(String(query.queryKey[0])) });
+      toast.success("Cross-country team preference updated");
+    },
+  });
+}
+
 export function useUpdateParticipantProgramme() {
   const cache = useQueryClient();
   return useMutation({ mutationFn: ({ id, ...body }: { id: string; programmeOptedOut: boolean; codeLabsCompleted: boolean; reason?: string }) => api.patch<Participant>(`/participants/${id}/programme-status`, body),

@@ -37,8 +37,8 @@ function ParticipantLoginContent() {
             </div>
           </div>
           <p className="text-center text-sm text-muted-foreground">
-            Use the credentials sent to your email by your organization.
-            You&apos;ll be prompted to change your password on first login.
+            Use your invitation email address and your Participant ID as your initial password.
+            Your learning platform password is separate. You&apos;ll be prompted to change your password on first login.
           </p>
         </div>
       </LoginLayout>

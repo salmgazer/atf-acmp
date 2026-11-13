@@ -123,6 +123,8 @@ const createApiClient = (): AxiosInstance => {
         originalRequest.url?.includes("/auth/magic-link") ||
         originalRequest.url?.includes("/auth/verify") ||
         originalRequest.url?.includes("/auth/change-password") ||
+        originalRequest.url?.includes("/auth/forgot-password") ||
+        originalRequest.url?.includes("/auth/reset-password") ||
         originalRequest.url?.includes("/auth/refresh") || originalRequest.url?.includes("/auth/logout");
 
       if (error.response?.status === 401 && !isPublicEndpoint && !originalRequest._retry) {

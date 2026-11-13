@@ -734,6 +734,23 @@ export class ParticipantsService {
   }
 
   /**
+   * Update only the participant’s cross-country answer.
+   */
+  @Transactional("participant-onboarding")
+  async updateCrossCountryPreference(participantId: string, crossCountryWilling: boolean): Promise<ParticipantPreference> {
+    await this.findOne(participantId);
+    const preference = await this.preferenceRepository.findOneBy({ participantId });
+    const changes = { crossCountryWilling, preferencesUpdatedAt: new Date() };
+    if (preference) {
+      // Change only this answer; do not overwrite rankings, consent or other matching answers.
+      await this.preferenceRepository.update(preference.id, changes);
+    } else {
+      await this.preferenceRepository.save(this.preferenceRepository.create({ participantId, briefRankings: [], ...changes }));
+    }
+    return (await this.getPreferences(participantId))!;
+  }
+
+  /**
    * Get participant preferences
    */
   async getPreferences(participantId: string): Promise<ParticipantPreference | null> {
