@@ -1,11 +1,11 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
 
 const participant = { id: 'matching-onboarding-user', participantId: 'LMS-001', email: 'portal@example.test', lmsEmail: 'learning@example.test', firstName: 'Imported', lastName: 'Learner', country: 'GH', city: 'Accra', institution: 'Example institution', locationType: 'Urban', gender: 'Female', educationLevel: "Bachelor's", currentAffiliation: 'Graduate', fieldOfStudy: 'Education', pythonSkill: 'Intermediate', gitSkill: 'Basic', aiExperience: 'Self-taught', githubUsername: 'imported-user', whatsappNumber: '+233200000002', phoneNumber: '+233200000001', cohortId: 'matching-cohort', cohort: { countries: ['GH', 'NG'] }, group: 'Batch 1', skills: [], interests: [], mustChangePassword: false, onboardingComplete: false, status: 'active', learningCertificateIssued: false, learningFinishedAllLessons: false, learningHalfwayReached: true };
-async function setup(page: Page, context: BrowserContext, options: { failSubmit?: boolean; completed?: boolean } = {}) {
+async function setup(page: Page, context: BrowserContext, options: { failSubmit?: boolean; completed?: boolean; failPreference?: boolean } = {}) {
   const user = { ...participant, onboardingComplete: options.completed || false, role: 'participant' };
   await context.addCookies([{ name: 'auth_token', value: 'present', url: 'http://localhost:63781' }, { name: 'auth_portal', value: 'participant', url: 'http://localhost:63781' }]);
   await page.addInitScript(user => { localStorage.setItem('auth_token', 'test-token'); localStorage.setItem('acmp-auth-store', JSON.stringify({ state: { user, token: 'test-token', portal: 'participant', isAuthenticated: true }, version: 0 })); }, user);
-  const submissions: any[] = []; let complete = options.completed || false; let consent = true;
+  const submissions: any[] = []; let complete = options.completed || false; let consent = true; let crossCountryWilling = false; let preferenceAttempts = 0;
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     let data: unknown = [];
@@ -13,10 +13,15 @@ async function setup(page: Page, context: BrowserContext, options: { failSubmit?
       submissions.push(route.request().postDataJSON());
       if (options.failSubmit && submissions.length === 1) { await route.fulfill({ status: 400, json: { message: 'Please review your programme verticals' } }); return; }
       complete = true; data = { ...participant, onboardingComplete: true, preference: submissions.at(-1).preferences };
+    } else if (path.endsWith('/cross-country-preference')) {
+      preferenceAttempts++;
+      if (options.failPreference && preferenceAttempts === 1) { await route.fulfill({ status: 503, json: { message: 'Please try again shortly' } }); return; }
+      crossCountryWilling = route.request().postDataJSON().crossCountryWilling;
+      data = { matchingProfileConsent: consent, matchingProfileCompletedAt: '2026-11-07T12:00:00Z', buildDeployAbility: 'confident', firstChoiceSector: 'education', backupSector: 'health', teamStatus: 'need_team', preferredRole: 'builder', crossCountryWilling };
     } else if (path.endsWith('/matching-consent')) {
       consent = route.request().postDataJSON().consent;
-      data = { ...participant, ...{ matchingProfileConsent: consent, matchingProfileCompletedAt: '2026-11-07T12:00:00Z', buildDeployAbility: 'confident', firstChoiceSector: 'education', backupSector: 'health', teamStatus: 'need_team', preferredRole: 'builder', crossCountryWilling: false } };
-    } else if (path.endsWith('/preferences')) data = { matchingProfileConsent: consent, matchingProfileCompletedAt: '2026-11-07T12:00:00Z', buildDeployAbility: 'confident', firstChoiceSector: 'education', backupSector: 'health', teamStatus: 'need_team', preferredRole: 'builder', crossCountryWilling: false };
+      data = { ...participant, ...{ matchingProfileConsent: consent, matchingProfileCompletedAt: '2026-11-07T12:00:00Z', buildDeployAbility: 'confident', firstChoiceSector: 'education', backupSector: 'health', teamStatus: 'need_team', preferredRole: 'builder', crossCountryWilling } };
+    } else if (path.endsWith('/preferences')) data = { matchingProfileConsent: consent, matchingProfileCompletedAt: '2026-11-07T12:00:00Z', buildDeployAbility: 'confident', firstChoiceSector: 'education', backupSector: 'health', teamStatus: 'need_team', preferredRole: 'builder', crossCountryWilling };
     else if (path.endsWith('/participants/me')) data = { ...participant, onboardingComplete: complete };
     else if (path.endsWith('/auth/me')) data = { ...user, onboardingComplete: complete };
     else if (path.includes('/teams/my/')) data = null;
@@ -133,4 +138,44 @@ test('returning participants can open the new matching questions from their prof
   await expect(page.getByRole('heading', { name: 'Secure Your Account' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Skills & GitHub' })).toBeVisible();
+});
+
+
+test('participants can save cross-country preferences in both directions and retain them after reload without changing visibility', async ({ page, context }) => {
+  await setup(page, context, { completed: true });
+  const selector = page.getByLabel('Open to a cross-country team?', { exact: true });
+  const save = page.getByRole('button', { name: 'Save cross-country preference', exact: true });
+  await expect(selector).toHaveValue('no');
+  await expect(save).toBeDisabled();
+  await selector.selectOption('yes');
+  let request = page.waitForRequest(request => request.method() === 'PATCH' && request.url().endsWith('/cross-country-preference'));
+  await save.click();
+  expect((await request).postDataJSON()).toEqual({ crossCountryWilling: true });
+  await expect(save).toBeDisabled();
+  await page.reload();
+  await expect(selector).toHaveValue('yes');
+  await selector.selectOption('no');
+  request = page.waitForRequest(request => request.method() === 'PATCH' && request.url().endsWith('/cross-country-preference'));
+  await save.click();
+  expect((await request).postDataJSON()).toEqual({ crossCountryWilling: false });
+  await expect(save).toBeDisabled();
+  await page.reload();
+  await expect(selector).toHaveValue('no');
+  await expect(page.getByRole('button', { name: 'Hide my matching profile', exact: true })).toBeVisible();
+});
+
+test('keeps an unsaved cross-country answer after a failed save and supports retry', async ({ page, context }) => {
+  await setup(page, context, { completed: true, failPreference: true });
+  const selector = page.getByLabel('Open to a cross-country team?', { exact: true });
+  const save = page.getByRole('button', { name: 'Save cross-country preference', exact: true });
+  await selector.selectOption('yes');
+  await save.click();
+  await expect(page.locator('p[role=alert]')).toContainText('Please try again shortly');
+  await expect(selector).toHaveValue('yes');
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(save).toBeDisabled();
+  await expect(page.locator('p[role=alert]')).toHaveCount(0);
+  await page.reload();
+  await expect(selector).toHaveValue('yes');
 });

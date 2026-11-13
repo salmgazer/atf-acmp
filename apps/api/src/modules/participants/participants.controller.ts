@@ -42,6 +42,7 @@ import {
   BulkImportResultDto,
   CompleteOnboardingDto,
   UpdateMatchingConsentDto,
+  UpdateCrossCountryPreferenceDto,
   UpdateParticipantProgrammeDto,
   OnboardingPreferencesDto,
   ParticipantStatisticsDto,
@@ -333,6 +334,13 @@ export class ParticipantsController {
   @Roles(Role.PARTICIPANT)
   updateMatchingConsent(@Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateMatchingConsentDto) {
     return this.participantsService.updateMatchingConsent(id, dto.consent);
+  }
+
+  @Patch(":id/cross-country-preference")
+  @Roles(Role.PARTICIPANT)
+  @ApiOperation({ summary: "Update your cross-country team preference" })
+  updateCrossCountryPreference(@Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateCrossCountryPreferenceDto) {
+    return this.participantsService.updateCrossCountryPreference(id, dto.crossCountryWilling);
   }
 
   @Get(":id/preferences")

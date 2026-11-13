@@ -527,6 +527,7 @@ export class AuthService {
     email: string,
     portal: PortalType,
   ): Promise<{ token: string; firstName: string; expiresAt: Date } | null> {
+    email = email.trim().toLowerCase();
     // Generate reset token
     const token = crypto.randomBytes(32).toString("hex");
     const expiresAt = new Date();

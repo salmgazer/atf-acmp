@@ -9,7 +9,7 @@ import { Vertical } from "@/database/entities/vertical.entity";
 import { ParticipantsService } from "@/modules/participants/participants.service";
 import { TeamsService } from "@/modules/teams/teams.service";
 import { CompleteOnboardingDto } from "@/modules/participants/dto/participant.dto";
-import { MATCHING_CONSENT_VERSION } from "@acmp/shared";
+import { canShareTeam, MATCHING_CONSENT_VERSION } from "@acmp/shared";
 
 const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
 (databaseUrl ? describe : describe.skip)("Participant matching onboarding", () => {
@@ -91,6 +91,32 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     const p = await participant(); await service.completeOnboarding(p.id, input());
     await service.savePreferences(p.id, { crossCountryWilling: true, briefRankings: [] });
     expect(await service.getPreferences(p.id)).toMatchObject({ firstChoiceSector: "education", preferredRole: "sector_specialist", matchingProfileConsent: false, teamStatus: "need_team", crossCountryWilling: true });
+  });
+
+  it("changes cross-country eligibility in both directions without changing other answers, membership or sending welcome messages", async () => {
+    const p = await participant(); await service.completeOnboarding(p.id, input());
+    const before = await service.getPreferences(p.id);
+    const team = await db.getRepository(Team).save({ name: "Preference team", cohortId: cohort.id, group: "Batch 1", inviteCode: randomUUID() });
+    await db.getRepository(TeamMember).save({ teamId: team.id, participantId: p.id, status: TeamMemberStatus.CONFIRMED, role: TeamRole.LEAD });
+    notifications.create.mockClear();
+    const foreignMember = { ...p, id: randomUUID(), country: "Nigeria", preference: { ...before!, crossCountryWilling: true } };
+    for (const willing of [true, false]) {
+      const result = await service.updateCrossCountryPreference(p.id, willing);
+      expect(result).toMatchObject({ crossCountryWilling: willing, preferencesUpdatedAt: expect.any(Date) });
+      const { crossCountryWilling, preferencesUpdatedAt, updatedAt, ...preserved } = result;
+      const { crossCountryWilling: oldWilling, preferencesUpdatedAt: oldPreferencesAt, updatedAt: oldUpdatedAt, ...original } = before!;
+      expect(preserved).toEqual(original);
+      const current = await service.findOne(p.id);
+      expect(canShareTeam([current, foreignMember])).toBe(willing);
+      expect(await db.getRepository(TeamMember).countBy({ participantId: p.id, teamId: team.id })).toBe(1);
+    }
+    expect(notifications.create).not.toHaveBeenCalled();
+  });
+
+  it("can record a cross-country answer for a legacy participant without completing matching or granting visibility", async () => {
+    const p = await participant({ onboardingComplete: true });
+    const result = await service.updateCrossCountryPreference(p.id, true);
+    expect(result).toMatchObject({ crossCountryWilling: true, briefRankings: [], matchingProfileCompletedAt: null, matchingProfileConsent: null });
   });
 
   it("hides nonconsenting and legacy profiles from participant searches, keeps staff access and excludes private fields from consenting results", async () => {

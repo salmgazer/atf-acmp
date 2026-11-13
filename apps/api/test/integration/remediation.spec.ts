@@ -79,6 +79,18 @@ integration('PostgreSQL remediation regressions', () => {
     expect(row).toEqual({ password_reset_token: null, password_reset_expires: null });
     await expect(auth.resetPassword(issued!.token, 'Another-password-123!')).rejects.toThrow();
   });
+  it('lets an imported participant reset their Build password and sign in without learning-platform credentials', async () => {
+    const p = await participant();
+    const issued = await auth.requestPasswordReset(`  ${p.email.toUpperCase()}  `, PortalType.PARTICIPANT);
+    expect(issued).not.toBeNull();
+    const stored = await db.getRepository(Participant).findOneOrFail({ where: { id: p.id }, select: { id: true, passwordResetToken: true } });
+    expect(stored.passwordResetToken).not.toBe(issued!.token);
+    expect(stored.passwordResetToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(await auth.resetPassword(issued!.token, 'New-password-123!')).toEqual({ portal: PortalType.PARTICIPANT });
+    const signedIn = await auth.loginWithPassword(p.email, 'New-password-123!', PortalType.PARTICIPANT);
+    expect(signedIn.user).toMatchObject({ id: p.id, role: 'participant', mustChangePassword: false });
+    await expect(auth.resetPassword(issued!.token, 'Another-password-123!')).rejects.toThrow();
+  });
   it('revokes issued access sessions after logout and denies archived cohorts', async () => {
     const issued = await auth.generateTokens(account);
     const jwt = new JwtService({ secret: 'local-regression-secret' });
