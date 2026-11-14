@@ -146,6 +146,9 @@ export class ResourceAccessGuard implements CanActivate {
           const member = await teamId();
           if (!params.id || member.teamId !== params.id || route.startsWith("admin/")) return this.deny();
           if (!read) {
+            // Participant departures must use the member route, which enforces
+            // the sole-lead rule and cleans up roster/chat access atomically.
+            if (req.method === "DELETE" && route === ":id") return this.deny();
             const selfLeave = req.method === "DELETE" && route === ":id/members/:participantId" && params.participantId === user.id;
             if (!selfLeave && !["lead", "co_lead"].includes(member.role)) return this.deny();
             if ([":id/status", ":id/assign-brief", ":id/unassign-brief", ":id/disqualify", ":id/members", ":id/members/:participantId/role"].includes(route)) return this.deny();

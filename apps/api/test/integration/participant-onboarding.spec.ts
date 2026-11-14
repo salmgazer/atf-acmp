@@ -27,14 +27,13 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     notifications = { create: jest.fn() }; forums = { addParticipantToForumChannels: jest.fn() };
     service = new ParticipantsService(db.getRepository(Participant), db.getRepository(ParticipantPreference), db.getRepository(Cohort), notifications as any, {} as any, {} as any, forums as any);
   });
-  const participant = (values: Partial<Participant> = {}) => db.getRepository(Participant).save({ participantId: randomUUID(), firstName: "Imported", lastName: "Learner", email: randomUUID() + "@example.test", lmsEmail: "lms-" + randomUUID() + "@example.test", country: "Ghana", cohortId: cohort.id, group: "Batch 1", institution: "Imported institution", pythonSkill: "Intermediate", githubUsername: "old-username", learningHalfwayReached: true, learningCertificateIssued: true, learningCertificateId: randomUUID(), learningCertificateDate: "2026-11-06", learningFinishedAllLessons: true, mustChangePassword: false, onboardingComplete: false, status: ParticipantStatus.ACTIVE, passwordHash: "preserved-hash", ...values });
-  const input = (values: Partial<CompleteOnboardingDto> = {}): CompleteOnboardingDto => ({ profile: { firstName: "Confirmed", lastName: "Learner", country: "GH", institution: "Confirmed institution", phoneNumber: "+233200000001", whatsappNumber: "+233200000002", city: "Accra", locationType: "Urban", gender: "Female", educationLevel: "Bachelor's", currentAffiliation: "Graduate", fieldOfStudy: "Education", pythonSkill: "Intermediate", gitSkill: "Basic", aiExperience: "Self-taught", githubAccountStatus: "has_account", githubUsername: "confirmed-user" }, skills: { skills: [], interests: [] }, preferences: { briefRankings: [], crossCountryWilling: false, preferredRole: "sector_specialist", buildDeployAbility: "with_support", firstChoiceSector: "education", backupSector: "health", teamStatus: "need_team", matchingProfileConsent: false }, ...values });
+  const participant = (values: Partial<Participant> = {}) => db.getRepository(Participant).save({ participantId: randomUUID(), firstName: "Imported", lastName: "Learner", email: randomUUID() + "@example.test", lmsEmail: "lms-" + randomUUID() + "@example.test", country: "Ghana", cohortId: cohort.id, group: "Batch 1", institution: "Imported institution", phoneNumber: "+233200000001", whatsappNumber: "+233200000002", gender: "Female", educationLevel: "Bachelor's", fieldOfStudy: "Education", pythonSkill: "Intermediate", githubUsername: "old-username", learningHalfwayReached: true, learningCertificateIssued: true, learningCertificateId: randomUUID(), learningCertificateDate: "2026-11-06", learningFinishedAllLessons: true, mustChangePassword: false, onboardingComplete: false, status: ParticipantStatus.ACTIVE, passwordHash: "preserved-hash", ...values });
+  const input = (values: Partial<CompleteOnboardingDto> = {}): CompleteOnboardingDto => ({ profile: { firstName: "Imported", lastName: "Learner", country: "GH", institution: "Imported institution", phoneNumber: "+233200000001", whatsappNumber: "+233200000002", city: "Accra", locationType: "Urban", gender: "Female", educationLevel: "Bachelor's", currentAffiliation: "Graduate", fieldOfStudy: "Education", pythonSkill: "Intermediate", gitSkill: "Basic", aiExperience: "Self-taught", githubAccountStatus: "has_account", githubUsername: "confirmed-user" }, skills: { skills: [], interests: [] }, preferences: { briefRankings: [], crossCountryWilling: false, preferredRole: "sector_specialist", buildDeployAbility: "with_support", firstChoiceSector: "education", backupSector: "health", teamStatus: "need_team", matchingProfileConsent: false }, ...values });
 
   it("confirms the source profile and all matching answers atomically while preserving credentials, grouping and authoritative learning data", async () => {
     const p = await participant(); const dto = input();
-    Object.assign(dto.profile, { learningCertificateId: "injected", learningCertificateIssued: false, email: "injected@example.test", group: "Other" });
     const completed = await service.completeOnboarding(p.id, dto);
-    expect(completed).toMatchObject({ firstName: "Confirmed", country: "Ghana", githubUsername: "confirmed-user", githubAccountStatus: "has_account", profileConfirmedAt: expect.any(Date), learningCertificateIssued: true, learningCertificateId: p.learningCertificateId, email: p.email, group: "Batch 1", onboardingComplete: true, status: ParticipantStatus.READY });
+    expect(completed).toMatchObject({ firstName: "Imported", country: "Ghana", githubUsername: "confirmed-user", githubAccountStatus: "has_account", profileConfirmedAt: expect.any(Date), learningCertificateIssued: true, learningCertificateId: p.learningCertificateId, email: p.email, group: "Batch 1", onboardingComplete: true, status: ParticipantStatus.READY });
     const credentials = await db.getRepository(Participant).findOneOrFail({ where: { id: p.id }, select: { passwordHash: true } });
     expect(credentials.passwordHash).toBe("preserved-hash");
     expect(completed.preference).toMatchObject({ preferredRole: "sector_specialist", firstChoiceSector: "education", backupSector: "health", buildDeployAbility: "with_support", teamStatus: "need_team", crossCountryWilling: false, matchingProfileConsent: false, matchingProfileConsentAt: expect.any(Date), matchingProfileCompletedAt: expect.any(Date), matchingProfileConsentVersion: MATCHING_CONSENT_VERSION });
@@ -49,6 +48,12 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     const completed = await service.completeOnboarding(p.id, dto);
     expect(completed).toMatchObject({ githubUsername: null, githubAccountStatus: "no_account", status: ParticipantStatus.ASSIGNED, learningCertificateIssued: false });
     expect(await db.getRepository(TeamMember).countBy({ participantId: p.id, teamId: team.id })).toBe(1);
+  });
+
+  it.each(["firstName", "lastName", "institution", "educationLevel", "fieldOfStudy", "gender", "phoneNumber", "whatsappNumber", "email", "lmsEmail", "learningCertificateId"])("does not allow onboarding to bypass protected %s", async field => {
+    const p = await participant(); const dto = input(); (dto.profile as any)[field] = "Changed by participant";
+    await expect(service.completeOnboarding(p.id, dto)).rejects.toThrow("Contact staff to correct protected profile details");
+    expect((await service.findOne(p.id)).onboardingComplete).toBe(false);
   });
 
   it("rolls profile changes back if preferences fail, without welcome effects", async () => {
@@ -76,7 +81,7 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
   it("makes simultaneous completion idempotent and does not overwrite confirmed answers on replay", async () => {
     const p = await participant(); await Promise.all([service.completeOnboarding(p.id, input()), service.completeOnboarding(p.id, input())]);
     const different = input(); different.profile.firstName = "Replay overwrite"; await service.completeOnboarding(p.id, different);
-    expect(await db.getRepository(Participant).findOneByOrFail({ id: p.id })).toMatchObject({ firstName: "Confirmed" });
+    expect(await db.getRepository(Participant).findOneByOrFail({ id: p.id })).toMatchObject({ firstName: "Imported" });
     expect(await db.getRepository(ParticipantPreference).countBy({ participantId: p.id })).toBe(1); expect(notifications.create).toHaveBeenCalledTimes(1);
   });
 
@@ -128,7 +133,7 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     const allowed = await service.updateMatchingConsent(p.id, true);
     expect(allowed).toMatchObject({ matchingProfileConsent: true, matchingProfileConsentAt: expect.any(Date) });
     const visible = await teams.searchAvailableParticipants(cohort.id, "", 10, "Batch 1", true);
-    expect(visible).toHaveLength(1); expect(visible[0]).toMatchObject({ id: p.id, firstName: "Confirmed", preference: { preferredRole: "sector_specialist", firstChoiceSector: "education" } });
+    expect(visible).toHaveLength(1); expect(visible[0]).toMatchObject({ id: p.id, firstName: "Imported", preference: { preferredRole: "sector_specialist", firstChoiceSector: "education" } });
     expect(JSON.stringify(visible)).not.toMatch(/email|phone|certificate|password|lmsEmail|gender/i);
     await service.updateMatchingConsent(p.id, false);
     expect(await teams.searchAvailableParticipants(cohort.id, "", 10, "Batch 1", true)).toEqual([]);

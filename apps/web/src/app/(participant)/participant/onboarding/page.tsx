@@ -17,7 +17,7 @@ import { ArrowRight, ArrowLeft, Check, Loader2, Eye, EyeOff } from "lucide-react
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { RateLimitNotice, useRateLimitCooldown } from "@/components/auth/rate-limit-notice";
-import { BUILD_DEPLOY_OPTIONS, MATCHING_ROLE_OPTIONS, MATCHING_SECTOR_OPTIONS, MATCHING_TEAM_STATUS_OPTIONS, GITHUB_USERNAME_PATTERN, COUNTRY_NAMES, SKILL_NAMES, INTEREST_OPTIONS, matchingOptionLabel } from "@acmp/shared";
+import { BUILD_DEPLOY_OPTIONS, MATCHING_ROLE_OPTIONS, MATCHING_SECTOR_OPTIONS, MATCHING_TEAM_STATUS_OPTIONS, GITHUB_USERNAME_PATTERN, COUNTRY_NAMES, SKILL_NAMES, INTEREST_OPTIONS, matchingOptionLabel, isParticipantReadOnlyField } from "@acmp/shared";
 
 const passwordSchema = z.object({
   newPassword: z.string().min(8, "Password must be at least 8 characters").regex(/[A-Z]/, "Password must contain at least one uppercase letter").regex(/[a-z]/, "Password must contain at least one lowercase letter").regex(/[0-9]/, "Password must contain at least one number"),
@@ -84,6 +84,8 @@ function OnboardingContent() {
         if (parsed.success) { initial = parsed.data; if (!participant.mustChangePassword && Number.isInteger(saved.step)) nextStep = Math.max(2, Math.min(6, saved.step)); }
       }
     } catch { /* A draft is optional. */ }
+    const imported = initialDraft(participant).profile;
+    for (const [field] of profileFields) if (isParticipantReadOnlyField(field)) initial.profile[field] = imported[field];
     setDraft(initial); setStep(nextStep);
   }, [participant, draft, router, step, storageKey]);
   useEffect(() => {
@@ -118,9 +120,9 @@ function OnboardingContent() {
     <main className="mx-auto max-w-2xl space-y-7 px-4 py-8"><nav aria-label="Onboarding progress"><ol className="grid grid-cols-6 gap-2">{steps.map((title, index) => <li key={title} aria-current={step === index + 1 ? "step" : undefined} className={cn("border-t-4 pt-2 text-xs text-muted-foreground", step >= index + 1 && "border-primary", step === index + 1 && "font-semibold text-foreground")}><span className="block">{index + 1}</span><span className="hidden sm:block">{title}</span></li>)}</ol><p className="mt-3 text-sm text-muted-foreground">Step {step} of 6 · {steps[step - 1]}</p></nav>
       <RateLimitNotice seconds={retrySeconds} />
       {step === 1 ? <PasswordResetStep onSubmit={changePassword} isSubmitting={password.isPending} retrySeconds={retrySeconds} /> : <form onSubmit={next} className="space-y-6">
-      {step === 2 && <><div><h2 className="text-xl font-bold">Personal Information</h2><p className="mt-1 text-sm text-muted-foreground">We have prefilled the details supplied by ATF. Confirm or correct them before continuing.</p></div>
+      {step === 2 && <><div><h2 className="text-xl font-bold">Personal Information</h2><p className="mt-1 text-sm text-muted-foreground">We have prefilled the details supplied by ATF. Confirm your details before continuing. Contact staff to correct names, education, gender or contact details.</p></div>
         <dl className="grid gap-3 rounded-lg border bg-muted/30 p-4 text-sm sm:grid-cols-2"><div><dt className="text-muted-foreground">Participant ID</dt><dd>{participant.participantId}</dd></div><div><dt className="text-muted-foreground">LMS email</dt><dd className="break-all">{participant.lmsEmail || participant.email}</dd></div><div><dt className="text-muted-foreground">Group</dt><dd>{participant.group || "Not assigned"}</dd></div></dl>
-        <div className="grid gap-4 sm:grid-cols-2">{profileFields.map(([field, title, length]) => <div key={field} className="space-y-2"><Label htmlFor={field}>{title}{field === "firstName" || field === "lastName" ? " *" : ""}</Label><Input id={field} type={field === "phoneNumber" || field === "whatsappNumber" ? "tel" : "text"} value={draft.profile[field]} maxLength={length} required={field === "firstName" || field === "lastName"} onChange={event => updateProfile(field, event.target.value)} /></div>)}<div className="space-y-2"><Label htmlFor="country">Country of residence *</Label><select id="country" className={selectClass} value={draft.profile.country} required onChange={event => updateProfile("country", event.target.value)}><option value="">Choose your country</option>{countries.map(country => <option key={country}>{country}</option>)}</select></div></div>
+        <div className="grid gap-4 sm:grid-cols-2">{profileFields.map(([field, title, length]) => <div key={field} className="space-y-2"><Label htmlFor={field}>{title}{field === "firstName" || field === "lastName" ? " *" : ""}</Label><Input id={field} readOnly={isParticipantReadOnlyField(field)} type={field === "phoneNumber" || field === "whatsappNumber" ? "tel" : "text"} value={draft.profile[field]} maxLength={length} required={field === "firstName" || field === "lastName"} onChange={event => updateProfile(field, event.target.value)} /></div>)}<div className="space-y-2"><Label htmlFor="country">Country of residence *</Label><select id="country" className={selectClass} value={draft.profile.country} required onChange={event => updateProfile("country", event.target.value)}><option value="">Choose your country</option>{countries.map(country => <option key={country}>{country}</option>)}</select></div></div>
         <LearningRecord participant={participant} />
       </>}
       {step === 3 && <><div><h2 className="text-xl font-bold">Skills & GitHub</h2><p className="mt-1 text-sm text-muted-foreground">Confirm your imported experience and tell us how you can contribute.</p></div>

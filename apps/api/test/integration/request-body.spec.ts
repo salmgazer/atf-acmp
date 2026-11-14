@@ -36,6 +36,8 @@ describe("Organization HTTP request body parsing", () => {
   const participantProfiles = {
     updateStaffProfile: jest.fn(async (id: string, dto: any) => ({ id, city: dto.city })),
     updateCrossCountryPreference: jest.fn(async (participantId: string, crossCountryWilling: boolean) => ({ participantId, crossCountryWilling })),
+    update: jest.fn(async (id: string, dto: any) => ({ id, city: dto.city })),
+    updateMatchingProfile: jest.fn(async (id: string, dto: any) => ({ participantId: id, ...dto })),
   };
   const briefs = { findAll: jest.fn(async () => ({ data: [], total: 0 })), getStatistics: jest.fn(async () => ({ total: 0 })) };
   beforeAll(async () => {
@@ -73,6 +75,29 @@ describe("Organization HTTP request body parsing", () => {
   afterAll(async () => { if (app) await app.close(); });
   const post = (path: string, body: unknown) => fetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const importBody = () => ({ cohortId: partnerId, sourceName: "large.csv", sourceTimezone: "Africa/Accra", csv: "a".repeat(150000) });
+
+  const patchSelf = (suffix: string, body: unknown, role = "participant", id = actorId) => fetch(`${base.replace(/organizations$/, "participants")}/${id}${suffix}`, { method: "PATCH", headers: { "Content-Type": "application/json", "x-test-role": role }, body: JSON.stringify(body) });
+  it("accepts only allowed profile fields with the profile version and explicit matching No answers", async () => {
+    const expectedUpdatedAt = "2026-11-14T08:00:00.000Z";
+    expect((await patchSelf("", { expectedUpdatedAt, city: "Kumasi", githubUsername: null })).status).toBe(200);
+    expect(participantProfiles.update).toHaveBeenCalledWith(actorId, { expectedUpdatedAt, city: "Kumasi", githubUsername: null });
+    expect((await patchSelf("/matching-profile", { expectedUpdatedAt, crossCountryWilling: false, matchingProfileConsent: false, preferredRole: "builder" })).status).toBe(200);
+    expect(participantProfiles.updateMatchingProfile).toHaveBeenCalledWith(actorId, { expectedUpdatedAt, crossCountryWilling: false, matchingProfileConsent: false, preferredRole: "builder" });
+  });
+  it.each(["firstName", "lastName", "age", "educationLevel", "institution", "fieldOfStudy", "gender", "phoneNumber", "whatsappNumber", "email", "lmsEmail", "certificateId", "learningCertificateId", "learningCertificateIssued", "status", "group", "passwordHash"])("rejects protected %s through both editing endpoints", async field => {
+    for (const suffix of ["", "/matching-profile"]) expect((await patchSelf(suffix, { expectedUpdatedAt: "2026-11-14T08:00:00Z", [field]: "changed" })).status).toBe(400);
+    expect(participantProfiles.update).not.toHaveBeenCalled(); expect(participantProfiles.updateMatchingProfile).not.toHaveBeenCalled();
+  });
+  it.each([{ preferredRole: "owner" }, { buildDeployAbility: "expert" }, { teamStatus: "assigned" }, { crossCountryWilling: null }, { matchingProfileConsent: null }, { briefRankings: [partnerId, partnerId] }])("rejects invalid matching edits: %j", async changes => {
+    expect((await patchSelf("/matching-profile", { expectedUpdatedAt: "2026-11-14T08:00:00Z", ...changes })).status).toBe(400);
+  });
+  it("requires profile versions and prevents participants editing other accounts or staff choosing matching answers", async () => {
+    expect((await patchSelf("", { city: "No version" })).status).toBe(400);
+    expect((await patchSelf("/matching-profile", { preferredRole: "builder" })).status).toBe(400);
+    expect((await patchSelf("", { expectedUpdatedAt: "2026-11-14T08:00:00Z", city: "Forbidden" }, "participant", partnerId)).status).toBe(403);
+    expect((await patchSelf("/matching-profile", { expectedUpdatedAt: "2026-11-14T08:00:00Z", preferredRole: "builder" }, "participant", partnerId)).status).toBe(403);
+    expect((await patchSelf("/matching-profile", { expectedUpdatedAt: "2026-11-14T08:00:00Z", preferredRole: "builder" }, "program_manager")).status).toBe(403);
+  });
 
   const crossCountry = (id: string, body: unknown, role = "participant") => fetch(`${base.replace(/organizations$/, "participants")}/${id}/cross-country-preference`, { method: "PATCH", headers: { "Content-Type": "application/json", "x-test-role": role }, body: JSON.stringify(body) });
   it.each([true, false])("saves an explicit %s cross-country preference through the authenticated HTTP route", async crossCountryWilling => {

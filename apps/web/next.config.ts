@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
   
   // Expose app version from package.json
   env: {
-    APP_VERSION: process.env.npm_package_version || "0.1.8",
+    APP_VERSION: process.env.npm_package_version || "0.1.10",
   },
   
   async redirects() {
