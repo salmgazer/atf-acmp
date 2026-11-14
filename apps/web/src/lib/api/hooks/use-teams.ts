@@ -466,6 +466,7 @@ export function useLeaveTeam() {
       toast.success(variables.pending ? "Join request withdrawn" : "Left team successfully");
     },
     onError: (error: Error & { statusCode?: number }, variables) => {
+      if (!variables.pending && [400, 403, 404, 409].includes(error.statusCode || 0)) queryClient.invalidateQueries({ queryKey: teamKeys.all });
       if (variables.pending && [403, 409].includes(error.statusCode || 0)) queryClient.invalidateQueries({ queryKey: teamKeys.my(variables.participantId) });
       toast.error(error.message || "Failed to leave team");
     },

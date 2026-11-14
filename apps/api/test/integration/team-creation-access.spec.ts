@@ -17,7 +17,7 @@ describe("Participant team creation authorization over HTTP", () => {
   const cohortId = "4753d422-d547-4071-9e31-c85324f06031";
   const teamId = "52f1db29-267c-4125-8dab-d7155293370f";
   let membership: { participantId: string; teamId: string; status: string; role: string } | null = null;
-  const service = { create: jest.fn(async dto => ({ id: teamId, ...dto })), removeMember: jest.fn(async () => undefined), withdrawJoinRequest: jest.fn(async () => undefined), findOpenTeams: jest.fn(async () => []) };
+  const service = { create: jest.fn(async dto => ({ id: teamId, ...dto })), delete: jest.fn(async () => undefined), removeMember: jest.fn(async () => undefined), withdrawJoinRequest: jest.fn(async () => undefined), findOpenTeams: jest.fn(async () => []) };
   const database = { getRepository: jest.fn(() => ({ findOne: jest.fn(async ({ where }) => {
     if (!membership || membership.participantId !== where.participantId || (where.teamId && membership.teamId !== where.teamId)) return null;
     if (!where.status) return membership;
@@ -118,6 +118,24 @@ describe("Participant team creation authorization over HTTP", () => {
     }
     expect(service.removeMember).not.toHaveBeenCalled();
     expect(service.withdrawJoinRequest).not.toHaveBeenCalled();
+  });
+
+  it("allows a confirmed lead to reach their own departure checks", async () => {
+    membership = { participantId, teamId, status: "confirmed", role: "lead" };
+    expect((await fetch(`${base}/${teamId}/members/${participantId}`, { method: "DELETE" })).status).toBe(204);
+    expect(service.removeMember).toHaveBeenCalledWith(teamId, participantId);
+  });
+
+  it.each(["lead", "co_lead", "member"])("prevents %s from bypassing departure checks via team deletion", async role => {
+    membership = { participantId, teamId, status: "confirmed", role };
+    expect((await fetch(`${base}/${teamId}`, { method: "DELETE" })).status).toBe(403);
+    expect(service.delete).not.toHaveBeenCalled();
+    expect(service.removeMember).not.toHaveBeenCalled();
+  });
+
+  it.each(["program_manager", "super_admin"])("preserves %s team deletion for staff support", async role => {
+    expect((await fetch(`${base}/${teamId}`, { method: "DELETE", headers: { "x-test-role": role } })).status).toBe(204);
+    expect(service.delete).toHaveBeenCalledWith(teamId);
   });
 
   it("does not grant pending applicants team management or confirmed-member reads", async () => {

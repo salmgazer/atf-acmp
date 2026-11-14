@@ -50,6 +50,7 @@ test('prefills imported fields, keeps learning records read-only and submits exp
   await expect(page.getByLabel('Country of residence')).toHaveValue('Ghana');
   await expect(page.getByLabel('WhatsApp number')).toHaveValue('+233200000002');
   await expect(page.getByLabel('Field of study')).toHaveValue('Education');
+  for (const name of ['First name', 'Last name', 'Institution', 'Phone number', 'WhatsApp number', 'Gender', 'Education level', 'Field of study']) await expect(page.getByLabel(name, { exact: false })).toHaveJSProperty('readOnly', true);
   await expect(page.getByText('learning@example.test', { exact: true })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Learning certificate ID' })).toHaveCount(0);
   await page.getByLabel('City', { exact: true }).fill('Kumasi');

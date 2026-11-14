@@ -10,7 +10,7 @@ import * as crypto from "crypto";
 import * as admin from "firebase-admin";
 import { User, Role } from "../database/entities/user.entity";
 import { RefreshToken } from "../database/entities/refresh-token.entity";
-import { Participant } from "../database/entities/participant.entity";
+import { Participant, ParticipantStatus } from "../database/entities/participant.entity";
 import { Cohort, CohortStatus } from "../database/entities/cohort.entity";
 import { Mentor, MentorStatus } from "../database/entities/mentor.entity";
 import { FirebaseService } from "./firebase.service";
@@ -150,6 +150,7 @@ export class AuthService {
   /**
    * Login participant using email and password (participant ID initially)
    */
+  @Transactional("participant-login")
   private async loginParticipantWithPassword(
     email: string,
     password: string,
@@ -188,6 +189,12 @@ export class AuthService {
       throw new UnauthorizedException("Invalid email or password");
     }
 
+    // Imported is the permitted, not-yet-accessed state; inactive is an administrative block.
+    // Keep activation and session creation atomic so a failed sign-in cannot mark access.
+    if (participant.status === ParticipantStatus.IMPORTED) {
+      await this.participantRepository.update({ id: participant.id, status: ParticipantStatus.IMPORTED }, { status: ParticipantStatus.ACTIVE });
+      participant.status = ParticipantStatus.ACTIVE;
+    }
     // Generate tokens for participant
     return this.generateParticipantTokens(participant, userAgent, ipAddress);
   }

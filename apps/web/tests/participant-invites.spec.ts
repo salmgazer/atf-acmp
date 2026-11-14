@@ -59,6 +59,24 @@ test("participant row menus provide view and resend actions with pending eligibi
   await expect(page.getByRole("checkbox", { name: "Select Sam Inactive" })).toBeDisabled();
 });
 
+test("unused imports appear Inactive, blocked accounts appear Deactivated, and the zero onboarding summary is removed", async ({ page, context }) => {
+  await setup(page, context);
+  const summary = page.getByRole("region", { name: "Participant summary", exact: true });
+  await expect(summary.getByText("Onboarding", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Inactive participants", { exact: true })).toContainText("25");
+  await expect(page.getByRole("row").filter({ hasText: "Jane Pending" }).getByText("Inactive", { exact: true })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: "Sam Inactive" }).getByText("Deactivated", { exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Select Jane Pending", exact: true })).toBeEnabled();
+  await expect(page.getByRole("checkbox", { name: "Select Sam Inactive", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Filters", exact: true }).click();
+  const filtered = page.waitForRequest(request => new URL(request.url()).pathname === "/api/participants" && new URL(request.url()).searchParams.get("status") === "imported");
+  await page.getByRole("button", { name: "Inactive", exact: true }).click();
+  await filtered;
+  const blocked = page.waitForRequest(request => new URL(request.url()).pathname === "/api/participants" && new URL(request.url()).searchParams.get("status") === "inactive");
+  await page.getByRole("button", { name: "Deactivated", exact: true }).click();
+  await blocked;
+});
+
 test("long names and emails stay compact while the full participant ID stays on one line", async ({ page, context }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await setup(page, context);
