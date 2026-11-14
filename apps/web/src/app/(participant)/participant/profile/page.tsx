@@ -10,6 +10,7 @@ import { useTheme } from "next-themes";
 import { ParticipantLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { MatchingProfile } from "@/components/participants/matching-profile";
+import { ParticipantProfileEditor } from "@/components/participants/participant-profile-editor";
 import { LearningProfile } from "@/components/participants/learning-profile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,13 +99,6 @@ const INTEREST_OPTIONS = [
   "Transportation",
 ];
 
-const profileSchema = z.object({
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
-  institution: z.string().optional(),
-  phoneNumber: z.string().optional(),
-});
-
 const passwordSchema = z
   .object({
     currentPassword: z.string().min(1, "Current password is required"),
@@ -121,7 +115,6 @@ const passwordSchema = z
     path: ["confirmPassword"],
   });
 
-type ProfileFormData = z.infer<typeof profileSchema>;
 type PasswordFormData = z.infer<typeof passwordSchema>;
 
 function ProfileContent() {
@@ -129,7 +122,6 @@ function ProfileContent() {
   const queryClient = useQueryClient();
   const { logout } = useAuthStore();
   const { theme, setTheme } = useTheme();
-  const [showEditDialog, setShowEditDialog] = useState(false);
   const [showSkillsDialog, setShowSkillsDialog] = useState(false);
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -156,16 +148,6 @@ function ProfileContent() {
     .map((briefId) => briefs?.find((b) => b.id === briefId))
     .filter((b): b is NonNullable<typeof b> => b !== undefined);
 
-  const form = useForm<ProfileFormData>({
-    resolver: zodResolver(profileSchema),
-    values: participant ? {
-      firstName: participant.firstName || "",
-      lastName: participant.lastName || "",
-      institution: participant.institution || "",
-      phoneNumber: participant.phoneNumber || "",
-    } : undefined,
-  });
-
   const passwordForm = useForm<PasswordFormData>({
     resolver: zodResolver(passwordSchema),
     defaultValues: {
@@ -178,26 +160,6 @@ function ProfileContent() {
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
 
-  const handleEditProfile = async (data: ProfileFormData) => {
-    if (!participant) return;
-
-    try {
-      await updateMutation.mutateAsync({
-        id: participant.id,
-        data: {
-          firstName: data.firstName,
-          lastName: data.lastName,
-          institution: data.institution,
-          phoneNumber: data.phoneNumber,
-        },
-      });
-      toast.success("Profile updated successfully");
-      setShowEditDialog(false);
-    } catch (error) {
-      toast.error("Failed to update profile");
-    }
-  };
-
   const handleUpdateSkills = async () => {
     if (!participant) return;
 
@@ -205,6 +167,7 @@ function ProfileContent() {
       await updateMutation.mutateAsync({
         id: participant.id,
         data: {
+          expectedUpdatedAt: participant.updatedAt,
           skills: selectedSkills,
           interests: selectedInterests,
         },
@@ -299,8 +262,9 @@ function ProfileContent() {
 
   return (
     <div className="space-y-6 pb-20">
+      <div className="flex justify-end"><ParticipantProfileEditor participant={participant} /></div>
       <LearningProfile profile={participant} />
-      <MatchingProfile preference={preferences} participantId={participant.id} editable />
+      <MatchingProfile preference={preferences} participantId={participant.id} cohortId={participant.cohortId} editable />
       {/* Profile Header */}
       <Card>
         <CardContent className="pt-6">
@@ -347,13 +311,7 @@ function ProfileContent() {
                 {participant.participantId}
               </Badge>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowEditDialog(true)}
-            >
-              <Pencil className="h-4 w-4" />
-            </Button>
+
           </div>
         </CardContent>
       </Card>
@@ -623,75 +581,6 @@ function ProfileContent() {
       <p className="text-center text-xs text-muted-foreground md:hidden">
         Version {process.env.APP_VERSION}
       </p>
-
-      {/* Edit Profile Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Profile</DialogTitle>
-            <DialogDescription>
-              Update your personal information
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={form.handleSubmit(handleEditProfile)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="firstName">First Name</Label>
-                <Input id="firstName" {...form.register("firstName")} />
-                {form.formState.errors.firstName && (
-                  <p className="text-xs text-destructive">
-                    {form.formState.errors.firstName.message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="lastName">Last Name</Label>
-                <Input id="lastName" {...form.register("lastName")} />
-                {form.formState.errors.lastName && (
-                  <p className="text-xs text-destructive">
-                    {form.formState.errors.lastName.message}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="institution">Institution</Label>
-              <Input
-                id="institution"
-                placeholder="e.g. University of Nairobi"
-                {...form.register("institution")}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="phoneNumber">Phone Number</Label>
-              <Input
-                id="phoneNumber"
-                type="tel"
-                placeholder="+254 700 000 000"
-                {...form.register("phoneNumber")}
-              />
-            </div>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setShowEditDialog(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={updateMutation.isPending}>
-                {updateMutation.isPending && (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                )}
-                Save Changes
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
 
       {/* Skills Dialog */}
       <Dialog open={showSkillsDialog} onOpenChange={setShowSkillsDialog}>

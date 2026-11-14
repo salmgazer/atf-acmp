@@ -52,21 +52,22 @@ const statusConfig: Record<
   ParticipantStatus,
   { label: string; bgClass: string; textClass: string; icon: typeof CheckCircle }
 > = {
-  imported: { label: "Imported", bgClass: "bg-muted", textClass: "text-muted-foreground", icon: Clock },
+  imported: { label: "Inactive", bgClass: "bg-muted", textClass: "text-muted-foreground", icon: Clock },
   active: { label: "Active", bgClass: "bg-blue-500/15", textClass: "text-blue-600", icon: Users },
   onboarding: { label: "Onboarding", bgClass: "bg-amber-500/15", textClass: "text-amber-600", icon: Clock },
   ready: { label: "Ready", bgClass: "bg-emerald-500/15", textClass: "text-emerald-600", icon: CheckCircle },
   assigned: { label: "Assigned", bgClass: "bg-purple-500/15", textClass: "text-purple-600", icon: UserCheck },
-  inactive: { label: "Inactive", bgClass: "bg-red-500/15", textClass: "text-red-600", icon: UserX },
+  inactive: { label: "Deactivated", bgClass: "bg-red-500/15", textClass: "text-red-600", icon: UserX },
 };
 
 const statusTabs: { value: ParticipantStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "imported", label: "Imported" },
+  { value: "imported", label: "Inactive" },
   { value: "active", label: "Active" },
   { value: "onboarding", label: "Onboarding" },
   { value: "ready", label: "Ready" },
   { value: "assigned", label: "Assigned" },
+  { value: "inactive", label: "Deactivated" },
 ];
 
 function ParticipantRow({ participant, selected, onSelect, onResend, busy }: {
@@ -316,7 +317,7 @@ function ParticipantsContent() {
         p.group || "",
         p.institution || "",
         p.phoneNumber || "",
-        p.status,
+        statusConfig[p.status].label,
         p.onboardingComplete ? "Yes" : "No",
         (p.skills || []).join("; "),
         (p.interests || []).join("; "),
@@ -382,7 +383,7 @@ function ParticipantsContent() {
         </div>
 
         {/* Stats */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div role="region" aria-label="Participant summary" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="text-sm text-muted-foreground">Total</div>
             <div className="mt-1 text-2xl font-semibold text-foreground">{stats?.total || 0}</div>
@@ -392,12 +393,14 @@ function ParticipantsContent() {
             <div className="mt-1 text-2xl font-semibold text-blue-600">
               {stats?.active || 0}
             </div>
+            <p className="mt-1 text-xs text-muted-foreground">Accessed; setup pending</p>
           </div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="text-sm text-muted-foreground">Onboarding</div>
-            <div className="mt-1 text-2xl font-semibold text-amber-600">
-              {stats?.onboarding || 0}
+          <div className="rounded-xl border border-border bg-card p-4" aria-label="Inactive participants">
+            <div className="text-sm text-muted-foreground">Inactive</div>
+            <div className="mt-1 text-2xl font-semibold text-muted-foreground">
+              {stats?.imported || 0}
             </div>
+            <p className="mt-1 text-xs text-muted-foreground">Not accessed yet</p>
           </div>
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="text-sm text-muted-foreground">Ready</div>
@@ -610,7 +613,7 @@ function ParticipantsContent() {
                 ? `Send the invitation email again to ${selectedIds.length} selected participant${selectedIds.length === 1 ? "" : "s"}?`
                 : `Send invitations to all pending participants in ${cohortName || "the selected cohort"} matching the current filters, across all pages?`}
               </DialogDescription></DialogHeader>
-            <p className="text-sm text-muted-foreground">Pending participants still need to change their initial password. Inactive accounts and participants who have already changed it are excluded.</p>
+            <p className="text-sm text-muted-foreground">Pending participants still need to change their initial password. Deactivated accounts and participants who have already changed it are excluded.</p>
             <DialogFooter><Button variant="outline" disabled={resend.isPending} onClick={() => setConfirmation(null)}>Cancel</Button>
               <Button disabled={resend.isPending || sending || (confirmation === "selected" && selectedIds.length === 0)} onClick={confirmResend}>
                 {resend.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Send invitations

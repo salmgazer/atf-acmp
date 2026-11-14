@@ -4,11 +4,11 @@ const selfId = 'team-applicant', cohortId = 'joining-cohort';
 const self = { id: selfId, participantId: 'LMS-APPLICANT', email: 'applicant@example.test', firstName: 'Example', lastName: 'Applicant', role: 'participant', cohortId, group: 'A', country: 'Ghana', status: 'ready', isActive: true, onboardingComplete: true, mustChangePassword: false, skills: [], interests: [] };
 function team(id: string, count: number, pending = false, max = 5) {
   return { id, name: id, cohortId, group: 'A', cohort: { id: cohortId, name: 'Cohort', teamSizeMax: max }, status: 'forming', inviteCode: 'JOIN1234', createdAt: '2026-11-01T00:00:00Z', members: [
-    ...Array.from({ length: count }, (_, index) => ({ id: `${id}-${index}`, teamId: id, participantId: `${id}-${index}`, role: index === 0 ? 'lead' : 'member', status: 'confirmed', participant: { id: `${id}-${index}`, firstName: `Confirmed${index}`, lastName: 'Member', country: 'Ghana', skills: [] } })),
-    ...(pending ? [{ id: 'pending-self', teamId: id, participantId: selfId, role: 'member', status: 'pending', participant: { ...self, firstName: 'PendingApplicant' } }] : []),
+    ...Array.from({ length: count }, (_, index) => ({ id: `${id}-${index}`, teamId: id, participantId: `${id}-${index}`, role: index === 0 ? 'lead' : 'member', status: 'confirmed', joinedAt: '2026-11-01T00:00:00Z', participant: { id: `${id}-${index}`, firstName: `Confirmed${index}`, lastName: 'Member', country: 'Ghana', skills: [] } })),
+    ...(pending ? [{ id: 'pending-self', teamId: id, participantId: selfId, role: 'member', status: 'pending', joinedAt: '2026-11-01T00:00:00Z', participant: { ...self, firstName: 'PendingApplicant' } }] : []),
   ] };
 }
-async function setup(page: Page, context: BrowserContext, options: { current?: ReturnType<typeof team>; open?: ReturnType<typeof team>[]; noTeamResponse?: 'empty' | 'json-null'; failWithdraw?: boolean; approveDuringWithdrawal?: boolean } = {}) {
+async function setup(page: Page, context: BrowserContext, options: { current?: ReturnType<typeof team>; open?: ReturnType<typeof team>[]; noTeamResponse?: 'empty' | 'json-null'; failWithdraw?: boolean; approveDuringWithdrawal?: boolean; memberArrivesOnLeave?: boolean } = {}) {
   let current = options.current || null;
   const open = options.open || [], requests: { method: string; path: string }[] = [];
   let withdrawals = 0;
@@ -31,6 +31,10 @@ async function setup(page: Page, context: BrowserContext, options: { current?: R
       current = { ...team('requested-team', 1, true), name: 'Requested team' }; data = current;
     } else if ((path.endsWith(`/members/${selfId}`) || path.endsWith('/join-request')) && method === 'DELETE') {
       withdrawals++;
+      if (options.memberArrivesOnLeave && current) {
+        current.members.push(team('New teammate', 1).members[0]);
+        await route.fulfill({ status: 400, json: { message: 'Team leads can only delete and leave a team when they are its only member.' } }); return;
+      }
       if (options.approveDuringWithdrawal && withdrawals === 1 && current) {
         const own = current.members.find(member => member.participantId === selfId); if (own) own.status = 'confirmed';
         await route.fulfill({ status: 409, json: { message: 'This join request was already approved. Refresh your team.' } }); return;
@@ -108,6 +112,58 @@ test('confirmed ordinary members retain the normal leave-team action', async ({ 
   await page.getByRole('button', { name: 'Leave Team', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Leave Team', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Create Team', exact: true })).toBeVisible();
+  expect(state.withdrawals()).toBe(1);
+});
+
+function ownTeam(otherMembers = 0, pending = false) {
+  const current = team('Accidental team', otherMembers + 1);
+  current.members[0] = { ...current.members[0], participantId: selfId, participant: { ...self } };
+  if (pending) current.members[1].status = 'pending';
+  return current;
+}
+
+test('a sole lead confirms deletion and can then find and request another team', async ({ page, context }) => {
+  const state = await setup(page, context, { current: ownTeam(), open: [team('Target team', 2)] });
+  await page.getByRole('button', { name: 'Delete team and leave', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('cancel outstanding invitations and archive its chat');
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(state.withdrawals()).toBe(0);
+  await page.getByRole('button', { name: 'Delete team and leave', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Delete team and leave', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Find a Team', exact: true })).toBeVisible();
+  expect(state.withdrawals()).toBe(1);
+  expect(state.requests.some(r => r.method === 'DELETE' && r.path.endsWith(`/members/${selfId}`))).toBe(true);
+  await page.getByRole('article', { name: 'Target team', exact: true }).getByRole('button', { name: 'Join', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Team request pending', exact: true })).toBeVisible();
+});
+
+for (const pending of [false, true]) {
+  test(`a lead cannot leave another ${pending ? 'pending' : 'confirmed'} member`, async ({ page, context }) => {
+    const state = await setup(page, context, { current: ownTeam(1, pending) });
+    await expect(page.getByText('Team leads can delete and leave only', { exact: false })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Delete team and leave', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Leave Team', exact: true })).toHaveCount(0);
+    expect(state.withdrawals()).toBe(0);
+  });
+}
+
+test('sole-lead deletion failures retain the confirmation and allow retry', async ({ page, context }) => {
+  const state = await setup(page, context, { current: ownTeam(), failWithdraw: true });
+  await page.getByRole('button', { name: 'Delete team and leave', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete team and leave', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Request changed. Please retry.');
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete team and leave', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Find a Team', exact: true })).toBeVisible();
+  expect(state.withdrawals()).toBe(2);
+});
+
+test('a stale confirmation refreshes the roster and prevents retry when a member arrives', async ({ page, context }) => {
+  const state = await setup(page, context, { current: ownTeam(), memberArrivesOnLeave: true });
+  await page.getByRole('button', { name: 'Delete team and leave', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete team and leave', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('only member');
+  await expect(page.getByRole('dialog').getByRole('button', { name: 'Delete team and leave', exact: true })).toBeDisabled();
   expect(state.withdrawals()).toBe(1);
 });
 

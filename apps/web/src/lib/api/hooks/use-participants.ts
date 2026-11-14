@@ -47,7 +47,12 @@ export interface ParticipantPreference extends ParticipantMatchingProfile {
   crossCountryWilling: boolean;
   availabilityNotes?: string;
   preferencesUpdatedAt?: string;
+  updatedAt?: string;
+  vertical1?: { id: string; name: string } | null;
+  vertical2?: { id: string; name: string } | null;
 }
+
+export type ParticipantMatchingChanges = Partial<Pick<ParticipantPreference, "buildDeployAbility" | "preferredRole" | "firstChoiceSector" | "backupSector" | "teamStatus" | "crossCountryWilling" | "matchingProfileConsent" | "briefRankings">> & { verticalId1?: string | null; verticalId2?: string | null; availabilityNotes?: string | null };
 
 export interface ParticipantQueryParams {
   page?: number;
@@ -144,10 +149,15 @@ export interface CompleteOnboardingDto {
 }
 
 export interface UpdateParticipantDto {
-  firstName?: string;
-  lastName?: string;
-  institution?: string;
-  phoneNumber?: string;
+  expectedUpdatedAt: string;
+  country?: string;
+  city?: string | null;
+  locationType?: string | null;
+  currentAffiliation?: string | null;
+  pythonSkill?: string | null;
+  gitSkill?: string | null;
+  aiExperience?: string | null;
+  githubUsername?: string | null;
   skills?: string[];
   interests?: string[];
 }
@@ -305,9 +315,10 @@ export function useUpdateParticipant() {
     mutationFn: ({ id, data }: { id: string; data: UpdateParticipantDto }) =>
       api.patch<Participant>(`/participants/${id}`, data),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: participantKeys.lists() });
+      queryClient.setQueryData(participantKeys.current(), data);
       queryClient.setQueryData(participantKeys.detail(data.id), data);
-      toast.success("Participant updated successfully");
+      void queryClient.invalidateQueries({ predicate: query => ["participants", "teams", "briefs", "matching", "team-formation"].includes(String(query.queryKey[0])) });
+      toast.success("Profile updated successfully");
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to update participant");
@@ -480,6 +491,19 @@ export function useUpdateCrossCountryPreference() {
       cache.setQueryData(participantKeys.preferences(id), preference);
       void cache.invalidateQueries({ predicate: query => ["participants", "teams", "matching", "team-formation"].includes(String(query.queryKey[0])) });
       toast.success("Cross-country team preference updated");
+    },
+  });
+}
+
+export function useUpdateParticipantMatchingProfile() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, changes, expectedUpdatedAt }: { id: string; changes: ParticipantMatchingChanges; expectedUpdatedAt: string }) =>
+      api.patch<ParticipantPreference>(`/participants/${id}/matching-profile`, { ...changes, expectedUpdatedAt }),
+    onSuccess: (preference, { id }) => {
+      cache.setQueryData(participantKeys.preferences(id), preference);
+      void cache.invalidateQueries({ predicate: query => ["participants", "teams", "briefs", "matching", "team-formation"].includes(String(query.queryKey[0])) });
+      toast.success("Matching profile updated");
     },
   });
 }

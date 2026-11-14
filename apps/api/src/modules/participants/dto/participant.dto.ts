@@ -14,9 +14,9 @@ import {
   ValidateNested,
   ArrayMinSize,
   ArrayMaxSize,
-  MaxLength, MinLength, IsIn, IsDefined, ValidateIf, Matches,
+  MaxLength, MinLength, IsIn, IsDefined, ValidateIf, Matches, IsDateString,
 } from "class-validator";
-import { Type } from "class-transformer";
+import { Type, Transform } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional, OmitType } from "@nestjs/swagger";
 import { BUILD_DEPLOY_OPTIONS, MATCHING_ROLE_OPTIONS, MATCHING_SECTOR_OPTIONS, MATCHING_TEAM_STATUS_OPTIONS, GITHUB_USERNAME_PATTERN, type BuildDeployAbility, type MatchingSector, type MatchingTeamStatus, type MatchingRole } from "@acmp/shared";
 import {
@@ -140,42 +140,17 @@ export class CreateParticipantDto {
 }
 
 export class UpdateParticipantDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  firstName?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  lastName?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  institution?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  phoneNumber?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  skills?: string[];
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  interests?: string[];
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  profileImageUrl?: string;
+  @IsDateString() expectedUpdatedAt: string;
+  @ValidateIf((_o, value) => value !== undefined) @Transform(({ value }) => typeof value === "string" ? value.trim() : value) @IsString() @MinLength(1) @MaxLength(255) country?: string;
+  @IsOptional() @IsString() @MaxLength(150) city?: string | null;
+  @IsOptional() @IsString() @MaxLength(150) locationType?: string | null;
+  @IsOptional() @IsString() @MaxLength(150) currentAffiliation?: string | null;
+  @IsOptional() @IsString() @MaxLength(255) pythonSkill?: string | null;
+  @IsOptional() @IsString() @MaxLength(255) gitSkill?: string | null;
+  @IsOptional() @IsString() @MaxLength(255) aiExperience?: string | null;
+  @IsOptional() @IsString() @Matches(GITHUB_USERNAME_PATTERN) githubUsername?: string | null;
+  @ValidateIf((_o, value) => value !== undefined) @IsArray() @ArrayMaxSize(50) @IsString({ each: true }) @MaxLength(100, { each: true }) skills?: string[];
+  @ValidateIf((_o, value) => value !== undefined) @IsArray() @ArrayMaxSize(50) @IsString({ each: true }) @MaxLength(100, { each: true }) interests?: string[];
 }
 
 export class AssignParticipantGroupDto {
@@ -324,12 +299,13 @@ export class OnboardingPreferencesDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsString()
+  @IsIn(MATCHING_ROLE_OPTIONS.map(option => option.value))
   preferredRole?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(2000)
   availabilityNotes?: string;
 }
 

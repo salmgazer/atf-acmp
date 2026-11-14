@@ -24,8 +24,9 @@ import {
 import { AuditLog, AuditAction } from "@/database/entities/audit-log.entity";
 import { Cohort } from "@/database/entities/cohort.entity";
 import { Vertical } from "@/database/entities/vertical.entity";
-import { COUNTRY_NAMES, MATCHING_CONSENT_VERSION, PARTICIPANT_LEARNING_FIELDS, normalizeTeamCountry } from "@acmp/shared";
+import { COUNTRY_NAMES, MATCHING_CONSENT_VERSION, PARTICIPANT_LEARNING_FIELDS, PARTICIPANT_SELF_PROFILE_FIELDS, isParticipantReadOnlyField, normalizeTeamCountry } from "@acmp/shared";
 import { STAFF_PARTICIPANT_PROFILE_FIELDS, StaffParticipantProfileDto } from "./dto/staff-participant-profile.dto";
+import { PARTICIPANT_MATCHING_EDIT_FIELDS, UpdateParticipantMatchingProfileDto } from "./dto/participant-matching-profile.dto";
 import { NotificationsService } from "@/modules/notifications/notifications.service";
 import { NotificationRecipientType, NotificationType, NotificationPriority } from "@/database/entities/notification.entity";
 import { EmailService } from "@/email/email.service";
@@ -260,10 +261,39 @@ export class ParticipantsService {
     });
   }
 
+  async updateProfilePicture(id: string, profileImageUrl: string): Promise<Participant> {
+    await this.participantRepository.update(id, { profileImageUrl });
+    return this.findOne(id);
+  }
+
+  @Transactional()
   async update(id: string, dto: UpdateParticipantDto): Promise<Participant> {
-    const participant = await this.findOne(id);
-    Object.assign(participant, dto);
-    return this.participantRepository.save(participant);
+    const manager = this.participantRepository.manager;
+    await manager.query("SELECT pg_advisory_xact_lock(hashtext('participant-learning-import'))");
+    const participant = await this.participantRepository.findOne({ where: { id }, lock: { mode: "pessimistic_write" } });
+    if (!participant) throw new NotFoundException("Participant not found");
+    const unsupported = Object.keys(dto).filter(field => field !== "expectedUpdatedAt" && !PARTICIPANT_SELF_PROFILE_FIELDS.some(value => value === field));
+    if (unsupported.length) throw new BadRequestException("Unsupported or protected profile fields: " + unsupported.join(", "));
+    if (participant.updatedAt.toISOString() !== new Date(dto.expectedUpdatedAt).toISOString()) throw new ConflictException("Your profile changed. Reload the latest profile and review your edits.");
+    const patch: Record<string, any> = {};
+    for (const field of PARTICIPANT_SELF_PROFILE_FIELDS) if (dto[field] !== undefined) {
+      const value = dto[field];
+      patch[field] = typeof value === "string" ? value.trim() || null : Array.isArray(value) ? [...new Set(value.map(item => item.trim()).filter(Boolean))] : value;
+    }
+    if ("country" in patch) {
+      if (!patch.country) throw new BadRequestException("Country is required");
+      patch.country = normalizeTeamCountry(patch.country);
+      const cohort = await this.cohortRepository.findOneByOrFail({ id: participant.cohortId });
+      if (cohort.countries?.length && !cohort.countries.some(country => normalizeTeamCountry(country).toLowerCase() === patch.country.toLowerCase())) throw new BadRequestException("Choose a country enabled for this cohort");
+    }
+    const changes = Object.entries(patch).filter(([field, value]) => JSON.stringify(value) !== JSON.stringify((participant as any)[field] ?? null));
+    if (!changes.length) return this.findOne(id);
+    const before = Object.fromEntries(changes.map(([field]) => [field, (participant as any)[field] ?? null]));
+    if ("githubUsername" in patch) patch.githubAccountStatus = patch.githubUsername ? "has_account" : "no_account";
+    // Update only submitted fields, preserving protected/imported values and matching consent.
+    await this.participantRepository.update(id, patch);
+    await manager.save(AuditLog, manager.create(AuditLog, { actorEmail: participant.email, action: AuditAction.UPDATE, entityType: "Participant", entityId: id, before, after: Object.fromEntries(changes), metadata: { source: "participant-profile-editor", principalId: id, principalRole: "participant" }, description: "Participant updated their profile" }));
+    return this.findOne(id);
   }
 
   @Transactional()
@@ -476,7 +506,7 @@ export class ParticipantsService {
               cohortId: dto.cohortId,
               group,
               passwordHash,
-              status: ParticipantStatus.ACTIVE,
+              status: ParticipantStatus.IMPORTED,
               mustChangePassword: true,
               onboardingComplete: false,
               firebaseUid: null as any,
@@ -502,7 +532,7 @@ export class ParticipantsService {
               cohortId: dto.cohortId,
               group,
               passwordHash,
-              status: ParticipantStatus.ACTIVE,
+              status: ParticipantStatus.IMPORTED,
               mustChangePassword: true,
               onboardingComplete: false,
               firebaseUid: null as any,
@@ -525,7 +555,7 @@ export class ParticipantsService {
             cohortId: dto.cohortId,
             group,
             passwordHash,
-            status: ParticipantStatus.ACTIVE,
+            status: ParticipantStatus.IMPORTED,
             mustChangePassword: true,
             onboardingComplete: false,
           });
@@ -602,8 +632,13 @@ export class ParticipantsService {
    */
   @Transactional("participant-onboarding")
   async completeOnboarding(id: string, dto: CompleteOnboardingDto): Promise<Participant> {
+    await this.participantRepository.manager.query("SELECT pg_advisory_xact_lock(hashtext('participant-learning-import'))");
+    await this.participantRepository.findOne({ where: { id }, select: { id: true }, lock: { mode: "pessimistic_write" } });
     const participant = await this.findOne(id);
     if (participant.onboardingComplete && participant.preference?.matchingProfileCompletedAt) return participant;
+    for (const [field, value] of Object.entries(dto.profile)) {
+      if (isParticipantReadOnlyField(field) && value !== undefined && (typeof value === "string" ? value.trim() || null : value) !== ((participant as any)[field] ?? null)) throw new BadRequestException("Contact staff to correct protected profile details: " + field);
+    }
     const alreadyOnboarded = participant.onboardingComplete;
     if (participant.mustChangePassword) throw new BadRequestException("Change your initial password before completing onboarding");
     if (participant.status === ParticipantStatus.INACTIVE || participant.cohort.status !== "active") throw new BadRequestException("Onboarding requires an active participant and cohort");
@@ -617,7 +652,7 @@ export class ParticipantsService {
     if (verticalIds.length && await this.participantRepository.manager.getRepository(Vertical).countBy({ id: In(verticalIds), cohortId: participant.cohortId, isActive: true }) !== verticalIds.length) throw new BadRequestException("Choose active verticals from your cohort");
     for (const field of ["firstName", "lastName", "institution", "phoneNumber", "whatsappNumber", "city", "locationType", "gender", "educationLevel", "currentAffiliation", "fieldOfStudy", "pythonSkill", "gitSkill", "aiExperience"] as const) {
       const value = dto.profile[field];
-      if (value !== undefined) (participant as any)[field] = value?.trim() ?? null;
+      if (!isParticipantReadOnlyField(field) && value !== undefined) (participant as any)[field] = value?.trim() ?? null;
     }
     if (!participant.firstName || !participant.lastName) throw new BadRequestException("First name and last name are required");
     participant.country = country;
@@ -662,6 +697,7 @@ export class ParticipantsService {
   /**
    * Save participant preferences
    */
+  @Transactional("participant-onboarding")
   async savePreferences(
     participantId: string,
     dto: OnboardingPreferencesDto
@@ -675,6 +711,13 @@ export class ParticipantsService {
       preference = this.preferenceRepository.create({
         participantId,
       });
+    }
+
+    if (dto.verticalId1 !== undefined || dto.verticalId2 !== undefined) {
+      const verticalIds = [dto.verticalId1 === undefined ? preference.verticalId1 : dto.verticalId1, dto.verticalId2 === undefined ? preference.verticalId2 : dto.verticalId2].filter(Boolean) as string[];
+      if (new Set(verticalIds).size !== verticalIds.length) throw new BadRequestException("Choose different programme verticals");
+      const participant = await this.findOne(participantId);
+      if (verticalIds.length && await this.participantRepository.manager.getRepository(Vertical).countBy({ id: In(verticalIds), cohortId: participant.cohortId, isActive: true }) !== verticalIds.length) throw new BadRequestException("Choose active verticals from your cohort");
     }
 
     // Older profile clients update only their submitted preferences. They must
@@ -733,6 +776,35 @@ export class ParticipantsService {
     return this.preferenceRepository.save(preference);
   }
 
+  @Transactional("participant-onboarding")
+  async updateMatchingProfile(participantId: string, dto: UpdateParticipantMatchingProfileDto): Promise<ParticipantPreference> {
+    const participant = await this.findOne(participantId);
+    const preference = await this.preferenceRepository.findOne({ where: { participantId }, lock: { mode: "pessimistic_write" } });
+    if (!preference?.matchingProfileCompletedAt) throw new BadRequestException("Complete the matching questions before editing your matching profile");
+    if (preference.updatedAt.toISOString() !== new Date(dto.expectedUpdatedAt).toISOString()) throw new ConflictException("Your matching profile changed. Reload the latest answers and review your edits.");
+    const patch: Record<string, any> = {};
+    for (const field of PARTICIPANT_MATCHING_EDIT_FIELDS) if (dto[field] !== undefined) patch[field] = dto[field];
+    const final = { ...preference, ...patch };
+    if (final.firstChoiceSector === final.backupSector) throw new BadRequestException("Choose a different backup sector");
+    const verticalIds = [final.verticalId1, final.verticalId2].filter(Boolean) as string[];
+    if (new Set(verticalIds).size !== verticalIds.length) throw new BadRequestException("Choose different programme verticals");
+    const changedVerticals = ["verticalId1", "verticalId2"].some(field => field in patch && patch[field] !== (preference as any)[field]);
+    if (changedVerticals && verticalIds.length && await this.participantRepository.manager.getRepository(Vertical).countBy({ id: In(verticalIds), cohortId: participant.cohortId, isActive: true }) !== verticalIds.length) throw new BadRequestException("Choose active verticals from your cohort");
+    if (patch.briefRankings?.length) await this.validateBriefRankings(participantId, patch.briefRankings);
+    const changes = Object.entries(patch).filter(([field, value]) => JSON.stringify(value ?? null) !== JSON.stringify((preference as any)[field] ?? null));
+    if (!changes.length) return (await this.getPreferences(participantId))!;
+    const update: Record<string, any> = { ...Object.fromEntries(changes), preferencesUpdatedAt: new Date() };
+    if (changes.some(([field]) => field === "matchingProfileConsent")) {
+      update.matchingProfileConsentAt = new Date();
+      update.matchingProfileConsentVersion = MATCHING_CONSENT_VERSION;
+    }
+    await this.preferenceRepository.update(preference.id, update);
+    const manager = this.participantRepository.manager;
+    await manager.save(AuditLog, manager.create(AuditLog, { actorEmail: participant.email, action: AuditAction.UPDATE, entityType: "ParticipantPreference", entityId: preference.id,
+      before: Object.fromEntries(changes.map(([field]) => [field, (preference as any)[field] ?? null])), after: Object.fromEntries(changes), metadata: { source: "participant-matching-editor", principalId: participantId, principalRole: "participant" }, description: "Participant updated their matching profile" }));
+    return (await this.getPreferences(participantId))!;
+  }
+
   /**
    * Update only the participant’s cross-country answer.
    */
@@ -763,6 +835,7 @@ export class ParticipantsService {
   /**
    * Update brief rankings
    */
+  @Transactional("participant-onboarding")
   async updateBriefRankings(
     participantId: string,
     briefRankings: string[]

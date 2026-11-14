@@ -35,7 +35,7 @@ describe("Participant onboarding validation and privacy boundaries", () => {
     dto.profile.githubUsername = "example-user"; expect(await errorsFor(dto)).toHaveLength(0);
   });
   it.each(["program_manager", "super_admin", "viewer", "evaluator", "mentor", "organization"])("does not allow %s to choose another participant's matching consent", role => {
-    for (const method of ["updateMatchingConsent", "updateCrossCountryPreference", "completeOnboarding"] as const) {
+    for (const method of ["updateMatchingConsent", "updateCrossCountryPreference", "updateMatchingProfile", "completeOnboarding"] as const) {
       const context = { getClass: () => ParticipantsController, getHandler: () => ParticipantsController.prototype[method], switchToHttp: () => ({ getRequest: () => ({ user: { id: "staff", role } }) }) } as any;
       expect(() => new RolesGuard(new Reflector()).canActivate(context)).toThrow(ForbiddenException);
     }
