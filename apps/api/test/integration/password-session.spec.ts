@@ -66,7 +66,7 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     await expect(auth.refreshAccessToken(other.refreshToken)).rejects.toThrow();
     expect((await auth.refreshAccessToken(freshRefresh)).user.id).toBe(p.id);
     const participants = new ParticipantsService(db.getRepository(Participant), db.getRepository(ParticipantPreference), db.getRepository(Cohort), { create: jest.fn() } as any, {} as any, config, { addParticipantToForumChannels: jest.fn() } as any);
-    const completed = await participants.completeOnboarding(p.id, { profile: { firstName: "Completed", lastName: "Profile", country: "Ghana", githubAccountStatus: "no_account" }, skills: { skills: ["Python"], interests: ["Education"] }, preferences: { briefRankings: [], crossCountryWilling: true, buildDeployAbility: "confident", preferredRole: "builder", firstChoiceSector: "education", backupSector: "health", teamStatus: "need_team", matchingProfileConsent: false } });
+    const completed = await participants.completeOnboarding(p.id, { profile: { firstName: p.firstName, lastName: p.lastName, country: "Ghana", githubAccountStatus: "no_account" }, skills: { skills: ["Python"], interests: ["Education"] }, preferences: { briefRankings: [], crossCountryWilling: true, buildDeployAbility: "confident", preferredRole: "builder", firstChoiceSector: "education", backupSector: "health", teamStatus: "need_team", matchingProfileConsent: false } });
     expect(completed).toMatchObject({ onboardingComplete: true, status: ParticipantStatus.READY, mustChangePassword: false });
     expect((await validate(response.accessToken)).id).toBe(p.id);
     expect(sockets.revokePrincipal).toHaveBeenCalledWith(p.id);

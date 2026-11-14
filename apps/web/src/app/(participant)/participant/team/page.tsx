@@ -173,6 +173,7 @@ function TeamDashboard({
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
 
   const currentMember = team.members.find((m) => m.participantId === participantId);
@@ -182,6 +183,10 @@ function TeamDashboard({
   // Filter confirmed and pending members
   const confirmedMembers = team.members.filter((m) => m.status === "confirmed");
   const pendingMembers = team.members.filter((m) => m.status === "pending");
+  const canDeleteOwnTeam = isLead && team.members.length === 1 && currentMember?.status === "confirmed"
+    && team.status === "forming" && !team.registeredAt && !team.challengeStartedAt && !team.briefId;
+  const canLeave = !isLead || canDeleteOwnTeam;
+  const leaveLabel = isLead ? "Delete team and leave" : "Leave Team";
   
   // Check if team is full (only count confirmed members against max size from cohort)
   const isTeamFull = team.cohort?.teamSizeMax ? confirmedMembers.length >= Math.min(5, team.cohort.teamSizeMax) : false;
@@ -198,8 +203,13 @@ function TeamDashboard({
   };
 
   const handleLeave = async () => {
-    await leaveMutation.mutateAsync({ teamId: team.id, participantId });
-    setShowLeaveDialog(false);
+    setLeaveError(null);
+    try {
+      await leaveMutation.mutateAsync({ teamId: team.id, participantId });
+      setShowLeaveDialog(false);
+    } catch (error) {
+      setLeaveError(error instanceof Error ? error.message : "Could not leave the team. Please try again.");
+    }
   };
 
   const handleConfirmMember = async (memberId: string) => {
@@ -472,16 +482,17 @@ function TeamDashboard({
       {isLeadOrCoLead && <PendingInvitations teamId={team.id} participantId={participantId} />}
 
       {/* Leave Team */}
-      {!isLead && (
+      {canLeave && (
         <Button
           variant="outline"
           className="w-full text-destructive"
-          onClick={() => setShowLeaveDialog(true)}
+          onClick={() => { setLeaveError(null); setShowLeaveDialog(true); }}
         >
           <LogOut className="h-4 w-4 mr-2" />
-          Leave Team
+          {leaveLabel}
         </Button>
       )}
+      {isLead && !canDeleteOwnTeam && <p className="text-sm text-muted-foreground">Team leads can delete and leave only when they are the sole member of an unregistered team without an assigned brief. Resolve pending join requests first, or contact staff for help.</p>}
 
       {/* Invite Dialog */}
       <InviteDialog
@@ -504,11 +515,12 @@ function TeamDashboard({
       <Dialog open={showLeaveDialog} onOpenChange={setShowLeaveDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Leave Team</DialogTitle>
+            <DialogTitle>{leaveLabel}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to leave &quot;{team.name}&quot;? This action cannot be undone.
+              {isLead ? <>You are the only member of &quot;{team.name}&quot;. This will delete the team, cancel outstanding invitations and archive its chat. You can then request to join another team, subject to eligibility and the cohort deadline.</> : <>Are you sure you want to leave &quot;{team.name}&quot;? This action cannot be undone.</>}
             </DialogDescription>
           </DialogHeader>
+          {leaveError && <p role="alert" className="text-sm text-destructive">{leaveError}</p>}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowLeaveDialog(false)}>
               Cancel
@@ -516,12 +528,12 @@ function TeamDashboard({
             <Button
               variant="destructive"
               onClick={handleLeave}
-              disabled={leaveMutation.isPending}
+              disabled={leaveMutation.isPending || !canLeave}
             >
               {leaveMutation.isPending && (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
-              Leave Team
+              {leaveLabel}
             </Button>
           </DialogFooter>
         </DialogContent>

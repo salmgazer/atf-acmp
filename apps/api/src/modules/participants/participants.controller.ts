@@ -60,6 +60,7 @@ import { AuditAction } from "@/database/entities/audit-log.entity";
 import { ParticipantImportService } from "./participant-import.service";
 import { ParticipantImportDto, ApplyParticipantImportDto } from "./dto/participant-import.dto";
 import { StaffParticipantProfileDto } from "./dto/staff-participant-profile.dto";
+import { UpdateParticipantMatchingProfileDto } from "./dto/participant-matching-profile.dto";
 
 @ApiTags("participants")
 @Controller("participants")
@@ -150,7 +151,7 @@ export class ParticipantsController {
     const result = await this.uploadService.uploadProfilePicture(file, "participants", participant.id);
 
     // Update participant with new URL
-    return this.participantsService.update(participant.id, { profileImageUrl: result.url });
+    return this.participantsService.updateProfilePicture(participant.id, result.url);
   }
 
   // ============ Admin/Staff Endpoints ============
@@ -232,14 +233,8 @@ export class ParticipantsController {
   }
 
   @Patch(":id")
-  @Audit({
-    action: AuditAction.UPDATE,
-    entityType: "Participant",
-    getEntityId: (result) => result?.id,
-    getEntityName: (result) => `${result?.firstName} ${result?.lastName}`,
-    getDescription: (result) => `Updated participant: ${result?.firstName} ${result?.lastName}`,
-  })
-  @ApiOperation({ summary: "Update participant" })
+  @Roles(Role.PARTICIPANT)
+  @ApiOperation({ summary: "Edit your participant profile" })
   @ApiParam({ name: "id", type: "string" })
   @ApiResponse({ status: 200, description: "Participant updated" })
   async update(
@@ -334,6 +329,13 @@ export class ParticipantsController {
   @Roles(Role.PARTICIPANT)
   updateMatchingConsent(@Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateMatchingConsentDto) {
     return this.participantsService.updateMatchingConsent(id, dto.consent);
+  }
+
+  @Patch(":id/matching-profile")
+  @Roles(Role.PARTICIPANT)
+  @ApiOperation({ summary: "Edit your matching profile" })
+  updateMatchingProfile(@Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateParticipantMatchingProfileDto) {
+    return this.participantsService.updateMatchingProfile(id, dto);
   }
 
   @Patch(":id/cross-country-preference")

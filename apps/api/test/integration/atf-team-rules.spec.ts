@@ -133,6 +133,119 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     expect(await db.getRepository(TeamMember).countBy({ teamId: team.id, participantId: applicant.id, status: TeamMemberStatus.CONFIRMED })).toBe(1);
   });
 
+  it("lets a sole lead delete their draft, cancels invitations, revokes chat access and lets them join another team", async () => {
+    const lead = await builder(), guest = await person();
+    const team = await teams.create({ name: "Accidental team", cohortId: cohort.id, creatorId: lead.id });
+    const invitation = await db.getRepository(TeamInvitation).save({ teamId: team.id, participantId: guest.id, invitedBy: lead.id });
+    const channel = await db.getRepository("ChatChannel").findOneByOrFail({ teamId: team.id });
+    await teams.removeMember(team.id, lead.id);
+    expect(await teams.findParticipantTeam(lead.id)).toBeNull();
+    expect(await db.getRepository(TeamMember).countBy({ teamId: team.id })).toBe(0);
+    expect((await db.getRepository(Team).findOne({ where: { id: team.id }, withDeleted: true }))?.deletedAt).toBeInstanceOf(Date);
+    expect((await db.getRepository(TeamInvitation).findOneByOrFail({ id: invitation.id })).status).toBe(InvitationStatus.CANCELLED);
+    expect((await db.getRepository(Participant).findOneByOrFail({ id: lead.id })).status).toBe(ParticipantStatus.READY);
+    expect(await db.getRepository("ChannelMember").countBy({ channelId: channel.id, memberId: lead.id })).toBe(0);
+    expect((await db.getRepository("ChatChannel").findOneByOrFail({ id: channel.id })).isArchived).toBe(true);
+    const target = await teams.create({ name: "Target team", cohortId: cohort.id, creatorId: guest.id });
+    await teams.joinByInviteCode(target.inviteCode, lead.id);
+    expect(await db.getRepository(TeamMember).findOneByOrFail({ teamId: target.id, participantId: lead.id })).toMatchObject({ status: TeamMemberStatus.PENDING });
+    await expect(teams.joinByInviteCode(team.inviteCode, await person().then(p => p.id))).rejects.toThrow("not found");
+  });
+
+  it.each([TeamMemberStatus.CONFIRMED, TeamMemberStatus.PENDING])("blocks a lead's departure with another %s member, preserving the whole team", async status => {
+    const lead = await builder(), teammate = await person(), team = await teams.create({ name: "Keep teammates", cohortId: cohort.id, creatorId: lead.id });
+    if (status === TeamMemberStatus.CONFIRMED) await teams.addMember(team.id, { participantId: teammate.id });
+    else await teams.joinByInviteCode(team.inviteCode, teammate.id);
+    await expect(teams.removeMember(team.id, lead.id)).rejects.toThrow("only member");
+    expect(await db.getRepository(TeamMember).countBy({ teamId: team.id })).toBe(2);
+    expect((await teams.findParticipantTeam(lead.id))?.id).toBe(team.id);
+    expect((await db.getRepository("ChatChannel").findOneByOrFail({ teamId: team.id })).isArchived).toBe(false);
+    expect((await db.getRepository(Participant).findOneByOrFail({ id: lead.id })).status).toBe(ParticipantStatus.ASSIGNED);
+  });
+
+  it("preserves ordinary members' ability to leave without deleting the lead's team", async () => {
+    const { team, lead, specialist } = await roster();
+    await teams.removeMember(team.id, specialist.id);
+    expect(await teams.findParticipantTeam(specialist.id)).toBeNull();
+    expect((await teams.findParticipantTeam(lead.id))?.id).toBe(team.id);
+    expect(await db.getRepository(TeamMember).countBy({ teamId: team.id })).toBe(2);
+  });
+
+  it("preserves staff's existing forming-team deletion with cascading soft-deleted memberships", async () => {
+    const { team, members } = await roster();
+    await teams.delete(team.id);
+    expect(await db.getRepository(Team).findOneBy({ id: team.id })).toBeNull();
+    expect(await db.getRepository(TeamMember).countBy({ teamId: team.id })).toBe(0);
+    for (const member of members) expect((await db.getRepository(Participant).findOneByOrFail({ id: member.id })).status).toBe(ParticipantStatus.READY);
+  });
+
+  it.each(["registered", "started", "assigned brief", "disqualified"])("does not let a sole lead delete a draft with %s state", async state => {
+    const lead = await builder(), team = await teams.create({ name: "Staff help required", cohortId: cohort.id, creatorId: lead.id });
+    const values: Partial<Team> = state === "registered" ? { registeredAt: new Date() } : state === "started" ? { challengeStartedAt: new Date(), status: TeamStatus.ACTIVE } : state === "assigned brief" ? { briefId: (await brief()).id } : { status: TeamStatus.DISQUALIFIED };
+    await db.getRepository(Team).update(team.id, values);
+    await expect(teams.removeMember(team.id, lead.id)).rejects.toThrow("Contact staff");
+    expect(await db.getRepository(TeamMember).countBy({ teamId: team.id })).toBe(1);
+    expect((await teams.findParticipantTeam(lead.id))?.id).toBe(team.id);
+  });
+
+  it("serializes a new join against deletion so the lead cannot abandon a concurrently added member", async () => {
+    const lead = await builder(), guest = await person(), team = await teams.create({ name: "Concurrent join wins", cohortId: cohort.id, creatorId: lead.id });
+    const incoming = db.createQueryRunner(); await incoming.connect(); await incoming.startTransaction();
+    const [{ pid }] = await incoming.query("SELECT pg_backend_pid() pid");
+    let leaving: Promise<void> | undefined;
+    try {
+      await incoming.manager.save(TeamMember, { teamId: team.id, participantId: guest.id, status: TeamMemberStatus.PENDING });
+      leaving = teams.removeMember(team.id, lead.id);
+      const outcome = leaving.then(() => null, error => error);
+      let blocked = false;
+      for (let retry = 0; retry < 100 && !blocked; retry++) {
+        const [row] = await db.query("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1::integer = ANY(pg_blocking_pids(pid))) blocked", [pid]);
+        blocked = row.blocked;
+        if (!blocked) await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      expect(blocked).toBe(true);
+      await incoming.commitTransaction();
+      expect((await outcome)?.message).toContain("only member");
+      expect(await db.getRepository(TeamMember).countBy({ teamId: team.id })).toBe(2);
+    } finally {
+      if (incoming.isTransactionActive) await incoming.rollbackTransaction();
+      await incoming.release();
+      await leaving?.catch(() => undefined);
+    }
+  });
+
+  it("rejects an admission started with stale team data after sole-lead deletion commits", async () => {
+    const lead = await builder(), guest = await person(), team = await teams.create({ name: "Concurrent deletion wins", cohortId: cohort.id, creatorId: lead.id });
+    let release!: () => void, reached!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const archived = new Promise<void>(resolve => { reached = resolve; });
+    const original = (teams as any).archiveTeamChat;
+    const archive = jest.spyOn(teams as any, "archiveTeamChat").mockImplementation(async function(this: TeamsService, ...args: unknown[]) {
+      await original.apply(this, args); reached(); await gate;
+    });
+    const incoming = db.createQueryRunner(); await incoming.connect();
+    const [{ pid }] = await incoming.query("SELECT pg_backend_pid() pid");
+    const leaving = teams.removeMember(team.id, lead.id);
+    let admission: Promise<unknown> | undefined;
+    try {
+      await archived;
+      admission = incoming.manager.save(TeamMember, { teamId: team.id, participantId: guest.id, status: TeamMemberStatus.PENDING }).then(() => null, error => error);
+      // Prove the insert reached the DB lock, rather than merely running after deletion.
+      let blocked = false;
+      for (let retry = 0; retry < 100 && !blocked; retry++) {
+        const [row] = await db.query("SELECT cardinality(pg_blocking_pids($1)) > 0 blocked", [pid]);
+        blocked = row.blocked;
+        if (!blocked) await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      expect(blocked).toBe(true);
+      release(); await leaving;
+      expect((await admission as Error)?.message).toContain("Team is no longer available");
+      expect(await db.getRepository(TeamMember).countBy({ teamId: team.id })).toBe(0);
+    } finally {
+      release(); await leaving.catch(() => undefined); await admission; await incoming.release(); archive.mockRestore();
+    }
+  });
+
   it("requires everyone's cross-country consent, including when accepting an old invitation", async () => {
     const { team, lead, members } = await roster();
     const foreign = await person({ country: "Nigeria" }, { crossCountryWilling: true });

@@ -68,12 +68,12 @@ const statusConfig: Record<
   ParticipantStatus,
   { label: string; variant: "default" | "secondary" | "destructive" | "outline"; icon: typeof CheckCircle }
 > = {
-  imported: { label: "Imported", variant: "outline", icon: Clock },
+  imported: { label: "Inactive", variant: "outline", icon: Clock },
   active: { label: "Active", variant: "default", icon: Users },
   onboarding: { label: "Onboarding", variant: "secondary", icon: Clock },
   ready: { label: "Ready", variant: "default", icon: CheckCircle },
   assigned: { label: "Assigned", variant: "default", icon: UserCheck },
-  inactive: { label: "Inactive", variant: "destructive", icon: UserX },
+  inactive: { label: "Deactivated", variant: "destructive", icon: UserX },
 };
 
 const roleIcons = {
@@ -520,12 +520,12 @@ function ParticipantDetailContent({ id }: { id: string }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="imported">Imported</SelectItem>
+                  <SelectItem value="imported">Inactive (not accessed yet)</SelectItem>
                   <SelectItem value="active">Active</SelectItem>
                   <SelectItem value="onboarding">Onboarding</SelectItem>
                   <SelectItem value="ready">Ready</SelectItem>
                   <SelectItem value="assigned">Assigned</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="inactive">Deactivated (sign-in blocked)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

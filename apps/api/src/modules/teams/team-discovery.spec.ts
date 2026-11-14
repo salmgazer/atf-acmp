@@ -105,11 +105,11 @@ describe("Participant-compatible team discovery", () => {
     } finally { admission.mockRestore(); }
   });
 
-  it("still requires a confirmed lead to transfer leadership before leaving teammates", async () => {
-    const service = Object.assign(Object.create(TeamsService.prototype), { findOne: async () => ({ members: [
+  it("does not let a confirmed lead leave teammates", async () => {
+    const service = Object.assign(Object.create(TeamsService.prototype), { participantRepository: { findOne: jest.fn() }, teamRepository: { findOne: jest.fn() }, findOne: async () => ({ members: [
       { participantId: "lead", role: "lead", status: "confirmed" }, { participantId: "member", role: "member", status: "confirmed" },
     ] }) });
-    await expect(service.removeMember("team", "lead")).rejects.toThrow("Transfer leadership first");
+    await expect(service.removeMember("team", "lead")).rejects.toThrow("only member");
   });
 
   it("explains group and cross-country failures separately without relaxing direct admission", async () => {

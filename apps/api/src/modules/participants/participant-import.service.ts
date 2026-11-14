@@ -175,7 +175,7 @@ export class ParticipantImportService implements OnModuleInit {
             if (patch.programmeOptedOut !== undefined) patch.programmeOptedOutAt = patch.programmeOptedOut ? new Date() : null;
             if (patch.codeLabsCompleted !== undefined) { patch.codeLabsVerifiedAt = patch.codeLabsCompleted ? new Date() : null; patch.codeLabsVerifiedBy = patch.codeLabsCompleted ? actor.id : null; }
             if (row.outcome === "new") {
-              const participant = await manager.save(Participant, manager.create(Participant, { ...patch, participantId: row.participantId, email: row.email!, passwordHash: hashes.get(row.participantId), status: ParticipantStatus.ACTIVE, cohortId: dto.cohortId, skills: [], interests: [], mustChangePassword: true, onboardingComplete: false }));
+              const participant = await manager.save(Participant, manager.create(Participant, { ...patch, participantId: row.participantId, email: row.email!, passwordHash: hashes.get(row.participantId), status: ParticipantStatus.IMPORTED, cohortId: dto.cohortId, skills: [], interests: [], mustChangePassword: true, onboardingComplete: false }));
               newIds.push(participant.id);
             } else {
               await manager.update(Participant, row.existingId!, patch);

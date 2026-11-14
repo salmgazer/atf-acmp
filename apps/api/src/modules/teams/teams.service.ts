@@ -1096,6 +1096,10 @@ export class TeamsService {
 
   @Transactional()
   async removeMember(teamId: string, participantId: string): Promise<void> {
+    // Use the same participant -> team lock order as the membership trigger.
+    // Admissions must finish before we decide whether this is an empty team.
+    await this.participantRepository.findOne({ where: { id: participantId }, lock: { mode: "pessimistic_write" } });
+    await this.teamRepository.findOne({ where: { id: teamId }, lock: { mode: "pessimistic_write" } });
     const team = await this.findOne(teamId);
 
     const member = team.members.find((m) => m.participantId === participantId);
@@ -1103,12 +1107,14 @@ export class TeamsService {
       throw new NotFoundException("Member not found in team");
     }
 
-    // Cannot remove lead if there are other confirmed members
     const confirmedMembers = team.members.filter((m) => m.status === TeamMemberStatus.CONFIRMED);
-    if (member.role === TeamRole.LEAD && confirmedMembers.length > 1) {
-      throw new BadRequestException(
-        "Cannot remove team lead. Transfer leadership first or remove all other members."
-      );
+    if (member.role === TeamRole.LEAD) {
+      if (team.members.length !== 1 || member.status !== TeamMemberStatus.CONFIRMED) {
+        throw new BadRequestException("Team leads can only delete and leave a team when they are its only member. Resolve pending join requests first.");
+      }
+      if (team.status !== TeamStatus.FORMING || team.registeredAt || team.challengeStartedAt || team.briefId) {
+        throw new BadRequestException("Only an unregistered forming team without an assigned brief can be deleted by its lead. Contact staff for help.");
+      }
     }
 
     await this.memberRepository.remove(member);
@@ -1126,8 +1132,9 @@ export class TeamsService {
 
     // If team is empty (no confirmed members), delete it (and archive the chat)
     if (confirmedMembers.length === 1 && member.status === TeamMemberStatus.CONFIRMED) {
+      await this.invitationRepository.update({ teamId, status: InvitationStatus.PENDING }, { status: InvitationStatus.CANCELLED, respondedAt: new Date() });
       await this.archiveTeamChat(teamId);
-      await this.teamRepository.softRemove(team);
+      await this.teamRepository.softDelete(teamId);
     }
   }
 
