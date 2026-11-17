@@ -151,6 +151,7 @@ function MemberCard({
           className="text-destructive hover:text-destructive"
           onClick={onRemove}
           disabled={isRemoving}
+          aria-label={`Request removal of ${member.participant.firstName} ${member.participant.lastName}`}
         >
           {isRemoving ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -175,6 +176,9 @@ function TeamDashboard({
   const [showLeaveDialog, setShowLeaveDialog] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
+  const [removalTarget, setRemovalTarget] = useState<TeamMember | null>(null);
+  const [removalReason, setRemovalReason] = useState("");
+  const [removalError, setRemovalError] = useState<string | null>(null);
 
   const currentMember = team.members.find((m) => m.participantId === participantId);
   const isLeadOrCoLead = currentMember?.role === "lead" || currentMember?.role === "co_lead";
@@ -228,14 +232,26 @@ function TeamDashboard({
     });
   };
 
-  const handleRemoveMember = async (memberParticipantId: string) => {
+  const handleRemoveMember = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!removalTarget) return;
+    const reason = removalReason.trim();
+    setRemovalError(null);
+    if (!reason) { setRemovalError("A reason for removing this member is required."); return; }
+    if (reason.length > 500) { setRemovalError("The removal reason must be 500 characters or fewer."); return; }
+    const memberParticipantId = removalTarget.participantId;
     setRemovingMemberId(memberParticipantId);
     try {
       await removalMutation.mutateAsync({
         teamId: team.id,
         participantId: memberParticipantId,
         requestedBy: participantId,
+        reason,
       });
+      setRemovalTarget(null);
+      setRemovalReason("");
+    } catch (error) {
+      setRemovalError(error instanceof Error ? error.message : "Could not submit the removal request. Please try again.");
     } finally {
       setRemovingMemberId(null);
     }
@@ -404,7 +420,7 @@ function TeamDashboard({
                 member={member}
                 isCurrentUser={member.participantId === participantId}
                 canRemove={isLeadOrCoLead && member.role !== "lead"}
-                onRemove={() => handleRemoveMember(member.participantId)}
+                onRemove={() => { setRemovalTarget(member); setRemovalReason(""); setRemovalError(null); }}
                 isRemoving={removingMemberId === member.participantId}
               />
             ))}
@@ -493,6 +509,27 @@ function TeamDashboard({
         </Button>
       )}
       {isLead && !canDeleteOwnTeam && <p className="text-sm text-muted-foreground">Team leads can delete and leave only when they are the sole member of an unregistered team without an assigned brief. Resolve pending join requests first, or contact staff for help.</p>}
+
+      <Dialog open={!!removalTarget} onOpenChange={open => { if (!open && !removalMutation.isPending) setRemovalTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Request member removal</DialogTitle>
+            <DialogDescription>Explain why you want to remove {removalTarget?.participant.firstName} {removalTarget?.participant.lastName} from {team.name}. Staff will review your note before approving or rejecting the request. The member stays on the team until staff approve.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleRemoveMember} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="member-removal-reason">Reason for removal (required)</Label>
+              <Textarea id="member-removal-reason" value={removalReason} onChange={event => setRemovalReason(event.target.value)} required maxLength={500} rows={4} disabled={removalMutation.isPending} aria-describedby="member-removal-reason-help" placeholder="Give staff the context they need to review this request." />
+              <p id="member-removal-reason-help" className="text-xs text-muted-foreground">{removalReason.length}/500 characters. This note is for staff review.</p>
+            </div>
+            {removalError && <p role="alert" className="text-sm text-destructive">{removalError}</p>}
+            <DialogFooter>
+              <Button type="button" variant="outline" disabled={removalMutation.isPending} onClick={() => setRemovalTarget(null)}>Cancel</Button>
+              <Button type="submit" disabled={removalMutation.isPending || !removalReason.trim()}>{removalMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Submit removal request</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Invite Dialog */}
       <InviteDialog

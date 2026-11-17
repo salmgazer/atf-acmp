@@ -17,7 +17,7 @@ describe("Participant team creation authorization over HTTP", () => {
   const cohortId = "4753d422-d547-4071-9e31-c85324f06031";
   const teamId = "52f1db29-267c-4125-8dab-d7155293370f";
   let membership: { participantId: string; teamId: string; status: string; role: string } | null = null;
-  const service = { create: jest.fn(async dto => ({ id: teamId, ...dto })), delete: jest.fn(async () => undefined), removeMember: jest.fn(async () => undefined), withdrawJoinRequest: jest.fn(async () => undefined), findOpenTeams: jest.fn(async () => []) };
+  const service = { create: jest.fn(async dto => ({ id: teamId, ...dto })), delete: jest.fn(async () => undefined), removeMember: jest.fn(async () => undefined), requestMemberRemoval: jest.fn(async () => ({ immediate: false })), withdrawJoinRequest: jest.fn(async () => undefined), findOpenTeams: jest.fn(async () => []) };
   const database = { getRepository: jest.fn(() => ({ findOne: jest.fn(async ({ where }) => {
     if (!membership || membership.participantId !== where.participantId || (where.teamId && membership.teamId !== where.teamId)) return null;
     if (!where.status) return membership;
@@ -102,6 +102,31 @@ describe("Participant team creation authorization over HTTP", () => {
   it("does not confuse another team's action with the collection creation route", async () => {
     expect((await post({}, "participant", `/${teamId}/register`)).status).toBe(403);
     expect(service.create).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, null, "", " \n\t ", 12, [], {}, "x".repeat(501)])("rejects an invalid member-removal reason (%j) before calling the service", async reason => {
+    membership = { participantId, teamId, status: "confirmed", role: "lead" };
+    const response = await post({ participantId: otherId, requestedBy: participantId, reason }, "participant", `/${teamId}/removal-requests`);
+    expect(response.status).toBe(400);
+    expect(service.requestMemberRemoval).not.toHaveBeenCalled();
+  });
+
+  it.each(["lead", "co_lead"])("trims a %s's required reason and derives the requester from authentication", async role => {
+    membership = { participantId, teamId, status: "confirmed", role };
+    const response = await post({ participantId: otherId, requestedBy: otherId, reason: "  No participation after repeated contact.\n  " }, "participant", `/${teamId}/removal-requests`);
+    expect(response.status).toBe(200);
+    expect(service.requestMemberRemoval).toHaveBeenCalledWith(teamId, otherId, participantId, "No participation after repeated contact.");
+  });
+
+  it("accepts a reason at the 500-character limit", async () => {
+    membership = { participantId, teamId, status: "confirmed", role: "lead" };
+    expect((await post({ participantId: otherId, requestedBy: participantId, reason: "x".repeat(500) }, "participant", `/${teamId}/removal-requests`)).status).toBe(200);
+  });
+
+  it("does not grant ordinary members removal-request authority even with a reason", async () => {
+    membership = { participantId, teamId, status: "confirmed", role: "member" };
+    expect((await post({ participantId: otherId, requestedBy: participantId, reason: "Please remove this teammate." }, "participant", `/${teamId}/removal-requests`)).status).toBe(403);
+    expect(service.requestMemberRemoval).not.toHaveBeenCalled();
   });
 
   it.each(["pending", "confirmed"])("permits one's own %s departure through its appropriate route", async status => {

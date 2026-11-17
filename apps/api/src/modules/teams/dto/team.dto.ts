@@ -12,7 +12,7 @@ import {
   MaxLength,
   Length,
 } from "class-validator";
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   Team,
@@ -320,11 +320,12 @@ export class RequestMemberRemovalDto {
   @IsUUID()
   requestedBy: string;
 
-  @ApiPropertyOptional({ description: "Reason for removal request" })
-  @IsOptional()
+  @ApiProperty({ description: "Required reason for removal request", minLength: 1, maxLength: 500 })
+  @Transform(({ value }) => typeof value === "string" ? value.trim() : value)
   @IsString()
+  @MinLength(1, { message: "A reason for removing this member is required" })
   @MaxLength(500)
-  reason?: string;
+  reason: string;
 }
 
 export class ResolveRemovalRequestDto {
