@@ -673,7 +673,7 @@ export function useRequestMemberRemoval() {
       teamId: string;
       participantId: string;
       requestedBy: string;
-      reason?: string;
+      reason: string;
     }) =>
       api.post<{ immediate: boolean; request?: MemberRemovalRequest }>(
         `/teams/${teamId}/removal-requests`,

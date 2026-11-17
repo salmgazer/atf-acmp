@@ -37,6 +37,13 @@ import {
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
+function RemovalReason({ reason }: { reason?: string }) {
+  return <div className="mt-3 rounded-md border border-border/50 bg-muted/50 p-3">
+    <p className="mb-1 text-sm font-medium text-muted-foreground">Reason for removal</p>
+    <p className="whitespace-pre-wrap break-words text-sm text-foreground">{reason?.trim() || "No reason provided for this earlier request."}</p>
+  </div>;
+}
+
 function RemovalRequestCard({
   request,
   onApprove,
@@ -93,12 +100,7 @@ function RemovalRequestCard({
           </div>
 
           {/* Reason */}
-          {request.reason && (
-            <div className="mt-3 p-3 rounded-md bg-muted/50 border border-border/50">
-              <p className="text-sm font-medium text-muted-foreground mb-1">Reason:</p>
-              <p className="text-sm text-foreground">{request.reason}</p>
-            </div>
-          )}
+          <RemovalReason reason={request.reason} />
         </div>
 
         {/* Actions */}
@@ -273,6 +275,7 @@ function RemovalRequestsContent() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <RemovalReason reason={selectedRequest?.reason} />
             <div className="p-3 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
@@ -323,6 +326,7 @@ function RemovalRequestsContent() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <RemovalReason reason={selectedRequest?.reason} />
             <div className="space-y-2">
               <Label>Reason for rejection (recommended)</Label>
               <Textarea

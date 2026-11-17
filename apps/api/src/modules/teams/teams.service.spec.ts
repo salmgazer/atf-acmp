@@ -8,7 +8,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { TeamsService } from "./teams.service";
-import { Team, TeamStatus, TeamRole, TeamMember, TeamInvitation, TeamMemberRemovalRequest } from "@/database/entities/team.entity";
+import { Team, TeamStatus, TeamRole, TeamMember, TeamMemberStatus, TeamInvitation, TeamMemberRemovalRequest } from "@/database/entities/team.entity";
 import { Participant, ParticipantStatus } from "@/database/entities/participant.entity";
 import { Cohort } from "@/database/entities/cohort.entity";
 import { Brief } from "@/database/entities/brief.entity";
@@ -89,6 +89,7 @@ describe("TeamsService", () => {
       onTeamMemberAdded: jest.fn().mockResolvedValue(undefined),
       onTeamMemberRemoved: jest.fn().mockResolvedValue(undefined),
       onTeamInvitationSent: jest.fn().mockResolvedValue(undefined),
+      onTeamMemberRemovalRequested: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -116,6 +117,36 @@ describe("TeamsService", () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe("member removal reasons", () => {
+    beforeEach(() => {
+      teamRepository.findOne.mockResolvedValue({ ...mockTeam, members: [
+        { id: "lead-membership", participantId: "lead", role: TeamRole.LEAD, status: TeamMemberStatus.CONFIRMED },
+        { id: "target-membership", participantId: "target", role: TeamRole.MEMBER, status: TeamMemberStatus.CONFIRMED },
+      ] });
+      removalRequestRepository.findOne.mockResolvedValue(null);
+      removalRequestRepository.create.mockImplementation(values => ({ id: "request", ...values } as any));
+      removalRequestRepository.save.mockImplementation(async value => value as any);
+      participantRepository.findOne.mockResolvedValue(mockParticipant);
+      userRepository.find.mockResolvedValue([{ id: "staff" }] as any);
+    });
+
+    it.each([undefined, null, "", " \n\t ", 12, "x".repeat(501)])("rejects invalid reasons without removing members, saving requests or notifying staff (%j)", async reason => {
+      await expect(service.requestMemberRemoval(mockTeam.id, "target", "lead", reason as any)).rejects.toThrow(BadRequestException);
+      expect(memberRepository.remove).not.toHaveBeenCalled();
+      expect(removalRequestRepository.save).not.toHaveBeenCalled();
+      expect(mockNotificationTriggersService.onTeamMemberRemovalRequested).not.toHaveBeenCalled();
+    });
+
+    it("stores and notifies staff of the trimmed note while keeping the confirmed member on the team", async () => {
+      const reason = "No contributions after two weeks.\nContact attempts went unanswered.";
+      const result = await service.requestMemberRemoval(mockTeam.id, "target", "lead", `  ${reason}\n `);
+      expect(result).toMatchObject({ immediate: false, request: { reason, status: "pending", participantId: "target", requestedBy: "lead" } });
+      expect(removalRequestRepository.save).toHaveBeenCalledWith(expect.objectContaining({ reason, memberId: "target-membership" }));
+      expect(memberRepository.remove).not.toHaveBeenCalled();
+      expect(mockNotificationTriggersService.onTeamMemberRemovalRequested).toHaveBeenCalledWith(expect.objectContaining({ reason, requestId: "request", staffUserIds: ["staff"] }));
+    });
   });
 
   describe("create", () => {

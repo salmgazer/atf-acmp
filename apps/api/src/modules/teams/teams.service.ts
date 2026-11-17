@@ -540,7 +540,7 @@ export class TeamsService {
     teamId: string,
     participantId: string,
     requestedBy: string,
-    reason?: string
+    reason: string
   ): Promise<{ immediate: boolean; request?: TeamMemberRemovalRequest }> {
     const team = await this.findOne(teamId);
 
@@ -565,6 +565,12 @@ export class TeamsService {
     if (memberToRemove.role === TeamRole.LEAD) {
       throw new BadRequestException("Cannot remove the team lead");
     }
+
+    if (typeof reason !== "string" || !reason.trim()) {
+      throw new BadRequestException("A reason for removing this member is required");
+    }
+    reason = reason.trim();
+    if (reason.length > 500) throw new BadRequestException("The removal reason must be 500 characters or fewer");
 
     // For PENDING members: immediate removal (no approval needed)
     if (memberToRemove.status === TeamMemberStatus.PENDING) {
