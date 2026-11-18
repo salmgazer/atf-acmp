@@ -75,13 +75,13 @@ function getPriorityBadgeStyle(score?: number | null): { bgClass: string; textCl
   if (score === undefined || score === null) {
     return { bgClass: "bg-muted", textClass: "text-muted-foreground", label: "—" };
   }
-  if (score >= 140) {
+  if (score >= 70) {
     return { bgClass: "bg-emerald-500/15", textClass: "text-emerald-600", label: String(score) };
   }
-  if (score >= 100) {
+  if (score >= 60) {
     return { bgClass: "bg-blue-500/15", textClass: "text-blue-600", label: String(score) };
   }
-  if (score >= 50) {
+  if (score >= 45) {
     return { bgClass: "bg-amber-500/15", textClass: "text-amber-600", label: String(score) };
   }
   return { bgClass: "bg-red-500/15", textClass: "text-red-600", label: String(score) };
@@ -91,7 +91,7 @@ function BriefRow({ brief }: { brief: Brief }) {
   const config = statusConfig[brief.status];
   const StatusIcon = config.icon;
   const isReviewable = ["submitted", "in_review"].includes(brief.status);
-  const priorityStyle = getPriorityBadgeStyle(brief.priorityScore);
+  const priorityStyle = getPriorityBadgeStyle(brief.fitScore);
 
   return (
     <tr className="border-b border-border/50 hover:bg-muted transition-colors">
@@ -118,7 +118,7 @@ function BriefRow({ brief }: { brief: Brief }) {
       <td className="p-4">
         <div className="flex items-center gap-2 text-muted-foreground">
           <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="text-sm truncate max-w-[140px]">{brief.organization?.name || "Unknown"}</span>
+          <span className="text-sm truncate max-w-[140px]">{brief.source === "team" ? "Team brief" : brief.organization?.name || "Unknown"}</span>
         </div>
       </td>
       <td className="p-4">
@@ -137,8 +137,9 @@ function BriefRow({ brief }: { brief: Brief }) {
         <div className="flex flex-col gap-1">
           <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${priorityStyle.bgClass} ${priorityStyle.textClass}`}>
             <TrendingUp className="h-3 w-3" />
-            {priorityStyle.label}
+            Fit: {priorityStyle.label} / 100
           </span>
+          <span className="text-xs text-muted-foreground">Impact: {brief.impactScore ?? "—"} / 9</span>
           {brief.scoreOverride && (
             <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-orange-500/15 text-orange-600" title={brief.scoreOverride}>
               <AlertCircle className="h-3 w-3" />
@@ -279,7 +280,8 @@ function BriefsReviewContent() {
         "Country",
         "Vertical",
         "Status",
-        "Priority Score",
+        "Fit Score",
+        "Impact Score",
         "Max Teams",
         "Teams Count",
         "Submitted At",
@@ -293,7 +295,8 @@ function BriefsReviewContent() {
         briefCountry(b),
         b.vertical?.name || "",
         b.status,
-        b.priorityScore !== null && b.priorityScore !== undefined ? String(b.priorityScore) : "",
+        b.fitScore != null ? String(b.fitScore) : "",
+        b.impactScore != null ? String(b.impactScore) : "",
         String(b.maxTeams),
         String(b.teamsCount),
         b.submittedAt ? formatDistanceToNow(new Date(b.submittedAt), { addSuffix: true }) : "",
@@ -514,11 +517,11 @@ function BriefsReviewContent() {
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Vertical</th>
                   <th 
                     className="text-left p-4 text-sm font-medium text-muted-foreground cursor-pointer hover:text-foreground select-none"
-                    onClick={() => handleSort("priority")}
+                    onClick={() => handleSort("fitScore")}
                   >
                     <span className="inline-flex items-center">
-                      Priority
-                      {getSortIcon("priority")}
+                      Fit / Impact
+                      {getSortIcon("fitScore")}
                     </span>
                   </th>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Status</th>

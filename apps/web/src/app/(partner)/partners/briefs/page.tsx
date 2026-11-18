@@ -75,13 +75,13 @@ function getPriorityBadgeStyle(score?: number | null): { bgClass: string; textCl
   if (score === undefined || score === null) {
     return { bgClass: "bg-muted", textClass: "text-muted-foreground", label: "—" };
   }
-  if (score >= 140) {
+  if (score >= 70) {
     return { bgClass: "bg-emerald-500/15", textClass: "text-emerald-600", label: String(score) };
   }
-  if (score >= 100) {
+  if (score >= 60) {
     return { bgClass: "bg-blue-500/15", textClass: "text-blue-600", label: String(score) };
   }
-  if (score >= 50) {
+  if (score >= 45) {
     return { bgClass: "bg-amber-500/15", textClass: "text-amber-600", label: String(score) };
   }
   return { bgClass: "bg-red-500/15", textClass: "text-red-600", label: String(score) };
@@ -100,7 +100,7 @@ function BriefRow({
 }) {
   const config = statusConfig[brief.status];
   const StatusIcon = config.icon;
-  const priorityStyle = getPriorityBadgeStyle(brief.priorityScore);
+  const priorityStyle = getPriorityBadgeStyle(brief.fitScore);
 
   return (
     <tr className="border-b border-border/50 hover:bg-muted transition-colors">
@@ -137,7 +137,7 @@ function BriefRow({
       <td className="p-4">
         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${priorityStyle.bgClass} ${priorityStyle.textClass}`}>
           <TrendingUp className="h-3 w-3" />
-          {priorityStyle.label}
+          Fit: {priorityStyle.label} / 100
         </span>
       </td>
       <td className="p-4">
@@ -470,7 +470,7 @@ function BriefsContent() {
                         onClick={() => handleSort("priority")}
                       >
                         <span className="inline-flex items-center">
-                          Priority
+                          Fit / Impact
                           {getSortIcon("priority")}
                         </span>
                       </th>

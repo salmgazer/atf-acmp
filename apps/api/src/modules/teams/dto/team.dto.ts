@@ -1,5 +1,6 @@
 import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
 import { StrictBoolean } from "@/common/decorators/query-value.decorator";
+import { TeamBriefPreference } from "@acmp/shared";
 import {
   IsString,
   IsOptional,
@@ -151,6 +152,12 @@ export class UpdateTeamDto {
 
 export class RegisterTeamDto {
   @IsString() @MinLength(1) @MaxLength(255) competitionCountry: string;
+}
+
+export class UpdateTeamBriefPreferenceDto {
+  @ApiProperty({ enum: TeamBriefPreference })
+  @IsEnum(TeamBriefPreference)
+  briefPreference: TeamBriefPreference;
 }
 
 export class AssignBriefDto {

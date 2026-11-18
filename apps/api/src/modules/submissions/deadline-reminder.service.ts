@@ -54,6 +54,8 @@ export class DeadlineReminderService {
     this.logger.log(`Found ${stages.length} stages with deadlines in ${hoursBeforeDeadline}h window`);
 
     for (const stage of stages) {
+      if (stage.workflowKey && !["proposal", "build"].includes(stage.workflowKey)) continue;
+      if (!stage.workflowKey && await this.stageRepository.exists({ where: { cohortId: stage.cohortId, workflowKey: "team" } })) continue;
       const result = await this.sendReminderForStage(stage, hoursBeforeDeadline);
       results.push(result);
     }
@@ -69,7 +71,7 @@ export class DeadlineReminderService {
     const teamsWithSubmissions = await this.submissionRepository.find({
       where: {
         stageId: stage.id,
-        status: In([SubmissionStatus.SUBMITTED, SubmissionStatus.LATE, SubmissionStatus.EVALUATED]),
+        status: In([SubmissionStatus.SUBMITTED, SubmissionStatus.LATE, SubmissionStatus.EVALUATED, SubmissionStatus.PENDING_APPROVAL, SubmissionStatus.APPROVED]),
       },
       select: ["teamId"],
     });
@@ -104,7 +106,7 @@ export class DeadlineReminderService {
     // Get all participants from these teams
     const teamIds = teamsToNotify.map((t) => t.id);
     const teamMembers = await this.teamMemberRepository.find({
-      where: { teamId: In(teamIds) },
+      where: { teamId: In(teamIds), status: "confirmed" as any },
     });
 
     const participantIds = teamMembers.map((m) => `participant:${m.participantId}`);

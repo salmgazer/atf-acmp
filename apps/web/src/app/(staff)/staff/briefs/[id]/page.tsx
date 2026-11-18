@@ -1,6 +1,7 @@
 "use client";
 
 import { StaffOnly } from "@/components/auth/staff-only";
+import { TeamBriefReview } from "@/components/submissions/team-brief-review";
 import { BriefContacts } from "@/components/briefs/brief-contacts";
 import { BriefEvents } from "@/components/briefs/brief-events";
 
@@ -130,7 +131,7 @@ function BriefReviewContent({ id }: { id: string }) {
 
   const config = statusConfig[brief.status];
   const StatusIcon = config.icon;
-  const canReview = ["submitted", "in_review"].includes(brief.status);
+  const canReview = brief.source !== "team" && ["submitted", "in_review"].includes(brief.status);
 
   const handleStartReview = async () => {
     await startReviewMutation.mutateAsync({ id });
@@ -209,7 +210,8 @@ function BriefReviewContent({ id }: { id: string }) {
                 </Badge>
               </div>
               <p className="text-sm text-muted-foreground">
-                Submitted by {brief.organization?.name || "Unknown Partner"}
+                Submitted by {brief.source === "team" ? "a participant team" : brief.organization?.name || "Unknown Partner"}
+                {brief.source === "team" && brief.submittedByTeamId && <> · <Link href={`/staff/teams/${brief.submittedByTeamId}`} className="underline">View submitting team and members</Link></>}
               </p>
             </div>
           </div>
@@ -251,19 +253,19 @@ function BriefReviewContent({ id }: { id: string }) {
           )}
 
           {/* Edit button - always available for staff */}
-          <StaffOnly permission="manage"><Button asChild variant="outline">
+          {brief.source !== "team" && <StaffOnly permission="manage"><Button asChild variant="outline">
             <Link href={`/staff/briefs/${id}/edit`}>
               <Pencil className="mr-2 h-4 w-4" />
               Edit Brief
             </Link>
-          </Button></StaffOnly>
+          </Button></StaffOnly>}
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
             <BriefContacts brief={brief} />
-            <BriefEvents briefId={id} />
+            {brief.source === "team" ? <TeamBriefReview briefId={id} status={brief.status} /> : <BriefEvents briefId={id} />}
             <div className="rounded-lg border bg-card p-6">
               <h2 className="text-lg font-semibold mb-4">Description</h2>
               <SafeHtml
@@ -499,22 +501,6 @@ function BriefReviewContent({ id }: { id: string }) {
               <div className="rounded-lg border bg-card p-6">
                 <h2 className="font-semibold mb-4">AI-Challenge Fit</h2>
                 <dl className="space-y-4">
-                  {brief.priorityScore !== undefined && (
-                    <div>
-                      <dt className="text-sm text-muted-foreground">Priority Score</dt>
-                      <dd className="flex items-center gap-2">
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-sm font-semibold ${
-                          brief.priorityScore >= 140 ? "bg-emerald-500/15 text-emerald-600" :
-                          brief.priorityScore >= 100 ? "bg-blue-500/15 text-blue-600" :
-                          brief.priorityScore >= 50 ? "bg-amber-500/15 text-amber-600" :
-                          "bg-red-500/15 text-red-600"
-                        }`}>
-                          {brief.priorityScore}
-                        </span>
-                        <span className="text-xs text-muted-foreground">/ 190</span>
-                      </dd>
-                    </div>
-                  )}
                   {brief.fitScore !== undefined && (
                     <div>
                       <dt className="text-sm text-muted-foreground">Fit Score</dt>

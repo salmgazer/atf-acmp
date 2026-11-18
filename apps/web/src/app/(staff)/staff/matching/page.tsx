@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useStaffCohortStore } from "@/lib/stores/staff-cohort-store";
 import { StaffLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Button } from "@/components/ui/button";
@@ -154,6 +155,8 @@ function MatchRow({ match, index }: { match: MatchResult; index: number }) {
 
 function MatchingContent() {
   const [selectedCohortId, setSelectedCohortId] = useState<string>("");
+  const globalCohortId = useStaffCohortStore(state => state.globalCohortId);
+  useEffect(() => { const requested = new URLSearchParams(window.location.search).get("cohortId"); if (!selectedCohortId && (requested || globalCohortId)) setSelectedCohortId(requested || globalCohortId || ""); }, [globalCohortId, selectedCohortId]);
   const [showConfigDialog, setShowConfigDialog] = useState(false);
   const [showFinalizeDialog, setShowFinalizeDialog] = useState(false);
   const [config, setConfig] = useState<MatchingConfig>({
@@ -222,9 +225,9 @@ function MatchingContent() {
   };
 
   const eligibleTeams =
-    teamStatus?.filter((t) => !t.currentBriefId).length || 0;
+    teamStatus?.filter((t) => !t.currentBriefId && t.briefPreference !== "own" && t.memberCount >= 3 && t.memberCount <= 5).length || 0;
   const teamsWithPrefs =
-    teamStatus?.filter((t) => t.hasPreferences && !t.currentBriefId).length || 0;
+    teamStatus?.filter((t) => t.hasPreferences && !t.currentBriefId && t.briefPreference !== "own" && t.memberCount >= 3 && t.memberCount <= 5).length || 0;
   const availableBriefs =
     briefCapacities?.filter((b) => b.availableSlots > 0).length || 0;
 
@@ -236,10 +239,10 @@ function MatchingContent() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
               <Shuffle className="h-6 w-6" />
-              Team-Brief Matching
+              Partner Brief Assignment
             </h1>
             <p className="text-muted-foreground">
-              Automatically assign teams to briefs based on preferences
+              Assign partner briefs to existing teams without briefs. Teams creating their own briefs are skipped. This run does not create teams or change team membership.
             </p>
           </div>
           <Select

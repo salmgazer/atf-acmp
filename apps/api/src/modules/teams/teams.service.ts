@@ -1,5 +1,6 @@
+import { assertProposalPassed, isPoolBrief } from "@/common/services/team-workflow";
 import { assertParticipantTeamAdmission, assertMemberAdmission, teamRuleContext, clearTeamRegistration } from "@/common/services/team-rules";
-import { ATF_TEAM_MAX, canShareTeam, evaluateTeamRules, normalizeTeamCountry } from "@acmp/shared";
+import { ATF_TEAM_MAX, canShareTeam, evaluateTeamRules, normalizeTeamCountry, TeamBriefPreference } from "@acmp/shared";
 import { resolveCohortGroup } from "@/common/services/cohort-groups";
 import { briefCountry, confirmedTeamCountries, isBriefCountryAllowed } from "@/common/services/brief-country-access";
 import { Transactional, afterCommit } from "@/common/decorators/transactional.decorator";
@@ -900,6 +901,19 @@ export class TeamsService {
     return this.findOne(id);
   }
 
+  @Transactional()
+  async updateBriefPreference(id: string, preference: TeamBriefPreference, participantId: string): Promise<Team> {
+    const team = await this.teamRepository.findOne({ where: { id }, lock: { mode: "pessimistic_write" } });
+    if (!team) throw new NotFoundException("Team not found");
+    const lead = await this.memberRepository.findOneBy({ teamId: id, participantId, role: TeamRole.LEAD, status: TeamMemberStatus.CONFIRMED });
+    if (!lead) throw new ForbiddenException("Only the confirmed team lead can choose the team's brief preference");
+    if (![TeamBriefPreference.PARTNER, TeamBriefPreference.OWN].includes(preference)) throw new BadRequestException("Choose a valid brief preference");
+    if (team.status === TeamStatus.DISQUALIFIED) throw new BadRequestException("Disqualified teams cannot change their brief preference");
+    if (team.briefId && preference === TeamBriefPreference.OWN) throw new BadRequestException("A brief is already assigned. Contact staff to unassign it before choosing to create your own brief.");
+    if (team.briefPreference !== preference) await this.teamRepository.update(id, { briefPreference: preference });
+    return this.findOne(id);
+  }
+
   async updateStatus(id: string, status: TeamStatus): Promise<Team> {
     const team = await this.findOne(id);
     if (status !== TeamStatus.FORMING && status !== TeamStatus.DISQUALIFIED) throw new BadRequestException("Use Register team and Start challenge after all eligibility checks pass");
@@ -929,13 +943,17 @@ export class TeamsService {
     const { team, report } = await teamRuleContext(this.teamRepository.manager, id);
     if (team.status === TeamStatus.DISQUALIFIED) throw new BadRequestException("Disqualified teams cannot start");
     if (!report.canStartChallenge) throw new BadRequestException(report.challengeIssues.map(issue => issue.message).join("; "));
+    await assertProposalPassed(this.teamRepository.manager, team);
     if (!team.challengeStartedAt) await this.teamRepository.update(id, { challengeStartedAt: new Date(), status: TeamStatus.ACTIVE });
     return this.findOne(id);
   }
 
   @Transactional()
   async assignBrief(id: string, briefId: string): Promise<Team> {
+    await this.teamRepository.findOne({ where: { id }, lock: { mode: "pessimistic_write" } });
     const team = await this.findOne(id);
+    if (team.briefPreference === TeamBriefPreference.OWN) throw new BadRequestException("This team plans to create its own brief and is excluded from partner brief assignment");
+    await this.briefRepository.findOne({ where: { id: briefId }, lock: { mode: "pessimistic_write" } });
     const previousBriefId = team.briefId;
 
     const brief = await this.briefRepository.findOne({
@@ -946,6 +964,7 @@ export class TeamsService {
       throw new NotFoundException("Brief not found");
     }
 
+    if (!isPoolBrief(brief) && brief.submittedByTeamId !== team.id) throw new BadRequestException("This team brief is private to its originating team");
     // Check if brief has capacity (exclude current team if reassigning same brief)
     const assignedTeamsCount = await this.teamRepository.count({
       where: { 

@@ -21,13 +21,16 @@ export interface Submission {
   content: Record<string, any>;
   fileUrls: FileUrl[];
   videoUrl?: string;
+  githubUrl?: string;
   submittedAt?: string;
   submittedBy?: string;
   isLate: boolean;
   lateMinutes: number;
   score?: number;
   evaluatedAt?: string;
+  evaluationNotes?: string;
   feedback?: {
+    proposalScores?: Record<string, number>;
     strengths?: string[];
     improvements?: string[];
     comments?: string;

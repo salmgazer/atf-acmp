@@ -1,5 +1,5 @@
 "use client";
-import type { TeamRuleReport } from "@acmp/shared";
+import type { TeamRuleReport, TeamBriefPreference } from "@acmp/shared";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/client";
@@ -48,6 +48,7 @@ export interface TeamMember {
 }
 
 export interface Team {
+  briefPreference?: TeamBriefPreference;
   competitionCountry?: string | null;
   registeredAt?: string | null;
   challengeStartedAt?: string | null;
@@ -392,6 +393,19 @@ export function useUpdateTeam() {
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to update team");
+    },
+  });
+}
+
+export function useUpdateTeamBriefPreference() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, briefPreference }: { id: string; briefPreference: TeamBriefPreference }) => api.patch<Team>(`/teams/${id}/brief-preference`, { briefPreference }),
+    onSuccess: () => {
+      cache.invalidateQueries({ queryKey: teamKeys.all });
+      cache.invalidateQueries({ queryKey: ["matching"] });
+      cache.invalidateQueries({ queryKey: ["team-formation"] });
+      toast.success("Team brief preference updated");
     },
   });
 }

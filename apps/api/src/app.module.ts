@@ -1,3 +1,4 @@
+import { TeamWorkflowModule } from "./modules/team-workflow/team-workflow.module";
 import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from "@nestjs/core";
 import { ConfigModule, ConfigService } from "@nestjs/config";
@@ -91,6 +92,7 @@ import { dataSourceOptions } from "./database/data-source";
     ChatModule,
     ForumModule,
     SubmissionsModule,
+    TeamWorkflowModule,
     GitHubModule,
     JournalsModule,
     ResourcesModule,
