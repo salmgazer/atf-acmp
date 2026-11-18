@@ -430,13 +430,19 @@ jobs:
         run: bash scripts/update-alb-rules.sh production api
 
   # ----------------------------------------------------------------------------
-  # Build and Deploy Web (runs in parallel with API after tests pass)
+  # Build and Deploy Web (waits for API and migrations when they run)
   # ----------------------------------------------------------------------------
   deploy-web:
     name: Deploy Web
     runs-on: ubuntu-latest
-    needs: [test, changes]
-    if: needs.test.result == 'success' && (needs.changes.outputs.web == 'true' || github.event.inputs.deploy_web == 'true')
+    # New pages can depend on API endpoints and schema changes in the same release.
+    needs: [test, changes, run-migrations, deploy-api]
+    if: |
+      always() &&
+      needs.test.result == 'success' &&
+      (needs.run-migrations.result == 'success' || needs.run-migrations.result == 'skipped') &&
+      (needs.deploy-api.result == 'success' || needs.deploy-api.result == 'skipped') &&
+      (needs.changes.outputs.web == 'true' || github.event.inputs.deploy_web == 'true')
     environment: production
     permissions:
       id-token: write
