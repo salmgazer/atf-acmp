@@ -4,6 +4,9 @@ import { Cohort } from "@/database/entities/cohort.entity";
 import { Stage } from "@/database/entities/stage.entity";
 
 export async function resolveCohortTeamDeadlines(manager: EntityManager, cohort: Cohort) {
+  const fixed = await manager.find(Stage, { where: { cohortId: cohort.id } });
+  const formation = fixed.find(stage => stage.workflowKey === "team"), proposal = fixed.find(stage => stage.workflowKey === "proposal");
+  if (formation && proposal) { cohort.teamJoiningStageId = formation.id; cohort.learningCertificationStageId = proposal.id; }
   const ids = [...new Set([cohort.teamJoiningStageId, cohort.learningCertificationStageId].filter(Boolean))] as string[];
   const stages = ids.length ? await manager.find(Stage, { where: { id: In(ids), cohortId: cohort.id } }) : [];
   const joining = stages.find(stage => stage.id === cohort.teamJoiningStageId), certification = stages.find(stage => stage.id === cohort.learningCertificationStageId);
@@ -13,7 +16,9 @@ export async function resolveCohortTeamDeadlines(manager: EntityManager, cohort:
   return cohort.teamRuleDeadlines;
 }
 export async function validateCohortDeadlineStages(manager: EntityManager, cohort: Cohort) {
+  const requestedJoin = cohort.teamJoiningStageId, requestedCertificate = cohort.learningCertificationStageId;
   await resolveCohortTeamDeadlines(manager, cohort);
+  if (requestedJoin !== cohort.teamJoiningStageId || requestedCertificate !== cohort.learningCertificationStageId) throw new BadRequestException("ATF cohorts use Step 1 for joining and Step 3 for learning certification; edit those step deadlines");
   if ((cohort.teamJoiningStageId && !cohort.teamRuleDeadlines?.joining) || (cohort.learningCertificationStageId && !cohort.teamRuleDeadlines?.certification)) throw new BadRequestException("Select deadline stages belonging to this cohort");
   if (cohort.teamRuleDeadlines?.joining && cohort.teamRuleDeadlines.certification && Date.parse(cohort.teamRuleDeadlines.joining) > Date.parse(cohort.teamRuleDeadlines.certification)) throw new BadRequestException("The learning-certification stage deadline cannot precede the team-joining stage deadline");
 }

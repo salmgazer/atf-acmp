@@ -1,3 +1,4 @@
+import { TEAM_WORKFLOW_STEPS } from "@acmp/shared";
 import { resolveCohortTeamDeadlines, validateCohortDeadlineStages } from "@/common/services/cohort-team-deadlines";
 import { normalizeGroups } from "@/common/services/cohort-groups";
 import {
@@ -45,12 +46,7 @@ export class CohortsService {
   };
 
   // Default stages to create for new cohorts
-  private readonly defaultStages = [
-    { number: 1, name: "Stage 1", description: "First submission stage" },
-    { number: 2, name: "Stage 2", description: "Second submission stage" },
-    { number: 3, name: "Stage 3", description: "Third submission stage" },
-    { number: 4, name: "Demo Day", description: "Final demo and presentation" },
-  ];
+  private readonly defaultStages = TEAM_WORKFLOW_STEPS;
 
   // Default forum categories to create for new cohorts
   private readonly defaultForumCategories = [
@@ -174,7 +170,7 @@ export class CohortsService {
     this.logger.log(`Created cohort: ${savedCohort.id} - ${savedCohort.name}`);
 
     // Auto-create default stages
-    await this.createDefaultStages(savedCohort.id);
+    await this.createDefaultStages(savedCohort.id, savedCohort);
 
     // Auto-create default forum categories
     await this.createDefaultForumCategories(savedCohort.id);
@@ -185,31 +181,20 @@ export class CohortsService {
     return { ...savedCohort, stageCount: this.defaultStages.length };
   }
 
-  private async createDefaultStages(cohortId: string): Promise<void> {
-    const now = new Date();
-    const stages = this.defaultStages.map((stage, index) => {
-      // Default deadline: 30 days apart starting from 30 days from now
-      const deadline = new Date(now);
-      deadline.setDate(deadline.getDate() + 30 * (index + 1));
-
-      return this.stageRepository.create({
-        cohortId,
-        number: stage.number,
-        name: stage.name,
-        description: stage.description,
-        type: StageType.MIXED,
-        deadline,
-        weightPercentage: 25,
-        isActive: true,
-        allowLateSubmissions: true,
-        latePenaltyPercentage: 10,
-        sortOrder: stage.number,
-        requirements: {},
-      });
-    });
-
-    await this.stageRepository.save(stages);
-    this.logger.log(`Created ${stages.length} default stages for cohort ${cohortId}`);
+  private async createDefaultStages(cohortId: string, existingCohort?: Cohort): Promise<void> {
+    const cohort = existingCohort || await this.cohortRepository.findOne({ where: { id: cohortId } });
+    const d = cohort?.deadlines || {} as Cohort["deadlines"];
+    const configured = [d.teamFormationEnd, d.briefSelectionEnd, d.learningCertificationEnd || d.stage1End, d.stage2End, d.stage3End || d.demoDay];
+    const stages = this.defaultStages.map((step, index) => this.stageRepository.create({
+      cohortId, number: step.number, name: step.name, workflowKey: step.key,
+      description: step.key === "evaluation" ? "ATF reviews proposals; no participant action is required." : step.name,
+      type: StageType.MIXED, deadline: configured[index] ? new Date(configured[index]!) : new Date(Date.now() + 30 * (index + 1) * 86400000),
+      weightPercentage: 0, isActive: true, allowLateSubmissions: false, latePenaltyPercentage: 0,
+      sortOrder: step.number, requiresManualApproval: step.key === "proposal",
+      requirements: step.key === "build" ? { documentRequired: true, githubRequired: true, videoRequired: true, videoMaxSize: 100 } : {},
+    }));
+    const saved = await this.stageRepository.save(stages);
+    await this.cohortRepository.update(cohortId, { teamJoiningStageId: saved[0].id, learningCertificationStageId: saved[2].id });
   }
 
   private async createDefaultForumCategories(cohortId: string, isActive: boolean = false): Promise<void> {
@@ -424,11 +409,16 @@ export class CohortsService {
   async withTeamDeadlineView<T extends { id: string; deadlines?: Record<string, any> }>(cohort: T): Promise<T> {
     const copy = Object.assign(new Cohort(), cohort);
     const resolved = await resolveCohortTeamDeadlines(this.cohortRepository.manager, copy);
-    return { ...cohort, teamRuleDeadlines: resolved, deadlines: { ...cohort.deadlines, teamFormationEnd: resolved.joining || undefined, learningCertificationEnd: resolved.certification || undefined } } as T;
+    const fixed = await this.cohortRepository.manager.find(Stage, { where: { cohortId: cohort.id, workflowKey: In(TEAM_WORKFLOW_STEPS.map(step => step.key)) } });
+    const date = (key: string) => fixed.find(stage => stage.workflowKey === key)?.deadline.toISOString();
+    return { ...cohort, teamRuleDeadlines: resolved, deadlines: { ...cohort.deadlines,
+      ...(fixed.length ? { briefSelectionEnd: date("problem"), stage1End: date("proposal"), stage2End: date("evaluation"), stage3End: date("build") } : {}),
+      teamFormationEnd: resolved.joining || undefined, learningCertificationEnd: resolved.certification || undefined } } as T;
   }
 
   private async getStageCount(cohortId: string): Promise<number> {
-    return this.stageRepository.count({ where: { cohortId } });
+    const fixed = await this.stageRepository.count({ where: { cohortId, workflowKey: In(TEAM_WORKFLOW_STEPS.map(step => step.key)) } });
+    return fixed || this.stageRepository.count({ where: { cohortId } });
   }
 
   private async attachStageCount(cohort: Cohort): Promise<CohortWithStageCount> {
@@ -447,7 +437,7 @@ export class CohortsService {
     const stageCounts = await this.stageRepository
       .createQueryBuilder("stage")
       .select("stage.cohort_id", "cohortId")
-      .addSelect("COUNT(*)", "count")
+      .addSelect("CASE WHEN COUNT(*) FILTER (WHERE stage.workflow_key IS NOT NULL) > 0 THEN COUNT(*) FILTER (WHERE stage.workflow_key IS NOT NULL) ELSE COUNT(*) END", "count")
       .where("stage.cohort_id IN (:...cohortIds)", { cohortIds })
       .groupBy("stage.cohort_id")
       .getRawMany();
@@ -559,6 +549,9 @@ export class CohortsService {
       await validateCohortDeadlineStages(this.cohortRepository.manager, Object.assign(new Cohort(), cohort, updateCohortDto));
     }
 
+    if (updateCohortDto.deadlines?.briefSelectionEnd) {
+      await this.stageRepository.update({ cohortId: id, workflowKey: "problem" }, { deadline: new Date(updateCohortDto.deadlines.briefSelectionEnd) });
+    }
     // Merge updates
     Object.assign(cohort, updateCohortDto);
 
@@ -673,7 +666,9 @@ export class CohortsService {
       order: { sortOrder: "ASC" },
     });
 
-    const newStages = sourceStages.map((stage) => {
+    const activeStages = sourceStages.some(stage => stage.workflowKey) ? sourceStages.filter(stage => stage.workflowKey) : sourceStages;
+    if (!sourceStages.some(stage => stage.workflowKey)) { await this.createDefaultStages(targetCohortId); return; }
+    const newStages = activeStages.map((stage) => {
       const { id, createdAt, updatedAt, cohortId, ...stageData } = stage;
       return this.stageRepository.create({
         ...stageData,
@@ -682,7 +677,9 @@ export class CohortsService {
     });
 
     if (newStages.length > 0) {
-      await this.stageRepository.save(newStages);
+      const saved = await this.stageRepository.save(newStages);
+      const joining = saved.find(stage => stage.workflowKey === "team"), certification = saved.find(stage => stage.workflowKey === "proposal");
+      if (joining && certification) await this.cohortRepository.update(targetCohortId, { teamJoiningStageId: joining.id, learningCertificationStageId: certification.id });
       this.logger.log(`Duplicated ${newStages.length} stages to cohort ${targetCohortId}`);
     } else {
       // If source had no stages, create defaults

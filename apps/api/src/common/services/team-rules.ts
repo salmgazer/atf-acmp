@@ -1,3 +1,4 @@
+import { assertProposalPassed } from "./team-workflow";
 import { resolveCohortTeamDeadlines } from "./cohort-team-deadlines";
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { EntityManager } from "typeorm";
@@ -55,6 +56,7 @@ export async function clearTeamRegistration(manager: EntityManager, teamId: stri
 }
 export async function assertChallengeStarted(manager: EntityManager, teamId: string) {
   const { team, report } = await teamRuleContext(manager, teamId);
+  await assertProposalPassed(manager, team);
   if (!team.challengeStartedAt || ![TeamStatus.ACTIVE, TeamStatus.SUBMITTED, TeamStatus.EVALUATED].includes(team.status) || !report.canStartChallenge) {
     throw new ForbiddenException("The team must register and pass all learning certificate checks before starting challenge work. " + report.challengeIssues.map(issue => issue.message).join("; "));
   }

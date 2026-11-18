@@ -1,3 +1,4 @@
+import { TeamWorkflowModule } from "../team-workflow/team-workflow.module";
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { Brief, BriefRevision } from "../../database/entities/brief.entity";
@@ -15,6 +16,7 @@ import { VerticalsModule } from "@/modules/verticals/verticals.module";
   imports: [
     TypeOrmModule.forFeature([Brief, BriefRevision, Vertical]),
     UploadModule,
+    TeamWorkflowModule,
     EmailModule,
     NotificationsModule,
     UsersModule,

@@ -18,6 +18,8 @@ import { ParticipantsService } from "@/modules/participants/participants.service
 import { ParticipantImportService } from "@/modules/participants/participant-import.service";
 import { TeamFormationService } from "@/modules/matching/team-formation.service";
 import { assertChallengeStarted } from "@/common/services/team-rules";
+import { TeamBriefPreference } from "@acmp/shared";
+import { MatchingService } from "@/modules/matching/matching.service";
 
 const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
 (databaseUrl ? describe : describe.skip)("ATF team lifecycle and formation with PostgreSQL", () => {
@@ -62,6 +64,128 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     return db.getRepository(Brief).save({ title: "Approved practice problem", description: "A useful practice challenge description", problemStatement: "A useful practice problem to solve", expectedOutcomes: "A useful working application", cohortId: cohort.id, organizationId: org.id, problemCountry: country, status: BriefStatus.APPROVED, maxTeams: 50 });
   }
   async function certify(members: Participant[]) { for (const p of members) await db.getRepository(Participant).update(p.id, { learningCertificateIssued: true, learningFinishedAllLessons: true, learningCertificateId: randomUUID(), learningCertificateDate: new Date().toISOString().slice(0, 10) }); }
+  function matching() { return new MatchingService({ get: async (key: string) => cache.get(key), set: async (key: string, value: unknown) => { cache.set(key, value); }, del: async (key: string) => { cache.delete(key); } } as any, db.getRepository(Team), db.getRepository(Brief), db.getRepository(Cohort), db.getRepository(ParticipantPreference)); }
+
+  it("forms teams without assigning any briefs by default, then assigns briefs later without changing the roster or using the joining cutoff", async () => {
+    await builder(); await person({ fieldOfStudy: "Medicine" }); await person(); const problem = await brief();
+    const preview = await formation.runTeamFormation(cohort.id);
+    expect(preview.configUsed.useBriefCentricAssignment).toBe(false);
+    expect(preview.proposedTeams).toHaveLength(1); expect(preview.proposedTeams[0].assignedBriefId).toBeUndefined(); expect(preview.proposedBriefAssignments).toEqual([]);
+    expect(await formation.finalizeTeamFormation(cohort.id)).toMatchObject({ createdTeamCount: 1, briefsAssigned: 0 });
+    const team = await db.getRepository(Team).findOneByOrFail({ cohortId: cohort.id });
+    expect(team.briefId).toBeNull(); expect(team.briefPreference).toBe(TeamBriefPreference.PARTNER);
+    const before = await db.getRepository(TeamMember).findBy({ teamId: team.id });
+    await db.getRepository(Stage).update(cohort.teamJoiningStageId!, { deadline: new Date(Date.now() - 1000) });
+    const assignment = matching(); const assignments = await assignment.runMatching(cohort.id);
+    expect(assignments.matches).toHaveLength(1); expect(assignments.matches[0]).toMatchObject({ teamId: team.id, briefId: problem.id });
+    expect(await assignment.finalizeMatching(cohort.id)).toEqual({ assignedCount: 1, errors: [] });
+    expect((await db.getRepository(Team).findOneByOrFail({ id: team.id })).briefId).toBe(problem.id);
+    expect(await db.getRepository(TeamMember).findBy({ teamId: team.id })).toEqual(before);
+    expect((await assignment.runMatching(cohort.id)).matches).toEqual([]);
+  });
+
+  it("lets only the actual confirmed lead choose their own brief and skips their team in independent and combined assignment", async () => {
+    const { team, lead, specialist } = await roster(); await brief();
+    await expect(teams.updateBriefPreference(team.id, TeamBriefPreference.OWN, specialist.id)).rejects.toThrow("Only the confirmed team lead");
+    await expect(teams.updateBriefPreference(team.id, TeamBriefPreference.OWN, actor.id)).rejects.toThrow("Only the confirmed team lead");
+    expect(await teams.updateBriefPreference(team.id, TeamBriefPreference.OWN, lead.id)).toMatchObject({ briefPreference: "own", briefId: null });
+    const assignment = matching(); expect((await assignment.runMatching(cohort.id)).matches).toEqual([]);
+    expect((await assignment.getTeamMatchStatus(cohort.id))[0]).toMatchObject({ briefPreference: "own" });
+    expect((await formation.runTeamFormation(cohort.id, { config: { useBriefCentricAssignment: true } })).proposedBriefAssignments).toEqual([]);
+    expect(await db.getRepository(TeamMember).countBy({ teamId: team.id })).toBe(3);
+    await teams.updateBriefPreference(team.id, TeamBriefPreference.PARTNER, lead.id);
+    expect((await assignment.runMatching(cohort.id)).matches).toHaveLength(1);
+  });
+
+  it("rechecks the lead's choice at finalization, including overrides and manual staff assignments", async () => {
+    const { team, lead } = await roster(); const problem = await brief(), assignment = matching();
+    expect((await assignment.runMatching(cohort.id)).matches).toHaveLength(1);
+    await teams.updateBriefPreference(team.id, TeamBriefPreference.OWN, lead.id);
+    const result = await assignment.finalizeMatching(cohort.id, { overrides: [{ teamId: team.id, briefId: problem.id }] });
+    expect(result).toMatchObject({ assignedCount: 0 }); expect(result.errors.join(" ")).toContain("own brief");
+    await expect(teams.assignBrief(team.id, problem.id)).rejects.toThrow("own brief");
+    expect((await db.getRepository(Team).findOneByOrFail({ id: team.id })).briefId).toBeNull();
+  });
+
+  it("does not overwrite an assignment made after a preview or silently remove a brief when the lead changes preference", async () => {
+    const { team, lead } = await roster(); const problem = await brief(), alternative = await brief(), assignment = matching();
+    await assignment.runMatching(cohort.id);
+    await teams.assignBrief(team.id, alternative.id);
+    const result = await assignment.finalizeMatching(cohort.id, { overrides: [{ teamId: team.id, briefId: problem.id }] });
+    expect(result.assignedCount).toBe(0); expect(result.errors.join(" ")).toContain("already has a brief");
+    await expect(teams.updateBriefPreference(team.id, TeamBriefPreference.OWN, lead.id)).rejects.toThrow("already assigned");
+    expect((await db.getRepository(Team).findOneByOrFail({ id: team.id })).briefId).toBe(alternative.id);
+  });
+
+  it("does not count pending applicants toward brief-assignment eligibility", async () => {
+    const lead = await builder(), team = await teams.create({ name: "Pending roster", cohortId: cohort.id, creatorId: lead.id });
+    await teams.joinByInviteCode(team.inviteCode, (await person()).id); await teams.joinByInviteCode(team.inviteCode, (await person()).id); await brief();
+    const assignment = matching(); expect((await assignment.runMatching(cohort.id)).matches).toEqual([]);
+    expect((await assignment.getTeamMatchStatus(cohort.id))[0].memberCount).toBe(1);
+  });
+
+  it("honors a new own-brief choice even when an explicitly combined formation preview predates the choice", async () => {
+    const { team, lead } = await roster(); await brief();
+    const preview = await formation.runTeamFormation(cohort.id, { config: { useBriefCentricAssignment: true } });
+    expect(preview.proposedBriefAssignments).toHaveLength(1);
+    await teams.updateBriefPreference(team.id, TeamBriefPreference.OWN, lead.id);
+    const result = await formation.finalizeTeamFormation(cohort.id);
+    expect(result.briefsAssigned).toBe(0); expect(result.errors.join(" ")).toContain("own brief");
+    expect((await db.getRepository(Team).findOneByOrFail({ id: team.id })).briefId).toBeNull();
+  });
+
+  async function waitForBlocked(pid: number) {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const [row] = await db.query("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1::integer = ANY(pg_blocking_pids(pid))) blocked", [pid]);
+      if (row.blocked) return;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    throw new Error("Expected the competing operation to wait for the team row lock");
+  }
+
+  it("serializes a lead's own-brief choice with assignment so a waiting assignment cannot overwrite it", async () => {
+    const { team } = await roster(); const problem = await brief(), assignment = matching();
+    const changing = db.createQueryRunner(); await changing.connect(); await changing.startTransaction();
+    const [{ pid }] = await changing.query("SELECT pg_backend_pid() pid");
+    let assigning: Promise<any> | undefined;
+    try {
+      await changing.query("SELECT id FROM teams WHERE id=$1 FOR UPDATE", [team.id]);
+      await changing.manager.update(Team, team.id, { briefPreference: TeamBriefPreference.OWN });
+      assigning = (assignment as any).assignBriefToTeam(team.id, problem.id, cohort.id).then(() => null, (e: Error) => e);
+      await waitForBlocked(pid); await changing.commitTransaction();
+      expect((await assigning)?.message).toContain("own brief");
+      expect((await db.getRepository(Team).findOneByOrFail({ id: team.id })).briefId).toBeNull();
+    } finally {
+      if (changing.isTransactionActive) await changing.rollbackTransaction();
+      await assigning; await changing.release();
+    }
+  });
+
+  it("does not discard an assignment that wins a race with the lead's own-brief choice", async () => {
+    const { team, lead } = await roster(); const problem = await brief();
+    const assigning = db.createQueryRunner(); await assigning.connect(); await assigning.startTransaction();
+    const [{ pid }] = await assigning.query("SELECT pg_backend_pid() pid");
+    let changing: Promise<any> | undefined;
+    try {
+      await assigning.query("SELECT id FROM teams WHERE id=$1 FOR UPDATE", [team.id]);
+      await assigning.manager.update(Team, team.id, { briefId: problem.id });
+      changing = teams.updateBriefPreference(team.id, TeamBriefPreference.OWN, lead.id).then(() => null, e => e);
+      await waitForBlocked(pid); await assigning.commitTransaction();
+      expect((await changing)?.message).toContain("already assigned");
+      expect(await db.getRepository(Team).findOneByOrFail({ id: team.id })).toMatchObject({ briefId: problem.id, briefPreference: "partner" });
+    } finally {
+      if (assigning.isTransactionActive) await assigning.rollbackTransaction();
+      await changing; await assigning.release();
+    }
+  });
+
+  it("enforces brief capacity across simultaneous staff and automatic assignment", async () => {
+    const first = await roster(), second = await roster(), problem = await brief();
+    await db.getRepository(Brief).update(problem.id, { maxTeams: 1 });
+    const result = await Promise.allSettled([teams.assignBrief(first.team.id, problem.id), (matching() as any).assignBriefToTeam(second.team.id, problem.id, cohort.id)]);
+    expect(result.filter(r => r.status === "fulfilled")).toHaveLength(1);
+    expect(await db.getRepository(Team).countBy({ briefId: problem.id })).toBe(1);
+  });
 
   it("keeps drafts unregistered, registers valid teams and assigns briefs without starting; all members must be certified to start", async () => {
     const lead = await builder(), team = await teams.create({ name: "Draft", cohortId: cohort.id, creatorId: lead.id });

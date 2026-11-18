@@ -15,6 +15,7 @@ export function TeamDeadlineStages({ cohortId }: { cohortId: string }) {
   useEffect(() => { setJoining(cohort?.teamJoiningStageId || ""); setCertification(cohort?.learningCertificationStageId || ""); }, [cohort?.id, cohort?.teamJoiningStageId, cohort?.learningCertificationStageId]);
   if (cohortError || stageError) return <div className="rounded-xl border p-5 text-sm text-destructive">Could not load the cohort&apos;s team deadline configuration.</div>;
   if (!cohort || !stages) return <div className="rounded-xl border p-5 text-sm">Loading team deadline stages…</div>;
+  if (stages.some(stage => stage.workflowKey)) return <p className="rounded-xl border p-5 text-sm">Team joining closes at the Step 1 deadline. Learning certification is due at the Step 3 proposal deadline. Edit those dates below.</p>;
   const changed = joining !== (cohort.teamJoiningStageId || "") || certification !== (cohort.learningCertificationStageId || "");
   const selectedJoin = stages.find(stage => stage.id === joining), selectedCertificate = stages.find(stage => stage.id === certification);
   const wrongOrder = !!selectedJoin && !!selectedCertificate && Date.parse(selectedJoin.deadline) > Date.parse(selectedCertificate.deadline);

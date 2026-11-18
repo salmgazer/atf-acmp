@@ -250,10 +250,12 @@ export class SubmitSubmissionDto {
 }
 
 export class EvaluateSubmissionDto {
+  @IsOptional() @IsObject() criterionScores?: Record<string, number>;
+  @IsOptional()
   @IsNumber()
   @Min(0)
   @Max(100)
-  score: number;
+  score?: number;
 
   @IsOptional()
   @IsString()

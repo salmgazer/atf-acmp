@@ -9,6 +9,8 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useCurrentParticipant } from "@/lib/api/hooks/use-participants";
 import { useMyTeam } from "@/lib/api/hooks/use-teams";
 import { useCohort } from "@/lib/api/hooks/use-cohorts";
+import { TeamWorkflowOverview } from "@/components/submissions/team-workflow-overview";
+import { useTeamWorkflow } from "@/lib/api/hooks/use-team-workflow";
 import { useStages, Stage } from "@/lib/api/hooks/use-stages";
 import { 
   Loader2, 
@@ -93,6 +95,7 @@ function DashboardContent() {
   const { data: participant, isLoading } = useCurrentParticipant();
   const { data: team, isLoading: teamLoading } = useMyTeam(participant?.id || "");
   const { data: cohort, isLoading: cohortLoading } = useCohort(participant?.cohortId || "");
+  const { data: workflow } = useTeamWorkflow();
   const { data: stages, isLoading: stagesLoading } = useStages(participant?.cohortId, true);
 
   useEffect(() => {
@@ -133,18 +136,22 @@ function DashboardContent() {
         ...stage,
         status,
         daysRemaining: getDaysRemaining(stage.deadline),
-        canSubmit: userCanSubmit && status === "open",
+        canSubmit: userCanSubmit && status === "open" && (!stage.workflowKey || (["proposal", "build"].includes(stage.workflowKey) && workflow?.steps.find(step => step.key === stage.workflowKey)?.status !== "locked")),
       };
     }).sort((a, b) => a.number - b.number);
-  }, [stages, userRole]);
+  }, [stages, userRole, workflow]);
 
   // Get active (open) stages
   const activeStages = useMemo(() => {
-    return stagesWithStatus.filter((s) => s.status === "open");
-  }, [stagesWithStatus]);
+    return stagesWithStatus.filter((s) => s.status === "open" && (!s.workflowKey || (["proposal", "build"].includes(s.workflowKey) && workflow?.steps.find(step => step.key === s.workflowKey)?.status === "available")));
+  }, [stagesWithStatus, workflow]);
 
   // Calculate overall progress
   const { currentPhase, progressPercent, totalStages } = useMemo(() => {
+    if (workflow?.steps?.length) {
+      const next = workflow.steps.find(step => !step.completed) || workflow.steps[4];
+      return { currentPhase: { phase: "challenge" as const, label: next.name, number: next.number }, progressPercent: workflow.steps.filter(step => step.completed).length * 20, totalStages: 5 };
+    }
     const hasTeam = !!team;
     const hasBrief = !!team?.briefId;
     const phase = getCurrentPhase(hasTeam, hasBrief);
@@ -169,7 +176,7 @@ function DashboardContent() {
       progressPercent: Math.round(percent),
       totalStages: stagesWithStatus.length,
     };
-  }, [team, stagesWithStatus]);
+  }, [team, stagesWithStatus, workflow]);
 
   if (isLoading || teamLoading || cohortLoading || stagesLoading) {
     return (
@@ -190,6 +197,7 @@ function DashboardContent() {
 
   const hasTeam = !!team;
   const hasBrief = !!team?.briefId;
+  const hasFixedWorkflow = stages?.some(stage => !!stage.workflowKey);
 
   return (
     <ParticipantLayout>
@@ -218,7 +226,7 @@ function DashboardContent() {
                 ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
                 : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
             }`}>
-              {hasTeam && hasBrief ? "In Challenge" : hasTeam ? "Team Formed" : "In Progress"}
+              {workflow?.steps.find(step => step.key === "evaluation")?.completed ? "Building" : hasTeam && hasBrief ? "Proposal and review" : hasTeam ? "Team Formed" : "In Progress"}
             </div>
           </div>
           <div className="mt-3">
@@ -229,8 +237,8 @@ function DashboardContent() {
               />
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              Phase {currentPhase.number} of 3
-              {totalStages > 0 && hasBrief && ` • ${totalStages} challenge stage${totalStages !== 1 ? "s" : ""}`}
+              {hasFixedWorkflow ? `Stage ${currentPhase.number} of 5` : `Phase ${currentPhase.number} of 3`}
+              {!hasFixedWorkflow && totalStages > 0 && hasBrief && ` • ${totalStages} challenge stage${totalStages !== 1 ? "s" : ""}`}
             </div>
           </div>
         </div>
@@ -310,8 +318,10 @@ function DashboardContent() {
           )}
         </div>
 
-        {/* Active Stages (only show when in challenge phase) */}
-        {hasBrief && activeStages.length > 0 && (
+        {hasFixedWorkflow && <TeamWorkflowOverview compact />}
+
+        {/* Legacy cohort stages */}
+        {!hasFixedWorkflow && hasBrief && activeStages.length > 0 && (
           <div className="rounded-lg border bg-card p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -371,6 +381,10 @@ function DashboardContent() {
             <h2 className="font-semibold">Upcoming Deadlines</h2>
           </div>
           <div className="mt-3 space-y-3">
+            {hasFixedWorkflow ? <>
+              {workflow?.steps.filter(step => !step.completed && step.deadline).slice(0, 2).map(step => <DeadlineItem key={step.key} title={`Stage ${step.number}: ${step.name}`} subtitle="Programme milestone" deadline={step.deadline!} />)}
+              {workflow && !workflow.steps.some(step => !step.completed && step.deadline) && <p className="text-sm text-muted-foreground">No upcoming deadlines</p>}
+            </> : <>
             {/* Team Formation Deadline */}
             {!hasTeam && cohort?.deadlines?.teamFormationEnd && (
               <DeadlineItem
@@ -417,6 +431,7 @@ function DashboardContent() {
                 No upcoming deadlines
               </p>
             )}
+            </>}
           </div>
         </div>
       </div>

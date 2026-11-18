@@ -129,7 +129,7 @@ export function calculateBriefScores(answers: ScoringAnswers): ScoringResult {
   const breadthScore = getBreadthScore(answers.q8);
   const impactScore = calcImpactScore(depthScore, breadthScore);
   const impactBand = getImpactBand(impactScore);
-  const priorityScore = calcPriorityScore(fitScore, impactScore, scoreOverride);
+  const priorityScore = calcPriorityScore(fitScore, scoreOverride);
 
   return {
     fitScore,
@@ -233,19 +233,16 @@ function getImpactBand(impactScore: number | null): BriefImpactBand | null {
 }
 
 /**
- * Calculate priority score (combined metric for sorting)
- * Formula: fitScore + impactScore × 10, with -50 penalty for override cases
- * Score range: roughly -50 to 190 (max fitScore 100 + max impactScore 9 × 10)
+ * Calculate fit-based priority; impact is reported separately
+ * Formula: fitScore, with -50 penalty for override cases
+ * Score range: -50 to 100
  */
 function calcPriorityScore(
   fitScore: number,
-  impactScore: number | null,
   override: string | null
 ): number {
   let priority = fitScore;
-  if (impactScore !== null) {
-    priority += impactScore * 10;
-  }
+
   if (override) {
     priority -= 50; // Penalize override cases
   }

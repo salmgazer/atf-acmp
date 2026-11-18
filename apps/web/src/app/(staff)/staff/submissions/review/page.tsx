@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import { ProgrammeFields } from "@/components/submissions/programme-fields";
+import { PROPOSAL_FIELDS } from "@acmp/shared";
 import { StaffOnly } from "@/components/auth/staff-only";
 import { useState, useEffect } from "react";
 import { StaffLayout } from "@/components/layouts";
@@ -247,7 +250,8 @@ export default function SubmissionsReviewPage() {
                 <Eye className="mr-2 h-4 w-4" />
                 View Details
               </DropdownMenuItem>
-              {canReview && (
+              {row.stage?.workflowKey === "proposal" && <DropdownMenuItem asChild><Link href={`/staff/submissions/proposals/${row.id}`}>Score and review proposal</Link></DropdownMenuItem>}
+              {canReview && row.stage?.workflowKey !== "proposal" && (
                 <>
                   <DropdownMenuSeparator />
                   <StaffOnly permission="review"><DropdownMenuItem onClick={() => handleApproveClick(row)}>
@@ -532,8 +536,9 @@ export default function SubmissionsReviewPage() {
                     </div>
                   )}
 
+                  {selectedSubmission.stage?.workflowKey === "proposal" && <div className="space-y-4"><Link className="underline" href={`/staff/submissions/proposals/${selectedSubmission.id}`}>Score and review this proposal</Link><ProgrammeFields fields={PROPOSAL_FIELDS} answers={selectedSubmission.content} readOnly /></div>}
                   {/* Additional Content Fields */}
-                  {selectedSubmission.content && Object.keys(selectedSubmission.content).filter(k => k !== 'textContent').length > 0 && (
+                  {selectedSubmission.stage?.workflowKey !== "proposal" && selectedSubmission.content && Object.keys(selectedSubmission.content).filter(k => k !== 'textContent').length > 0 && (
                     <div className="space-y-2">
                       <h4 className="font-medium">Additional Fields</h4>
                       <div className="bg-muted/50 rounded-lg p-4 space-y-2">

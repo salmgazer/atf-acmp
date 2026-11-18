@@ -1,4 +1,5 @@
 "use client";
+import { StaffTeamWorkflow } from "@/components/teams/staff-team-workflow";
 
 import { TeamEligibility } from "@/components/teams/team-eligibility";
 import { hasStaffPermission, normalizeTeamCountry } from "@acmp/shared";
@@ -333,6 +334,7 @@ function TeamDetailContent({ id }: { id: string }) {
           )}
         </div>
 
+        <StaffTeamWorkflow teamId={team.id} />
         <TeamEligibility team={team} canManage={hasStaffPermission(staffRole, "manage")} />
 
         {/* Disqualification Alert */}
@@ -409,8 +411,8 @@ function TeamDetailContent({ id }: { id: string }) {
               ) : (
                 <div className="text-center py-6">
                   <FileText className="mx-auto h-10 w-10 text-muted-foreground/50" />
-                  <p className="mt-2 text-sm text-muted-foreground">No brief assigned</p>
-                  {!isDisqualified && (
+                  <p className="mt-2 text-sm text-muted-foreground">{team.briefPreference === "own" ? "Team plans to create its own brief · excluded from partner brief assignment" : "No brief assigned"}</p>
+                  {!isDisqualified && team.briefPreference !== "own" && (
                     <StaffOnly permission="manage"><Button
                       variant="outline"
                       size="sm"
