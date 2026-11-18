@@ -9,6 +9,7 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useCurrentParticipant } from "@/lib/api/hooks/use-participants";
 import { useMyTeam } from "@/lib/api/hooks/use-teams";
 import { useCohort } from "@/lib/api/hooks/use-cohorts";
+import { TeamWorkflowOverview } from "@/components/submissions/team-workflow-overview";
 import { useTeamWorkflow } from "@/lib/api/hooks/use-team-workflow";
 import { useStages, Stage } from "@/lib/api/hooks/use-stages";
 import { 
@@ -196,6 +197,7 @@ function DashboardContent() {
 
   const hasTeam = !!team;
   const hasBrief = !!team?.briefId;
+  const hasFixedWorkflow = stages?.some(stage => !!stage.workflowKey);
 
   return (
     <ParticipantLayout>
@@ -235,8 +237,8 @@ function DashboardContent() {
               />
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              Phase {currentPhase.number} of 3
-              {totalStages > 0 && hasBrief && ` • ${totalStages} challenge stage${totalStages !== 1 ? "s" : ""}`}
+              {hasFixedWorkflow ? `Stage ${currentPhase.number} of 5` : `Phase ${currentPhase.number} of 3`}
+              {!hasFixedWorkflow && totalStages > 0 && hasBrief && ` • ${totalStages} challenge stage${totalStages !== 1 ? "s" : ""}`}
             </div>
           </div>
         </div>
@@ -316,8 +318,10 @@ function DashboardContent() {
           )}
         </div>
 
-        {/* Active Stages (only show when in challenge phase) */}
-        {hasBrief && activeStages.length > 0 && (
+        {hasFixedWorkflow && <TeamWorkflowOverview compact />}
+
+        {/* Legacy cohort stages */}
+        {!hasFixedWorkflow && hasBrief && activeStages.length > 0 && (
           <div className="rounded-lg border bg-card p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -377,6 +381,10 @@ function DashboardContent() {
             <h2 className="font-semibold">Upcoming Deadlines</h2>
           </div>
           <div className="mt-3 space-y-3">
+            {hasFixedWorkflow ? <>
+              {workflow?.steps.filter(step => !step.completed && step.deadline).slice(0, 2).map(step => <DeadlineItem key={step.key} title={`Stage ${step.number}: ${step.name}`} subtitle="Programme milestone" deadline={step.deadline!} />)}
+              {workflow && !workflow.steps.some(step => !step.completed && step.deadline) && <p className="text-sm text-muted-foreground">No upcoming deadlines</p>}
+            </> : <>
             {/* Team Formation Deadline */}
             {!hasTeam && cohort?.deadlines?.teamFormationEnd && (
               <DeadlineItem
@@ -423,6 +431,7 @@ function DashboardContent() {
                 No upcoming deadlines
               </p>
             )}
+            </>}
           </div>
         </div>
       </div>
