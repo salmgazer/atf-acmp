@@ -9,6 +9,7 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useCurrentParticipant } from "@/lib/api/hooks/use-participants";
 import { useMyTeam } from "@/lib/api/hooks/use-teams";
 import { useCohort } from "@/lib/api/hooks/use-cohorts";
+import { useTeamWorkflow } from "@/lib/api/hooks/use-team-workflow";
 import { useStages, Stage } from "@/lib/api/hooks/use-stages";
 import { 
   Loader2, 
@@ -93,6 +94,7 @@ function DashboardContent() {
   const { data: participant, isLoading } = useCurrentParticipant();
   const { data: team, isLoading: teamLoading } = useMyTeam(participant?.id || "");
   const { data: cohort, isLoading: cohortLoading } = useCohort(participant?.cohortId || "");
+  const { data: workflow } = useTeamWorkflow();
   const { data: stages, isLoading: stagesLoading } = useStages(participant?.cohortId, true);
 
   useEffect(() => {
@@ -133,18 +135,22 @@ function DashboardContent() {
         ...stage,
         status,
         daysRemaining: getDaysRemaining(stage.deadline),
-        canSubmit: userCanSubmit && status === "open",
+        canSubmit: userCanSubmit && status === "open" && (!stage.workflowKey || (["proposal", "build"].includes(stage.workflowKey) && workflow?.steps.find(step => step.key === stage.workflowKey)?.status !== "locked")),
       };
     }).sort((a, b) => a.number - b.number);
-  }, [stages, userRole]);
+  }, [stages, userRole, workflow]);
 
   // Get active (open) stages
   const activeStages = useMemo(() => {
-    return stagesWithStatus.filter((s) => s.status === "open");
-  }, [stagesWithStatus]);
+    return stagesWithStatus.filter((s) => s.status === "open" && (!s.workflowKey || (["proposal", "build"].includes(s.workflowKey) && workflow?.steps.find(step => step.key === s.workflowKey)?.status === "available")));
+  }, [stagesWithStatus, workflow]);
 
   // Calculate overall progress
   const { currentPhase, progressPercent, totalStages } = useMemo(() => {
+    if (workflow?.steps?.length) {
+      const next = workflow.steps.find(step => !step.completed) || workflow.steps[4];
+      return { currentPhase: { phase: "challenge" as const, label: next.name, number: next.number }, progressPercent: workflow.steps.filter(step => step.completed).length * 20, totalStages: 5 };
+    }
     const hasTeam = !!team;
     const hasBrief = !!team?.briefId;
     const phase = getCurrentPhase(hasTeam, hasBrief);
@@ -169,7 +175,7 @@ function DashboardContent() {
       progressPercent: Math.round(percent),
       totalStages: stagesWithStatus.length,
     };
-  }, [team, stagesWithStatus]);
+  }, [team, stagesWithStatus, workflow]);
 
   if (isLoading || teamLoading || cohortLoading || stagesLoading) {
     return (
@@ -218,7 +224,7 @@ function DashboardContent() {
                 ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
                 : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
             }`}>
-              {hasTeam && hasBrief ? "In Challenge" : hasTeam ? "Team Formed" : "In Progress"}
+              {workflow?.steps.find(step => step.key === "evaluation")?.completed ? "Building" : hasTeam && hasBrief ? "Proposal and review" : hasTeam ? "Team Formed" : "In Progress"}
             </div>
           </div>
           <div className="mt-3">

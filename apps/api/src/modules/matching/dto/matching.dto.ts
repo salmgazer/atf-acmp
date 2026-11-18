@@ -319,6 +319,8 @@ export class BriefCapacityDto {
  * Team matching status
  */
 export class TeamMatchStatusDto {
+  @ApiProperty({ enum: ["partner", "own"] })
+  briefPreference: string;
   @ApiProperty()
   teamId: string;
 

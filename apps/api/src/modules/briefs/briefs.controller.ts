@@ -70,7 +70,7 @@ export class BriefsController {
   @ApiOperation({ summary: "Get all briefs with pagination and filters" })
   @ApiResponse({ status: 200, description: "List of briefs" })
   findAll(@Query() query: BriefQueryDto, @CurrentUser() user?: { id: string; role: string }) {
-    return user?.role === "participant" ? this.briefsService.findAll(query, user.id) : this.briefsService.findAll(query);
+    return user?.role === "participant" ? this.briefsService.findAll(query, user.id) : user?.role === "mentor" ? this.briefsService.findAll(query, undefined, true) : this.briefsService.findAll(query);
   }
 
   @Get("approved")
@@ -101,7 +101,7 @@ export class BriefsController {
   @ApiQuery({ name: "cohortId", required: false, description: "Filter by cohort" })
   @ApiResponse({ status: 200, description: "Brief statistics" })
   getStatistics(@Query() query: BriefQueryDto, @CurrentUser() user?: { id: string; role: string }) {
-    return user?.role === "participant" ? this.briefsService.getStatistics(query.cohortId, query.country, user.id) : this.briefsService.getStatistics(query.cohortId, query.country);
+    return user?.role === "participant" ? this.briefsService.getStatistics(query.cohortId, query.country, user.id) : user?.role === "mentor" ? this.briefsService.getStatistics(query.cohortId, query.country, undefined, true) : this.briefsService.getStatistics(query.cohortId, query.country);
   }
 
   @Get(":id")

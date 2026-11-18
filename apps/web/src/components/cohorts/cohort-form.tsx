@@ -346,7 +346,7 @@ export function CohortForm({ cohort, onSubmit, onCancel, isLoading }: CohortForm
         </div>
 
         <p className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
-          💡 Stage deadlines (Stage 1, Stage 2, Stage 3, Demo Day) are managed in the Stages section after creating the cohort.
+          The five programme steps and their deadlines are managed in the Stages section after creating the cohort.
         </p>
       </div>
 

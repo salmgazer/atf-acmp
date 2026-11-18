@@ -141,13 +141,13 @@ export class TeamFormationConfigDto {
   forceCrossCountry?: boolean = false;
 
   @ApiPropertyOptional({
-    description: "Use brief-centric round-robin assignment (assign briefs to teams, not teams to briefs)",
-    default: true,
+    description: "Also assign partner briefs during formation. Defaults to false; use the separate matching workflow to assign briefs later.",
+    default: false,
   })
   @IsOptional()
   @IsBoolean()
   @StrictBoolean()
-  useBriefCentricAssignment?: boolean = true;
+  useBriefCentricAssignment?: boolean = false;
 }
 
 export class RunTeamFormationDto {

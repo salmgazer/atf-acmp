@@ -17,7 +17,7 @@ describe("Participant team creation authorization over HTTP", () => {
   const cohortId = "4753d422-d547-4071-9e31-c85324f06031";
   const teamId = "52f1db29-267c-4125-8dab-d7155293370f";
   let membership: { participantId: string; teamId: string; status: string; role: string } | null = null;
-  const service = { create: jest.fn(async dto => ({ id: teamId, ...dto })), delete: jest.fn(async () => undefined), removeMember: jest.fn(async () => undefined), requestMemberRemoval: jest.fn(async () => ({ immediate: false })), withdrawJoinRequest: jest.fn(async () => undefined), findOpenTeams: jest.fn(async () => []) };
+  const service = { create: jest.fn(async dto => ({ id: teamId, ...dto })), delete: jest.fn(async () => undefined), removeMember: jest.fn(async () => undefined), updateBriefPreference: jest.fn(async (id, briefPreference) => ({ id, briefPreference })), requestMemberRemoval: jest.fn(async () => ({ immediate: false })), withdrawJoinRequest: jest.fn(async () => undefined), findOpenTeams: jest.fn(async () => []) };
   const database = { getRepository: jest.fn(() => ({ findOne: jest.fn(async ({ where }) => {
     if (!membership || membership.participantId !== where.participantId || (where.teamId && membership.teamId !== where.teamId)) return null;
     if (!where.status) return membership;
@@ -102,6 +102,34 @@ describe("Participant team creation authorization over HTTP", () => {
   it("does not confuse another team's action with the collection creation route", async () => {
     expect((await post({}, "participant", `/${teamId}/register`)).status).toBe(403);
     expect(service.create).not.toHaveBeenCalled();
+  });
+
+  const chooseBrief = (body: unknown, role = "participant", target = teamId) => fetch(`${base}/${target}/brief-preference`, { method: "PATCH", headers: { "Content-Type": "application/json", "x-test-role": role }, body: JSON.stringify(body) });
+  it.each(["partner", "own"])("allows a confirmed lead to choose %s using their authenticated identity", async briefPreference => {
+    membership = { participantId, teamId, status: "confirmed", role: "lead" };
+    expect((await chooseBrief({ briefPreference })).status).toBe(200);
+    expect(service.updateBriefPreference).toHaveBeenCalledWith(teamId, briefPreference, participantId);
+  });
+  it.each(["member", "co_lead"])("does not allow a %s to choose for the lead", async role => {
+    membership = { participantId, teamId, status: "confirmed", role };
+    expect((await chooseBrief({ briefPreference: "own" })).status).toBe(403);
+    expect(service.updateBriefPreference).not.toHaveBeenCalled();
+  });
+  it.each(["program_manager", "super_admin", "viewer", "mentor", "organization", "anonymous"])("does not allow %s to impersonate a lead's brief choice", async role => {
+    membership = { participantId, teamId, status: "confirmed", role: "lead" };
+    expect((await chooseBrief({ briefPreference: "own" }, role)).status).toBe(403);
+    expect(service.updateBriefPreference).not.toHaveBeenCalled();
+  });
+  it.each([{}, { briefPreference: null }, { briefPreference: "custom" }, { briefPreference: "own", briefId: otherId }])("validates the brief choice and prevents assigning a brief through it (%j)", async body => {
+    membership = { participantId, teamId, status: "confirmed", role: "lead" };
+    expect((await chooseBrief(body)).status).toBe(400);
+    expect(service.updateBriefPreference).not.toHaveBeenCalled();
+  });
+  it("rejects foreign-team and pending-lead brief choices", async () => {
+    membership = { participantId, teamId, status: "confirmed", role: "lead" };
+    expect((await chooseBrief({ briefPreference: "own" }, "participant", otherId)).status).toBe(403);
+    membership.status = "pending";
+    expect((await chooseBrief({ briefPreference: "own" })).status).toBe(403);
   });
 
   it.each([undefined, null, "", " \n\t ", 12, [], {}, "x".repeat(501)])("rejects an invalid member-removal reason (%j) before calling the service", async reason => {

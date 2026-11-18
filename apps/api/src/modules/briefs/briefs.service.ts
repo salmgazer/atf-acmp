@@ -1,3 +1,4 @@
+import { TeamWorkflowService } from "../team-workflow/team-workflow.service";
 import {
   Injectable,
   NotFoundException,
@@ -42,6 +43,7 @@ export class BriefsService {
     private readonly notificationTriggers: NotificationTriggersService,
     private readonly usersService: UsersService,
     private readonly cacheService: CacheService,
+    private readonly workflow: TeamWorkflowService,
   ) {}
 
   async create(dto: CreateBriefDto): Promise<Brief> {
@@ -91,7 +93,7 @@ export class BriefsService {
     });
   }
 
-  async findAll(query: BriefQueryDto, participantId?: string): Promise<PaginatedBriefsDto> {
+  async findAll(query: BriefQueryDto, participantId?: string, poolOnly = false): Promise<PaginatedBriefsDto> {
     const scope = participantId ? await participantBriefScope(this.briefRepository.manager, participantId) : null;
     if (scope) query = { ...query, cohortId: scope.cohortId, status: BriefStatus.APPROVED };
     const page = query.page || 1;
@@ -99,6 +101,7 @@ export class BriefsService {
     const skip = (page - 1) * limit;
 
     const where: any = {};
+
 
     if (query.cohortId) {
       where.cohortId = query.cohortId;
@@ -152,6 +155,9 @@ export class BriefsService {
         { ...where, problemCountry: Raw(alias => `NULLIF(BTRIM(${alias}), '') IS NULL`), organization: { country: match() } },
       ];
     }
+    if (scope || poolOnly) scopedWhere = (Array.isArray(scopedWhere) ? scopedWhere : [scopedWhere]).flatMap(term => [
+      { ...term, source: "partner" }, { ...term, source: "team", shareWithTeams: true },
+    ]);
     const [data, total] = await this.briefRepository.findAndCount({
       where: scopedWhere,
       relations: ["vertical", "organization"],
@@ -174,7 +180,7 @@ export class BriefsService {
     if (scope) cohortId = scope.cohortId;
     // Only use cache if no filters (most common case)
     if (!participantId && !verticalId && !search) {
-      const cacheKey = this.cacheService.buildKey(CACHE_KEYS.BRIEFS_BY_COHORT, cohortId, "approved");
+      const cacheKey = this.cacheService.buildKey(CACHE_KEYS.BRIEFS_BY_COHORT, cohortId, "approved-pool-v2");
       const cached = await this.cacheService.get<Brief[]>(cacheKey);
       if (cached) {
         return cached;
@@ -186,7 +192,8 @@ export class BriefsService {
       .leftJoinAndSelect("brief.vertical", "vertical")
       .leftJoinAndSelect("brief.organization", "organization")
       .where("brief.cohortId = :cohortId", { cohortId })
-      .andWhere("brief.status = :status", { status: BriefStatus.APPROVED });
+      .andWhere("brief.status = :status", { status: BriefStatus.APPROVED })
+      .andWhere("(brief.source = 'partner' OR brief.share_with_teams = true)");
 
     if (scope) {
       const values = [...new Set(scope.countries.flatMap(countryValues))];
@@ -210,7 +217,7 @@ export class BriefsService {
 
     // Cache results if no filters
     if (!participantId && !verticalId && !search) {
-      const cacheKey = this.cacheService.buildKey(CACHE_KEYS.BRIEFS_BY_COHORT, cohortId, "approved");
+      const cacheKey = this.cacheService.buildKey(CACHE_KEYS.BRIEFS_BY_COHORT, cohortId, "approved-pool-v2");
       await this.cacheService.set(cacheKey, results, CACHE_TTL.MEDIUM);
     }
 
@@ -227,11 +234,12 @@ export class BriefsService {
       throw new NotFoundException("Brief not found");
     }
 
-    return Object.assign(brief, { contacts: await this.briefRepository.manager.find(BriefContact, { where: { briefId: id }, order: { isPrimary: "DESC", createdAt: "ASC" } }) });
+    return Object.assign(brief, { contacts: brief.source === "team" ? [] : await this.briefRepository.manager.find(BriefContact, { where: { briefId: id }, order: { isPrimary: "DESC", createdAt: "ASC" } }) });
   }
 
   async update(id: string, dto: UpdateBriefDto, actorId?: string, actorName?: string): Promise<Brief> {
     const brief = await this.findOne(id);
+    if (brief.source === "team") throw new BadRequestException("Edit team briefs through their validated team submission form");
 
     // Only allow updates in DRAFT or REVISION_REQUESTED status
     if (![BriefStatus.DRAFT, BriefStatus.REVISION_REQUESTED].includes(brief.status)) {
@@ -316,6 +324,7 @@ export class BriefsService {
 
   async submit(id: string, dto: SubmitBriefDto): Promise<Brief> {
     const brief = await this.findOne(id);
+    if (brief.source === "team") throw new BadRequestException("Submit through the validated team brief form");
 
     if (![BriefStatus.DRAFT, BriefStatus.REVISION_REQUESTED].includes(brief.status)) {
       throw new BadRequestException(
@@ -401,6 +410,7 @@ export class BriefsService {
 
   async review(id: string, dto: ReviewBriefDto): Promise<Brief> {
     const brief = await this.findOne(id);
+    if (brief.source === "team") return this.workflow.reviewBrief(id, { action: dto.action as any, feedback: dto.feedback || "" }, dto.reviewedBy!);
 
     if (![BriefStatus.SUBMITTED, BriefStatus.IN_REVIEW].includes(brief.status)) {
       throw new BadRequestException(
@@ -592,7 +602,7 @@ export class BriefsService {
     return this.briefRepository.save(brief);
   }
 
-  async getStatistics(cohortId?: string, country?: string, participantId?: string): Promise<{
+  async getStatistics(cohortId?: string, country?: string, participantId?: string, poolOnly = false): Promise<{
     total: number;
     draft: number;
     submitted: number;
@@ -608,10 +618,12 @@ export class BriefsService {
       .select("brief.status", "status")
       .addSelect("COUNT(*)", "count")
       .where(cohortId ? "brief.cohort_id = :cohortId" : "1=1", { cohortId });
+    if (poolOnly) countsQuery.andWhere("brief.status = 'approved' AND (brief.source = 'partner' OR brief.share_with_teams = true)");
     if (scope) {
       const values = [...new Set(scope.countries.flatMap(countryValues))];
       countsQuery.leftJoin("brief.organization", "organization")
         .andWhere("brief.status = :visibleStatus", { visibleStatus: BriefStatus.APPROVED })
+        .andWhere("(brief.source = 'partner' OR brief.share_with_teams = true)")
         .andWhere(values.length ? `${BRIEF_COUNTRY_SQL} IN (:...memberCountryValues)` : "1=0", { memberCountryValues: values });
     }
     if (country?.trim()) {
@@ -791,6 +803,7 @@ export class BriefsService {
    */
   async staffUpdate(id: string, dto: StaffUpdateBriefDto, actorId: string, actorName: string): Promise<Brief> {
     const brief = await this.findOne(id);
+    if (brief.source === "team") throw new BadRequestException("Use the validated team brief form or request changes through its review");
 
     // Handle vertical change - check new vertical capacity
     if (dto.verticalId && dto.verticalId !== brief.verticalId) {

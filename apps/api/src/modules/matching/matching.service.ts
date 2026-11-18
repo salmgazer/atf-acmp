@@ -1,4 +1,6 @@
+import { isPoolBrief } from "@/common/services/team-workflow";
 import { briefCountry, confirmedTeamCountries, isBriefCountryAllowed } from "@/common/services/brief-country-access";
+import { TeamBriefPreference } from "@acmp/shared";
 import { Inject } from "@nestjs/common";
 import { CACHE_MANAGER, Cache } from "@nestjs/cache-manager";
 import { Transactional } from "@/common/decorators/transactional.decorator";
@@ -97,9 +99,10 @@ export class MatchingService {
     const allTeams = await this.getEligibleTeams(cohortId, dto.teamIds);
     
     // Filter teams that meet minimum size requirement
-    const minTeamSize = cohort.teamSizeMin || 3;
-    const teams = allTeams.filter((team) => team.members.length >= minTeamSize);
-    const undersizedTeams = allTeams.filter((team) => team.members.length < minTeamSize);
+    const minTeamSize = Math.max(3, cohort.teamSizeMin || 3);
+    const confirmedCount = (team: Team) => team.members.filter(member => member.status === "confirmed" && member.participant).length;
+    const teams = allTeams.filter((team) => confirmedCount(team) >= minTeamSize && confirmedCount(team) <= 5);
+    const undersizedTeams = allTeams.filter((team) => confirmedCount(team) < minTeamSize || confirmedCount(team) > 5);
 
     if (undersizedTeams.length > 0) {
       warnings.push(
@@ -219,7 +222,7 @@ export class MatchingService {
     // Apply assignments
     for (const [teamId, briefId] of assignments) {
       try {
-        await this.assignBriefToTeam(teamId, briefId);
+        await this.assignBriefToTeam(teamId, briefId, cohortId);
         assignedCount++;
       } catch (error) {
         errors.push(`Failed to assign team ${teamId} to brief ${briefId}: ${error.message}`);
@@ -252,7 +255,7 @@ export class MatchingService {
     }
 
     return Promise.all(
-      briefs.map(async (brief) => {
+      briefs.filter(isPoolBrief).map(async (brief) => {
         const currentTeams = await this.teamRepository.count({
           where: { briefId: brief.id },
         });
@@ -303,7 +306,8 @@ export class MatchingService {
         return {
           teamId: team.id,
           teamName: team.name,
-          memberCount: team.members.length,
+          memberCount: team.members.filter(member => member.status === "confirmed" && member.participant).length,
+          briefPreference: team.briefPreference || TeamBriefPreference.PARTNER,
           hasPreferences: preferences.briefRankings.length > 0,
           rankedBriefIds: preferences.briefRankings,
           currentBriefId: team.briefId || null,
@@ -338,16 +342,18 @@ export class MatchingService {
       cohortId,
       status: In([TeamStatus.FORMING, TeamStatus.ACTIVE]),
       briefId: IsNull(),
+      briefPreference: TeamBriefPreference.PARTNER,
     };
 
     if (teamIds?.length) {
       where.id = In(teamIds);
     }
 
-    return this.teamRepository.find({
+    const teams = await this.teamRepository.find({
       where,
       relations: ["members", "members.participant"],
     });
+    return teams.filter(team => !team.briefId && team.briefPreference !== TeamBriefPreference.OWN);
   }
 
   private async getAvailableBriefs(
@@ -363,10 +369,10 @@ export class MatchingService {
       where.id = In(briefIds);
     }
 
-    return this.briefRepository.find({
+    return (await this.briefRepository.find({
       where,
       relations: ["organization", "vertical"],
-    });
+    })).filter(isPoolBrief);
   }
 
   private async prepareTeamsWithPreferences(
@@ -435,7 +441,7 @@ export class MatchingService {
 
     // Aggregate skills
     const skills = new Set<string>();
-    for (const member of team.members) {
+    for (const member of team.members.filter(member => member.status === "confirmed" && member.participant)) {
       if (member.participant.skills) {
         member.participant.skills.forEach((skill) => skills.add(skill));
       }
@@ -443,7 +449,7 @@ export class MatchingService {
 
     // Aggregate interests
     const interests = new Set<string>();
-    for (const member of team.members) {
+    for (const member of team.members.filter(member => member.status === "confirmed" && member.participant)) {
       if (member.participant.interests) {
         member.participant.interests.forEach((interest) => interests.add(interest));
       }
@@ -462,7 +468,7 @@ export class MatchingService {
     maxTeamsOverride?: number
   ): Promise<BriefWithCapacity[]> {
     return Promise.all(
-      briefs.map(async (brief) => {
+      briefs.filter(isPoolBrief).map(async (brief) => {
         const currentTeams = await this.teamRepository.count({
           where: { briefId: brief.id },
         });
@@ -690,8 +696,10 @@ export class MatchingService {
   @Transactional()
   private async assignBriefToTeam(
     teamId: string,
-    briefId: string
+    briefId: string,
+    cohortId?: string,
   ): Promise<void> {
+    await this.teamRepository.findOne({ where: { id: teamId }, lock: { mode: "pessimistic_write" } });
     const team = await this.teamRepository.findOne({
       where: { id: teamId },
       relations: ["members", "members.participant"],
@@ -701,16 +709,21 @@ export class MatchingService {
       throw new NotFoundException(`Team ${teamId} not found`);
     }
 
+    if (cohortId && team.cohortId !== cohortId) throw new BadRequestException("Team does not belong to the selected cohort");
+    if (![TeamStatus.FORMING, TeamStatus.ACTIVE].includes(team.status)) throw new BadRequestException("Team is no longer eligible for brief assignment");
+    if (team.briefPreference === TeamBriefPreference.OWN) throw new BadRequestException("This team plans to create its own brief and is excluded from partner brief assignment");
+
     if (team.briefId) {
       throw new BadRequestException(`Team ${teamId} already has a brief assigned`);
     }
 
+    await this.briefRepository.findOne({ where: { id: briefId }, lock: { mode: "pessimistic_write" } });
     const brief = await this.briefRepository.findOne({
       where: { id: briefId, cohortId: team.cohortId, status: BriefStatus.APPROVED },
       relations: ["organization"],
     });
 
-    if (!brief) {
+    if (!brief || !isPoolBrief(brief)) {
       throw new NotFoundException(`Brief ${briefId} not found`);
     }
 

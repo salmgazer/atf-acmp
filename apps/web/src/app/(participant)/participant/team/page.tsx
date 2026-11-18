@@ -1,6 +1,7 @@
 "use client";
 
 import { TeamEligibility } from "@/components/teams/team-eligibility";
+import { TeamBriefPreferenceControl } from "@/components/teams/team-brief-preference";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -289,6 +290,7 @@ function TeamDashboard({
       </div>
 
       {/* Assigned Brief */}
+      <TeamBriefPreferenceControl team={team} isLead={isLead} />
       {team.brief ? (
         <div className="rounded-lg border bg-card p-4">
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
@@ -315,7 +317,7 @@ function TeamDashboard({
             No brief assigned yet
           </p>
           <p className="text-xs text-muted-foreground">
-            Briefs will be assigned after team formation
+            {team.briefPreference === "own" ? "Your team plans to create its own brief and will be skipped during partner brief assignment." : "Partner briefs can be assigned separately after team formation."}
           </p>
         </div>
       )}

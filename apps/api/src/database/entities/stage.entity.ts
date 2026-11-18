@@ -9,6 +9,7 @@ import {
 import { BaseEntity } from "./base.entity";
 import { Cohort } from "./cohort.entity";
 import { Team } from "./team.entity";
+import { TeamWorkflowStep } from "@acmp/shared";
 
 export enum StageType {
   DOCUMENT = "document",
@@ -29,6 +30,7 @@ export enum SubmissionStatus {
 }
 
 export interface StageRequirements {
+  minimumConsultations?: number;
   documentRequired?: boolean;
   documentMaxSize?: number; // in MB
   documentTypes?: string[]; // ['pdf', 'docx']
@@ -52,9 +54,12 @@ export interface StageRequirements {
 }
 
 @Entity("stages")
+@Index("stages_cohort_workflow_key", ["cohortId", "workflowKey"], { unique: true, where: "deleted_at IS NULL AND workflow_key IS NOT NULL" })
 @Index(["cohortId", "number"])
 @Index(["cohortId", "isActive"])
 export class Stage extends BaseEntity {
+  @Column({ name: "workflow_key", type: "varchar", length: 20, nullable: true })
+  workflowKey?: TeamWorkflowStep | null;
   @Column({ name: "cohort_id" })
   cohortId: string;
 
@@ -78,7 +83,7 @@ export class Stage extends BaseEntity {
   type: StageType;
 
   @Column({ name: "start_date", type: "timestamptz", nullable: true })
-  startDate?: Date;
+  startDate?: Date | null;
 
   @Column({ type: "timestamptz" })
   deadline: Date;
@@ -204,6 +209,7 @@ export class Submission extends BaseEntity {
 
   @Column({ type: "jsonb", nullable: true })
   feedback?: {
+    proposalScores?: Record<string, number>;
     strengths?: string[];
     improvements?: string[];
     comments?: string;

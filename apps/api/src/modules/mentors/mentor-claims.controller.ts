@@ -1,5 +1,6 @@
 import {
   Controller,
+  ForbiddenException,
   Get,
   Post,
   Put,
@@ -83,7 +84,9 @@ export class MentorClaimsController {
   @ApiResponse({ status: 200, description: "List of available mentors" })
   async browseMentors(
     @Query() query: BrowseMentorsQueryDto,
+    @CurrentUser() user: any,
   ): Promise<BrowseMentorsResponseDto> {
+    if (user.teamId) { const access = await this.claimsService.isMentorClaimUnlockedForTeam(user.teamId, user.cohortId); if (!access.unlocked) throw new ForbiddenException(access.reason); }
     return this.claimsService.browseMentors(query);
   }
 

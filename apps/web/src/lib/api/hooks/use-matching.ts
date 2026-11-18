@@ -87,6 +87,7 @@ export interface BriefCapacity {
 }
 
 export interface TeamMatchStatus {
+  briefPreference?: "partner" | "own";
   teamId: string;
   teamName: string;
   memberCount: number;
@@ -206,6 +207,7 @@ export function useClearMatchingPreview() {
 // ============ Team Formation Types ============
 
 export interface TeamFormationConfig {
+  useBriefCentricAssignment?: boolean;
   targetTeamSize?: number;
   prioritizeSkillDiversity?: boolean;
   prioritizeInterestMatch?: boolean;

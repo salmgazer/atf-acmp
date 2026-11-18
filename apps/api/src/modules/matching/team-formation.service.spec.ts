@@ -53,7 +53,7 @@ describe("ATF team formation previews", () => {
   });
   it("leaves role/mix guidance nonblocking and produces a current-policy cache receipt", async () => {
     load([person("a"), person("b"), person("c")]); const preview = await service.runTeamFormation("cohort");
-    expect(preview.policyVersion).toBe("atf-2026-v3"); expect(preview.proposedTeams[0].eligibility).toMatchObject({ canRegister: true, femaleCount: 0 });
+    expect(preview.policyVersion).toBe("atf-2026-v4"); expect(preview.proposedTeams[0].eligibility).toMatchObject({ canRegister: true, femaleCount: 0 });
     expect(await service.getTeamFormationPreview("cohort")).toEqual(preview); await service.clearFormationPreviewCache("cohort"); expect(await service.getTeamFormationPreview("cohort")).toBeNull();
   });
   it("requires a fresh policy preview before finalization", async () => {
@@ -65,5 +65,12 @@ describe("ATF team formation previews", () => {
   });
   it("returns a helpful empty preview without writing teams or memberships", async () => {
     const preview = await service.runTeamFormation("cohort"); expect(preview.proposedTeams).toHaveLength(0); expect(preview.warnings.join(" ")).toContain("No eligible"); expect(teams.save).not.toHaveBeenCalled(); expect(members.save).not.toHaveBeenCalled();
+  });
+  it("does not even load partner briefs when forming teams with the default configuration", async () => {
+    load([person("a"), person("b"), person("c")]);
+    const preview = await service.runTeamFormation("cohort");
+    expect(preview.configUsed.useBriefCentricAssignment).toBe(false);
+    expect(preview.proposedTeams[0].assignedBriefId).toBeUndefined();
+    expect(briefs.find).not.toHaveBeenCalled();
   });
 });

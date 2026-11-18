@@ -1,3 +1,4 @@
+import { isPoolBrief } from "@/common/services/team-workflow";
 import { SocketSessionsService } from "@/auth/socket-sessions.service";
 import { applyProgrammeOptOut } from "@/common/services/team-rules";
 import { resolveCohortGroup } from "@/common/services/cohort-groups";
@@ -864,7 +865,7 @@ export class ParticipantsService {
     const briefs = await this.participantRepository.manager.getRepository(Brief).find({
       where: { id: In(briefRankings), cohortId: scope.cohortId, status: BriefStatus.APPROVED }, relations: ["organization"],
     });
-    if (briefs.length !== new Set(briefRankings).size || briefs.some(brief => !isBriefCountryAllowed(brief, scope.countries))) {
+    if (briefs.length !== new Set(briefRankings).size || briefs.some(brief => (!isPoolBrief(brief) || !isBriefCountryAllowed(brief, scope.countries)))) {
       throw new BadRequestException("Rank only approved briefs from the countries of your confirmed team members");
     }
   }

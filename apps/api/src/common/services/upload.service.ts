@@ -138,16 +138,18 @@ export class UploadService {
     }));
   }
 
-  async validateSubmissionVideo(url: string | undefined, teamId: string, maxMB?: number, maxSeconds?: number): Promise<void> {
+  async validateSubmissionVideo(url: string | undefined, teamId: string, maxMB?: number, maxSeconds?: number, mp4Only = false): Promise<void> {
     if (!url) return;
     const key = this.extractKeyFromUrl(url);
     if (!key) {
+      if (mp4Only) throw new BadRequestException('Upload an MP4 video for the final submission');
       if (maxMB || maxSeconds) throw new BadRequestException('Upload the video so its size and duration can be verified');
       return;
     }
     if (!key.startsWith(`submissions/${teamId}/videos/`)) throw new BadRequestException('Video must be uploaded by this team');
     const stored = await this.s3Client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key })).catch(() => { throw new BadRequestException('Video could not be verified'); });
     if (!stored.ContentType?.startsWith('video/') || !stored.ContentLength || stored.ContentLength > Math.min(maxMB || 100, 100) * 1024 * 1024) throw new BadRequestException('Video exceeds the stage size limit or is invalid');
+    if (mp4Only && (stored.ContentType !== 'video/mp4' || !key.toLowerCase().endsWith('.mp4'))) throw new BadRequestException('Final submission video must be MP4');
     const duration = Number(stored.Metadata?.['duration-seconds']);
     if (maxSeconds && (!Number.isFinite(duration) || duration <= 0 || duration > maxSeconds)) throw new BadRequestException('Video exceeds the stage duration limit or could not be measured');
   }

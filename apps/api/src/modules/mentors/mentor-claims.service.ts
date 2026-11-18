@@ -252,6 +252,12 @@ export class MentorClaimsService {
     teamId: string,
     cohortId: string,
   ): Promise<{ unlocked: boolean; reason?: string; stageName?: string }> {
+    const problemStage = await this.stageRepository.findOne({ where: { cohortId, workflowKey: "problem", isActive: true } });
+    if (problemStage) {
+      const team = await this.teamRepository.findOne({ where: { id: teamId, cohortId }, relations: ["brief"] });
+      const unlocked = !!team?.registeredAt && team.status !== "disqualified" && team.brief?.status === "approved";
+      return { unlocked, reason: unlocked ? undefined : "Complete Choose a problem with an assigned, approved brief to access mentors", stageName: problemStage.name };
+    }
     // Find the stage that unlocks mentor claim for this cohort
     const unlockingStage = await this.stageRepository.findOne({
       where: {
@@ -552,6 +558,8 @@ export class MentorClaimsService {
     if (claim.status !== MentorClaimStatus.ACTIVE) {
       throw new BadRequestException("Cannot book session on inactive claim");
     }
+    const access = await this.isMentorClaimUnlockedForTeam(claim.teamId, claim.team.cohortId);
+    if (!access.unlocked) throw new ForbiddenException(access.reason);
 
     // Count existing sessions (scheduled, confirmed, or completed - exclude cancelled and declined)
     const bookedSessions = claim.scheduledSessions?.filter(

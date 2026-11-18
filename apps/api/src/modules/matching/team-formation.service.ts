@@ -1,7 +1,8 @@
+import { isPoolBrief } from "@/common/services/team-workflow";
 import { resolveCohortTeamDeadlines } from "@/common/services/cohort-team-deadlines";
 import { assertJoiningWindow, assertMemberAdmission, chooseCompetitionCountry, teamRuleContext } from "@/common/services/team-rules";
 import { formAtfTeams, compareMatchingCandidates, matchingGuideScore } from "./atf-team-matcher";
-import { canShareTeam, evaluateTeamRules, hasNonComputingStudy, isQualifiedBuilder, normalizeTeamCountry, participantTeamIssues } from "@acmp/shared";
+import { canShareTeam, evaluateTeamRules, hasNonComputingStudy, isQualifiedBuilder, normalizeTeamCountry, participantTeamIssues, TeamBriefPreference } from "@acmp/shared";
 import { resolveCohortGroup } from "@/common/services/cohort-groups";
 import { briefCountry, isBriefCountryAllowed } from "@/common/services/brief-country-access";
 import { Inject } from "@nestjs/common";
@@ -133,7 +134,7 @@ export class TeamFormationService {
     }
     if (!rows.length) warnings.push("No eligible participants found for team formation");
     const formed = formAtfTeams(available, config.teamSizeMax);
-    const approvedBriefs = await this.briefRepository.find({ where: { cohortId, status: BriefStatus.APPROVED }, relations: ["organization", "vertical"], order: { priorityScore: "DESC", id: "ASC" } });
+    const approvedBriefs = config.useBriefCentricAssignment ? (await this.briefRepository.find({ where: { cohortId, status: BriefStatus.APPROVED }, relations: ["organization", "vertical"], order: { fitScore: "DESC", impactScore: "DESC", id: "ASC" } })).filter(isPoolBrief) : [];
     const actualCounts = await Promise.all(approvedBriefs.map(brief => this.teamRepository.countBy({ briefId: brief.id, status: Not(TeamStatus.DISQUALIFIED) })));
     const capacity = new Map(approvedBriefs.map((brief, index) => [brief.id, Math.max(0, brief.maxTeams - (actualCounts[index] || 0))]));
     const matchBrief = (members: Participant[]) => {
@@ -141,7 +142,7 @@ export class TeamFormationService {
       const sectorNames: Record<string, string> = { healthcare: "health", health: "health", education: "education", agriculture: "agriculture", finance: "finance", legal: "legal", logistics: "logistics", "public service": "public_service", "mining and manufacturing": "mining_manufacturing" };
       candidates.sort((a, b) => {
         const score = (brief: Brief, backup = false) => members.filter(member => { const sector = sectorNames[brief.vertical?.name?.toLowerCase() || ""]; return !!sector && (backup ? member.preference?.backupSector : member.preference?.firstChoiceSector) === sector; }).length;
-        return score(b) - score(a) || score(b, true) - score(a, true) || (capacity.get(b.id) || 0) - (capacity.get(a.id) || 0) || (b.priorityScore || 0) - (a.priorityScore || 0) || a.id.localeCompare(b.id);
+        return score(b) - score(a) || score(b, true) - score(a, true) || (capacity.get(b.id) || 0) - (capacity.get(a.id) || 0) || (b.fitScore || 0) - (a.fitScore || 0) || (b.impactScore || 0) - (a.impactScore || 0) || a.id.localeCompare(b.id);
       });
       const brief = candidates[0]; if (brief) capacity.set(brief.id, capacity.get(brief.id)! - 1); return brief;
     };
@@ -161,7 +162,7 @@ export class TeamFormationService {
         assignedBriefId: brief?.id, assignedBriefTitle: brief?.title, assignedVerticalId: brief?.verticalId, competitionCountry, eligibility: report } as ProposedTeamDto;
     });
     const proposedBriefAssignments: ProposedBriefAssignmentDto[] = [];
-    if (config.useBriefCentricAssignment) for (const team of existing.filter(t => !t.briefId)) {
+    if (config.useBriefCentricAssignment) for (const team of existing.filter(t => !t.briefId && t.briefPreference !== TeamBriefPreference.OWN)) {
       const members = team.members.filter(m => m.status === TeamMemberStatus.CONFIRMED).map(m => m.participant).filter(Boolean);
       if (!members.length || members.some(person => participantTeamIssues(person, cohort).length)) continue;
       const brief = matchBrief(members);
@@ -175,7 +176,7 @@ export class TeamFormationService {
     statistics.briefAssignmentStats = { totalApprovedBriefs: approvedBriefs.length, briefsAssigned: new Set(assignedBriefs).size, briefsWithoutTeams: approvedBriefs.filter(brief => (capacity.get(brief.id) || 0) > 0).length, existingTeamsAssignedBriefs: proposedBriefAssignments.length, assignmentsByVertical: Object.fromEntries([...new Set(approvedBriefs.map(brief => brief.verticalId).filter(Boolean))].map(id => [id!, assignedBriefs.filter(briefId => approvedBriefs.find(brief => brief.id === briefId)?.verticalId === id).length])) };
     const sourceVersion = (person: Participant) => JSON.stringify([person.updatedAt?.toISOString(), person.preference?.updatedAt?.toISOString()]);
     const sourceVersions = Object.fromEntries([...rows, ...existing.flatMap(team => team.members.map(member => member.participant).filter(Boolean))].map(person => [person.id, sourceVersion(person)]));
-    const preview = { cohortId, cohortName: cohort.name, generatedAt: new Date(), proposedTeams, proposedBackfills, proposedBriefAssignments, unassignedParticipantIds, unassignedBriefIds: approvedBriefs.filter(brief => (capacity.get(brief.id) || 0) > 0).map(brief => brief.id), statistics, configUsed: config, warnings, policyVersion: "atf-2026-v3", deadlineVersion: cohort.teamRuleDeadlineVersion, sourceVersions, cohortVersion: cohort.updatedAt?.toISOString() };
+    const preview = { cohortId, cohortName: cohort.name, generatedAt: new Date(), proposedTeams, proposedBackfills, proposedBriefAssignments, unassignedParticipantIds, unassignedBriefIds: approvedBriefs.filter(brief => (capacity.get(brief.id) || 0) > 0).map(brief => brief.id), statistics, configUsed: config, warnings, policyVersion: "atf-2026-v4", deadlineVersion: cohort.teamRuleDeadlineVersion, sourceVersions, cohortVersion: cohort.updatedAt?.toISOString() };
     await this.previewStore.set("formation:" + cohortId, preview, 30 * 60 * 1000);
     return preview;
   }
@@ -184,7 +185,8 @@ export class TeamFormationService {
    * Get the current team formation preview
    */
   async getTeamFormationPreview(cohortId: string): Promise<TeamFormationPreviewDto | null> {
-    return await this.previewStore.get<TeamFormationPreviewDto>("formation:" + cohortId) || null;
+    const preview = await this.previewStore.get<TeamFormationPreviewDto>("formation:" + cohortId);
+    return preview?.policyVersion === "atf-2026-v4" ? preview : null;
   }
 
   /**
@@ -203,7 +205,7 @@ export class TeamFormationService {
     dto: FinalizeTeamFormationDto = {},
   ): Promise<{ createdTeamCount: number; backfilledTeamCount: number; briefsAssigned: number; errors: string[] }> {
     const preview = await this.previewStore.get<TeamFormationPreviewDto>("formation:" + cohortId);
-    if (!preview || preview.policyVersion !== "atf-2026-v3") throw new BadRequestException("Run a fresh team formation preview under the current ATF rules before finalizing");
+    if (!preview || preview.policyVersion !== "atf-2026-v4") throw new BadRequestException("Run a fresh team formation preview under the current ATF rules before finalizing");
     const cohort = await this.cohortRepository.findOneBy({ id: cohortId });
     if (!cohort) throw new NotFoundException("Cohort not found");
     await resolveCohortTeamDeadlines(this.teamRepository.manager, cohort);
@@ -227,9 +229,12 @@ export class TeamFormationService {
       backfilledParticipantIds.push(...ids); backfilledTeamCount++;
     }
     for (const assignment of preview.proposedBriefAssignments) {
+      await this.teamRepository.findOne({ where: { id: assignment.teamId }, lock: { mode: "pessimistic_write" } });
       const { team, members } = await teamRuleContext(this.teamRepository.manager, assignment.teamId);
+      if (team.briefId || team.briefPreference === TeamBriefPreference.OWN) { errors.push(`${team.name}: skipped brief assignment because a brief is already assigned or the team plans its own brief`); continue; }
+      await this.briefRepository.findOne({ where: { id: assignment.briefId }, lock: { mode: "pessimistic_write" } });
       const brief = await this.briefRepository.findOne({ where: { id: assignment.briefId, cohortId, status: BriefStatus.APPROVED }, relations: ["organization"] });
-      if (!brief || team.cohortId !== cohortId || team.briefId) throw new BadRequestException("An existing team or brief changed since the preview; run it again");
+      if (!brief || !isPoolBrief(brief) || team.cohortId !== cohortId || team.briefId) throw new BadRequestException("An existing team or brief changed since the preview; run it again");
       const country = briefCountry(brief);
       if (!isBriefCountryAllowed(brief, members.map(member => member.country))) throw new BadRequestException("The problem country must match a country where a team member lives");
       await this.teamRepository.update(team.id, { briefId: brief.id, competitionCountry: country, challengeStartedAt: null, status: TeamStatus.FORMING });
@@ -406,7 +411,7 @@ export class TeamFormationService {
       teamSizeMin: config?.teamSizeMin ?? Math.max(3, Math.min(5, cohort.teamSizeMin || 3)),
       teamSizeMax: config?.teamSizeMax ?? Math.min(5, Math.max(3, cohort.teamSizeMax || 5)),
       forceCrossCountry: config?.forceCrossCountry ?? false,
-      useBriefCentricAssignment: config?.useBriefCentricAssignment ?? true,
+      useBriefCentricAssignment: config?.useBriefCentricAssignment ?? false,
     };
   }
 
@@ -679,7 +684,7 @@ export class TeamFormationService {
     const existingMembership = await this.teamMemberRepository.countBy({ participantId: In(participantIds) });
     if (existingMembership) throw new BadRequestException("A selected participant already belongs to a team or has a pending membership");
     const brief = briefId ? await this.briefRepository.findOne({ where: { id: briefId }, relations: ["organization"] }) : null;
-    if (briefId && (!brief || brief.cohortId !== cohortId || brief.status !== BriefStatus.APPROVED)) throw new BadRequestException("Choose an approved brief from this cohort");
+    if (briefId && (!brief || brief.cohortId !== cohortId || brief.status !== BriefStatus.APPROVED || !isPoolBrief(brief))) throw new BadRequestException("Choose an approved brief from this cohort");
     const competitionCountry = chooseCompetitionCountry(participants, brief ? briefCountry(brief) : undefined);
     const report = evaluateTeamRules(cohort, participants, { competitionCountry, hasBrief: !!briefId, problemCountry: brief ? briefCountry(brief) : undefined });
     if (!report.canRegister) throw new BadRequestException(report.registrationIssues.map(issue => issue.message).join("; "));

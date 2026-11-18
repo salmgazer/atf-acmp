@@ -119,6 +119,15 @@ export class ResourceAccessGuard implements CanActivate {
         if (params.id) {
           const brief = await repo("Brief").findOne({ where: { id: params.id, cohortId: user.cohortId, status: "approved" }, relations: ["organization"] });
           if (!brief) return this.deny();
+          if (brief.source === "team" && !brief.shareWithTeams) {
+            if (user.role === "participant") {
+              if (!await find("TeamMember", { teamId: brief.submittedByTeamId, participantId: user.id, status: "confirmed" })) return this.deny();
+            } else if (user.role === "mentor") {
+              const assignment = await find("MentorAssignment", { mentorId: user.mentorId, teamId: brief.submittedByTeamId, isActive: true });
+              const claim = await find("MentorClaim", { mentorId: user.mentorId, teamId: brief.submittedByTeamId, status: "active" });
+              if (!assignment && !claim) return this.deny();
+            } else return this.deny();
+          }
           if (user.role === "participant") {
             const scope = await participantBriefScope(this.db.manager, user.id);
             if (brief.cohortId !== scope.cohortId || !isBriefCountryAllowed(brief, scope.countries)) return this.deny();
@@ -127,6 +136,7 @@ export class ResourceAccessGuard implements CanActivate {
         else { query.cohortId = user.cohortId; query.status = "approved"; }
       }
     } else if (base === "teams") {
+      if (route === ":id/brief-preference" && user.role !== "participant") return this.deny();
       if (route === ":id/join-request" && user.role !== "participant") return this.deny();
       if (staff) staffOnly();
       else if (user.role === "participant") {
@@ -146,6 +156,7 @@ export class ResourceAccessGuard implements CanActivate {
           const member = await teamId();
           if (!params.id || member.teamId !== params.id || route.startsWith("admin/")) return this.deny();
           if (!read) {
+            if (route === ":id/brief-preference" && member.role !== "lead") return this.deny();
             // Participant departures must use the member route, which enforces
             // the sole-lead rule and cleans up roster/chat access atomically.
             if (req.method === "DELETE" && route === ":id") return this.deny();
@@ -209,7 +220,7 @@ export class ResourceAccessGuard implements CanActivate {
         const member = await teamId();
         if (!await find(base === "submissions" ? "Submission" : "JournalEntry", { id: params.id, teamId: member.teamId })) return this.deny();
       }
-      if (!read && ["submissions", "journals", "peer-reviews"].includes(base)) {
+      if (!read && ["journals", "peer-reviews"].includes(base)) {
         const member = await teamId();
         await assertChallengeStarted(this.db.manager, member.teamId);
       }
