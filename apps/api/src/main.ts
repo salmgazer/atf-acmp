@@ -81,7 +81,7 @@ async function bootstrap() {
     const config = new DocumentBuilder()
       .setTitle("ATF ACMP API")
       .setDescription("ATF AI-Challenge Management Platform API")
-      .setVersion(process.env.npm_package_version || "0.1.8")
+      .setVersion(process.env.npm_package_version || "0.1.9")
       .addBearerAuth()
       .build();
     const document = SwaggerModule.createDocument(app, config);

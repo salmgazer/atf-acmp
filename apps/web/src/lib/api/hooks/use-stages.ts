@@ -5,6 +5,7 @@ import { api } from "../client";
 import { toast } from "sonner";
 
 export interface StageRequirements {
+  minimumConsultations?: number;
   documentRequired?: boolean;
   documentMaxSize?: number;
   documentTypes?: string[];
@@ -28,6 +29,7 @@ export interface StageRequirements {
 }
 
 export interface Stage {
+  workflowKey?: "team" | "problem" | "proposal" | "evaluation" | "build" | null;
   id: string;
   cohortId: string;
   number: number;
@@ -35,7 +37,7 @@ export interface Stage {
   description?: string;
   instructions?: string;
   type: "document" | "video" | "url" | "text" | "mixed";
-  startDate?: string;
+  startDate?: string | null;
   deadline: string;
   requirements: StageRequirements;
   weightPercentage: number;
@@ -70,7 +72,7 @@ export interface CreateStageInput {
   description?: string;
   instructions?: string;
   type: Stage["type"];
-  startDate?: string;
+  startDate?: string | null;
   deadline: string;
   requirements?: StageRequirements;
   weightPercentage?: number;
@@ -89,7 +91,7 @@ export interface UpdateStageInput {
   description?: string;
   instructions?: string;
   type?: Stage["type"];
-  startDate?: string;
+  startDate?: string | null;
   deadline?: string;
   requirements?: StageRequirements;
   weightPercentage?: number;

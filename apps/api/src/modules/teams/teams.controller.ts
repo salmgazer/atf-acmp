@@ -24,6 +24,7 @@ import {
   CreateTeamDto,
   RegisterTeamDto,
   UpdateTeamDto,
+  UpdateTeamBriefPreferenceDto,
   TeamQueryDto,
   PaginatedTeamsDto,
   AddMemberDto,
@@ -279,6 +280,13 @@ export class TeamsController {
   }
 
   // ============ Member Management ============
+
+  @Patch(":id/brief-preference")
+  @Audit({ action: AuditAction.UPDATE, entityType: "Team", getDescription: () => "Updated team brief preference" })
+  @ApiOperation({ summary: "Team lead chooses a partner brief or plans their own brief" })
+  async updateBriefPreference(@Param("id", ParseUUIDPipe) id: string, @Body() dto: UpdateTeamBriefPreferenceDto, @CurrentUser() user: { id: string }) {
+    return this.teamsService.updateBriefPreference(id, dto.briefPreference, user.id);
+  }
 
   @Delete(":id/join-request")
   @HttpCode(HttpStatus.NO_CONTENT)

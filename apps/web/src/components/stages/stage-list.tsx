@@ -46,6 +46,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useStagesWithStats, useDeleteStage, Stage } from "@/lib/api/hooks/use-stages";
+import { FixedWorkflowStages } from "./fixed-workflow-stages";
 import { StageFormDialog } from "./stage-form-dialog";
 
 interface StageListProps {
@@ -97,6 +98,7 @@ export function StageList({ cohortId }: StageListProps) {
     );
   }
 
+  if (stages?.some(stage => stage.workflowKey)) return <FixedWorkflowStages stages={stages} />;
   return (
     <div className="space-y-6">
       <div className="flex justify-end">

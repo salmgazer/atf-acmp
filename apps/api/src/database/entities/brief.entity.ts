@@ -160,13 +160,11 @@ export function calculateBriefScores(answers: ScoringAnswers): {
     else impactBand = BriefImpactBand.LOWER_IMPACT;
   }
 
-  // Calculate priority score (combined metric for sorting: fitScore + impactScore * 10)
+  // Calculate priority score (fit-based sorting metric; impact is reported separately)
   // Score range: roughly -50 to 190 (max fitScore 100 + max impactScore 9 * 10)
   // Override briefs get a penalty of -50 to rank them lower
   let priorityScore = fitScore;
-  if (impactScore !== null) {
-    priorityScore += impactScore * 10;
-  }
+
   if (scoreOverride) {
     priorityScore -= 50; // Penalize override cases
   }
@@ -192,7 +190,12 @@ export function calculateBriefScores(answers: ScoringAnswers): {
 @Index(["organizationId"])
 @Index(["verticalId"])
 @Index(["sessionId"])
+@Index("brief_team_origin_unique", ["submittedByTeamId"], { unique: true, where: "source = 'team' AND deleted_at IS NULL" })
 export class Brief extends BaseEntity {
+  @Column({ type: "varchar", length: 16, default: "partner" }) source: "partner" | "team";
+  @Column({ name: "submitted_by_team_id", type: "uuid", nullable: true }) submittedByTeamId?: string | null;
+  @ManyToOne("Team", { nullable: true }) @JoinColumn({ name: "submitted_by_team_id", foreignKeyConstraintName: "briefs_originating_team_fk" }) originatingTeam?: import("./team.entity").Team;
+  @Column({ name: "share_with_teams", default: false }) shareWithTeams: boolean;
   @Column({ name: "problem_country", type: "varchar", length: 255, nullable: true }) problemCountry: string | null;
   @Column()
   title: string;
@@ -223,10 +226,10 @@ export class Brief extends BaseEntity {
   @JoinColumn({ name: "cohort_id" })
   cohort: Cohort;
 
-  @Column({ name: "organization_id" })
+  @Column({ name: "organization_id", nullable: true })
   organizationId: string;
 
-  @ManyToOne(() => Organization)
+  @ManyToOne(() => Organization, { nullable: true })
   @JoinColumn({ name: "organization_id" })
   organization: Organization;
 
@@ -278,7 +281,7 @@ export class Brief extends BaseEntity {
   @Column({ type: "enum", enum: BriefImpactBand, name: "impact_band", nullable: true })
   impactBand?: BriefImpactBand;
 
-  // Combined priority score for sorting (fitScore + impactScore * 10, with overrides penalized)
+  // Fit-based priority for sorting (with overrides penalized); impact remains separate
   @Column({ name: "priority_score", nullable: true, default: 0 })
   priorityScore?: number;
 

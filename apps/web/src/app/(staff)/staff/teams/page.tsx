@@ -1,4 +1,5 @@
 "use client";
+import { InactiveTeams } from "@/components/teams/staff-team-workflow";
 
 import { StaffOnly, useStaffPermission } from "@/components/auth/staff-only";
 import { useState, useEffect } from "react";
@@ -111,7 +112,7 @@ function TeamRow({ team }: { team: Team }) {
             )}
           </div>
         ) : (
-          <span className="text-muted-foreground text-sm">Not assigned</span>
+          <span className="text-muted-foreground text-sm">{team.briefPreference === "own" ? "Creating own brief" : "Not assigned"}</span>
         )}
       </td>
       <td className="p-4">
@@ -196,7 +197,7 @@ function TeamsContent() {
   // Team Formation handlers
   const handleRunFormation = async () => {
     if (!effectiveCohortId) return;
-    await runFormationMutation.mutateAsync({ cohortId: effectiveCohortId });
+    await runFormationMutation.mutateAsync({ cohortId: effectiveCohortId, dto: { config: { useBriefCentricAssignment: false } } });
   };
 
   const handleFinalizeFormation = async () => {
@@ -313,6 +314,7 @@ function TeamsContent() {
   return (
     <StaffLayout>
       <div className="space-y-6">
+        <InactiveTeams cohortId={effectiveCohortId} />
         {/* Header */}
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Teams</h1>
@@ -354,6 +356,7 @@ function TeamsContent() {
         </div>
 
         {/* Team Formation Section */}
+        {canManage && effectiveCohortId && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4"><p className="text-sm text-muted-foreground">Assign partner briefs separately to existing teams without a brief. Teams creating their own brief are skipped.</p><Button asChild variant="outline"><Link href={`/staff/matching?cohortId=${effectiveCohortId}`}>Assign briefs</Link></Button></div>}
         {canManage && effectiveCohortId && (participantsReadyForTeams > 0 || formationPreview) && (
           <div className="rounded-xl border border-border bg-card p-6">
             <div className="flex items-center justify-between">
@@ -368,7 +371,7 @@ function TeamsContent() {
                   )}
                 </h2>
                 <p className="text-sm text-muted-foreground mt-1">
-                  Automatically form teams from participants who haven&apos;t joined a team yet
+                  Form teams and propose backfills without assigning briefs. Assign partner briefs separately when teams are ready.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -385,7 +388,7 @@ function TeamsContent() {
                     <Button
                       size="sm"
                       onClick={() => setShowFormationDialog(true)}
-                      disabled={finalizeFormationMutation.isPending}
+                      disabled={finalizeFormationMutation.isPending || formationPreview.configUsed?.useBriefCentricAssignment === true}
                     >
                       <CheckCircle className="mr-2 h-4 w-4" />
                       Finalize ({formationPreview.proposedTeams.length} teams)
@@ -412,6 +415,7 @@ function TeamsContent() {
             {formationPreview && (
               <div className="mt-4 space-y-4">
                 <Separator />
+                {formationPreview.configUsed?.useBriefCentricAssignment === true && <p role="alert" className="text-sm text-destructive">This preview includes brief assignments. Clear it and run team formation again to keep the steps separate.</p>}
                 <div className="grid gap-4 sm:grid-cols-4">
                   <div className="text-center">
                     <p className="text-2xl font-bold">{formationPreview.statistics?.totalEligibleParticipants ?? 0}</p>
@@ -682,7 +686,7 @@ function TeamsContent() {
             <DialogTitle>Finalize Team Formation</DialogTitle>
             <DialogDescription>
               This will create {formationPreview?.statistics?.proposedTeamCount ?? 0} new teams
-              with {formationPreview?.statistics?.totalEligibleParticipants ?? 0} participants.
+              without assigning briefs. Partner brief assignment is a separate step.
               {formationPreview?.statistics?.backfillStats?.teamsToBackfillCount && formationPreview.statistics.backfillStats.teamsToBackfillCount > 0 && (
                 <span className="block mt-2">
                   Additionally, {formationPreview.statistics.backfillStats.participantsToBackfillCount} participants

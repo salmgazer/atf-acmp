@@ -3,7 +3,7 @@
 import { use } from "react";
 import { ParticipantLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
-import { SubmissionForm } from "@/components/submissions";
+import { WorkflowSubmissionRouter } from "@/components/submissions/workflow-submission-router";
 
 interface PageProps {
   params: Promise<{ stageId: string }>;
@@ -12,7 +12,7 @@ interface PageProps {
 function SubmissionDetailContent({ stageId }: { stageId: string }) {
   return (
     <ParticipantLayout>
-      <SubmissionForm stageId={stageId} />
+      <WorkflowSubmissionRouter stageId={stageId} />
     </ParticipantLayout>
   );
 }

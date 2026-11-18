@@ -6,12 +6,14 @@ import {
   JoinColumn,
   OneToMany,
   Unique,
+  Check,
 } from "typeorm";
 import { BaseEntity } from "./base.entity";
 import { Cohort } from "./cohort.entity";
 import { Brief } from "./brief.entity";
 import { Participant } from "./participant.entity";
 import { Mentor } from "./mentor.entity";
+import { TeamBriefPreference } from "@acmp/shared";
 
 export enum TeamStatus {
   FORMING = "forming",
@@ -53,10 +55,14 @@ export enum RemovalRequestStatus {
 }
 
 @Entity("teams")
+@Check("teams_brief_preference_check", "brief_preference IN ('partner', 'own')")
 @Index('team_cohort_group', ['cohortId', 'group'])
 @Index(["cohortId", "status"])
 @Index(["briefId"])
 export class Team extends BaseEntity {
+  @Column({ name: "programme_resources_brief_id", type: "uuid", nullable: true }) programmeResourcesBriefId: string | null;
+  @Column({ name: "programme_resources_issued_at", type: "timestamptz", nullable: true }) programmeResourcesIssuedAt: Date | null;
+  @Column({ name: "programme_resources_issued_by", type: "uuid", nullable: true }) programmeResourcesIssuedBy: string | null;
   @Column()
   name: string;
 
@@ -82,6 +88,9 @@ export class Team extends BaseEntity {
 
   @Column({ name: "brief_id", nullable: true })
   briefId?: string;
+
+  @Column({ name: "brief_preference", type: "varchar", length: 16, default: TeamBriefPreference.PARTNER })
+  briefPreference: TeamBriefPreference;
 
   @ManyToOne(() => Brief, { nullable: true })
   @JoinColumn({ name: "brief_id" })

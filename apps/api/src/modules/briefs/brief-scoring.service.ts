@@ -83,7 +83,7 @@ export class BriefScoringService {
     const impactBand = this.getImpactBand(impactScore);
     
     // Calculate priority score (fitScore + impactScore * 10, with overrides penalized)
-    const priorityScore = this.calcPriorityScore(fitScore, impactScore, override);
+    const priorityScore = this.calcPriorityScore(fitScore, override);
 
     return {
       fitScore,
@@ -216,13 +216,10 @@ export class BriefScoringService {
    */
   private calcPriorityScore(
     fitScore: number,
-    impactScore: number | null,
     override: string | null
   ): number {
     let priority = fitScore;
-    if (impactScore !== null) {
-      priority += impactScore * 10;
-    }
+
     if (override) {
       priority -= 50; // Penalize override cases
     }

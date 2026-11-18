@@ -647,23 +647,6 @@ function BriefDetailContent({ id }: { id: string }) {
               <div className="rounded-lg border bg-card p-6">
                 <h2 className="font-semibold mb-4">AI-Challenge Fit</h2>
                 <dl className="space-y-4">
-                  {brief.priorityScore !== undefined && (
-                    <div>
-                      <dt className="text-sm text-muted-foreground">Priority Score</dt>
-                      <dd className="flex items-center gap-2">
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-sm font-semibold ${
-                          brief.priorityScore >= 140 ? "bg-emerald-500/15 text-emerald-600" :
-                          brief.priorityScore >= 100 ? "bg-blue-500/15 text-blue-600" :
-                          brief.priorityScore >= 50 ? "bg-amber-500/15 text-amber-600" :
-                          "bg-red-500/15 text-red-600"
-                        }`}>
-                          <TrendingUp className="h-3 w-3" />
-                          {brief.priorityScore}
-                        </span>
-                        <span className="text-xs text-muted-foreground">/ 190</span>
-                      </dd>
-                    </div>
-                  )}
                   {brief.fitScore !== undefined && (
                     <div>
                       <dt className="text-sm text-muted-foreground">Fit Score</dt>

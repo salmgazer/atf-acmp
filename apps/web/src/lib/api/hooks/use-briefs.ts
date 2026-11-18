@@ -51,6 +51,9 @@ export interface ScoringAnswers {
 }
 
 export interface Brief {
+  source?: "partner" | "team";
+  submittedByTeamId?: string;
+  shareWithTeams?: boolean;
   problemCountry?: string | null;
   id: string;
   title: string;
