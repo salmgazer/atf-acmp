@@ -40,11 +40,18 @@ async function setup(page: Page, context: BrowserContext, options: { staff?: boo
 test('formation explicitly excludes assignment and provides an independent assignment action even with no unassigned participants', async ({ page, context }) => {
   const state = await setup(page, context, { staff: true }); await page.goto('/staff/teams');
   await expect(page.getByRole('link', { name: 'Assign briefs', exact: true })).toHaveAttribute('href', `/staff/matching?cohortId=${cohortId}`);
+  await page.getByRole('button', { name: 'Team formation', exact: true }).click();
   await page.getByRole('button', { name: 'Run Team Formation', exact: true }).click();
   expect(state.writes[0]).toMatchObject({ path: `/api/admin/cohorts/${cohortId}/matching/formation/run`, body: { config: { useBriefCentricAssignment: false } } });
   await page.getByRole('button', { name: 'Finalize (1 teams)', exact: true }).click();
-  await expect(page.getByRole('dialog')).toContainText('without assigning briefs');
-  await page.getByRole('dialog').getByRole('button', { name: 'Create Teams', exact: true }).click();
+  const confirmation = page.getByRole('dialog', { name: 'Finalize Team Formation', exact: true });
+  await expect(confirmation).toContainText('without assigning briefs');
+  await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Clear Preview', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Finalize (1 teams)', exact: true }).click();
+  await confirmation.getByRole('button', { name: 'Create Teams', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('table', { name: 'Teams', exact: true })).toBeVisible();
   expect(state.writes.every(w => w.path.includes('/formation/'))).toBe(true);
 });
 
@@ -92,9 +99,44 @@ test('an assigned brief prevents switching to an own brief and a failed save ret
 
 test('a combined preview from another client cannot silently assign briefs through the formation-only confirmation', async ({ page, context }) => {
   const state = await setup(page, context, { staff: true, combined: true }); await page.goto('/staff/teams');
+  await page.getByRole('button', { name: 'Team formation', exact: true }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'This preview includes brief assignments.' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Finalize (1 teams)', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Clear Preview', exact: true }).click();
   await page.getByRole('button', { name: 'Run Team Formation', exact: true }).click();
   expect(state.writes.at(-1)?.body).toEqual({ config: { useBriefCentricAssignment: false } });
+});
+
+for (const viewport of [{ width: 1366, height: 900, theme: "light" }, { width: 390, height: 844, theme: "light" }, { width: 1366, height: 900, theme: "dark" }]) test(`teams table stays prominent and formation opens without changes at ${viewport.width}px in ${viewport.theme} mode`, async ({ page, context }) => {
+  await page.setViewportSize(viewport);
+  await page.addInitScript(theme => localStorage.setItem("theme", theme), viewport.theme);
+  const state = await setup(page, context, { staff: true });
+  await page.goto('/staff/teams');
+  await expect(page.locator("html")).toHaveClass(new RegExp(viewport.theme));
+  const table = page.getByRole('table', { name: 'Teams', exact: true });
+  await expect(table.getByRole('cell', { name: 'Brief plan team', exact: false })).toBeVisible();
+  const tableBox = await table.boundingBox();
+  expect(tableBox!.y).toBeLessThan(viewport.width > 1000 ? 400 : 660);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: `/tmp/acmp-teams-layout-${viewport.width}-${viewport.theme}.png` });
+  const region = page.getByRole('region', { name: 'Teams table', exact: true });
+  if (viewport.width < 1000) expect(await region.evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Team formation', exact: true }).click();
+  const workspace = page.getByRole('dialog');
+  await expect(workspace.getByRole('button', { name: 'Run Team Formation', exact: true })).toBeVisible();
+  expect(state.writes).toHaveLength(0);
+  await page.getByRole('button', { name: 'Run Team Formation', exact: true }).click();
+  await expect(workspace.getByRole('cell', { name: 'New formed team', exact: true })).toBeVisible();
+  const workspaceBox = await workspace.boundingBox();
+  expect(workspaceBox!.x).toBeGreaterThanOrEqual(0);
+  expect(workspaceBox!.x + workspaceBox!.width).toBeLessThanOrEqual(viewport.width);
+  await page.screenshot({ path: `/tmp/acmp-teams-formation-${viewport.width}-${viewport.theme}.png` });
+  await workspace.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(workspace).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Team formation", exact: true })).toBeFocused();
+  await expect(table).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Team formation', exact: true })).toContainText('Preview ready');
+  await page.getByRole('button', { name: 'Team formation', exact: true }).click();
+  await expect(page.getByRole('cell', { name: 'New formed team', exact: true })).toBeVisible();
+  expect(state.writes).toHaveLength(1);
 });

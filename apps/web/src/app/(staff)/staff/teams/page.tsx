@@ -2,7 +2,7 @@
 import { InactiveTeams } from "@/components/teams/staff-team-workflow";
 
 import { StaffOnly, useStaffPermission } from "@/components/auth/staff-only";
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import { GroupFilter } from "@/components/cohorts/group-filter";
 import Link from "next/link";
 import { CreateTeamDialog } from "@/components/teams/create-team-dialog";
@@ -50,6 +50,7 @@ import {
   Download,
   Wand2,
   UserPlus,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api/client";
@@ -148,6 +149,8 @@ function TeamsContent() {
   const [showFilters, setShowFilters] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showFormationDialog, setShowFormationDialog] = useState(false);
+  const [showFormationWorkspace, setShowFormationWorkspace] = useState(false);
+  const formationButtonRef = useRef<HTMLButtonElement>(null);
 
   // Get global cohort from store (set by sidebar)
   const globalCohortId = useStaffCohortStore((state) => state.globalCohortId);
@@ -204,6 +207,7 @@ function TeamsContent() {
     if (!effectiveCohortId) return;
     await finalizeFormationMutation.mutateAsync({ cohortId: effectiveCohortId });
     setShowFormationDialog(false);
+    setShowFormationWorkspace(false);
   };
 
   const handleClearFormation = async () => {
@@ -313,193 +317,55 @@ function TeamsContent() {
 
   return (
     <StaffLayout>
-      <div className="space-y-6">
-        <InactiveTeams cohortId={effectiveCohortId} />
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Teams</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage teams, assignments, and progress
-          </p>
+      <div className="space-y-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-foreground">Teams</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Manage teams, assignments, and progress</p>
+          </div>
+          {canManage && <div className="flex flex-wrap items-center gap-2">
+            {effectiveCohortId && (participantsReadyForTeams > 0 || formationPreview) && <Button
+              variant="outline"
+              ref={formationButtonRef}
+              aria-label="Team formation"
+              aria-haspopup="dialog"
+              aria-expanded={showFormationWorkspace}
+              onClick={() => setShowFormationWorkspace(true)}
+            >
+              <Wand2 className="h-4 w-4" />
+              Team formation
+              <span aria-hidden="true" className="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                {formationPreview ? "Preview ready" : `${participantsReadyForTeams} ready`}
+              </span>
+            </Button>}
+            {effectiveCohortId && <Button asChild variant="outline"><Link href={`/staff/matching?cohortId=${effectiveCohortId}`}><FileText className="h-4 w-4" />Assign briefs</Link></Button>}
+            <CreateTeamDialog key={effectiveCohortId || "none"} cohortId={effectiveCohortId} groups={groupOptions} />
+          </div>}
         </div>
 
-        <StaffOnly permission="manage" key={effectiveCohortId || "none"}><CreateTeamDialog cohortId={effectiveCohortId} groups={groupOptions} /></StaffOnly>
+        <dl aria-label="Team summary" className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-5">
+          {[
+            { label: "Total teams", value: stats?.total || 0, color: "text-foreground" },
+            { label: "Active", value: stats?.active || 0, color: "text-emerald-600" },
+            { label: "Forming", value: stats?.forming || 0, color: "text-amber-600" },
+            { label: "With brief", value: stats?.withBrief || 0, color: "text-blue-600" },
+            { label: "Avg members", value: stats?.averageMembers || 0, color: "text-foreground" },
+          ].map((metric, index) => <div key={metric.label} className={`bg-card px-4 py-3 ${index === 4 ? "col-span-2 sm:col-span-1" : ""}`}>
+            <dt className="text-xs text-muted-foreground">{metric.label}</dt>
+            <dd className={`mt-1 text-xl font-semibold tabular-nums ${metric.color}`}>{metric.value}</dd>
+          </div>)}
+        </dl>
 
-        {/* Stats */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="text-sm text-muted-foreground">Total</div>
-            <div className="mt-1 text-2xl font-semibold text-foreground">{stats?.total || 0}</div>
-          </div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="text-sm text-muted-foreground">Active</div>
-            <div className="mt-1 text-2xl font-semibold text-emerald-600">
-              {stats?.active || 0}
-            </div>
-          </div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="text-sm text-muted-foreground">Forming</div>
-            <div className="mt-1 text-2xl font-semibold text-amber-600">
-              {stats?.forming || 0}
-            </div>
-          </div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="text-sm text-muted-foreground">With Brief</div>
-            <div className="mt-1 text-2xl font-semibold text-blue-600">
-              {stats?.withBrief || 0}
-            </div>
-          </div>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="text-sm text-muted-foreground">Avg Members</div>
-            <div className="mt-1 text-2xl font-semibold text-foreground">{stats?.averageMembers || 0}</div>
-          </div>
-        </div>
+        <InactiveTeams cohortId={effectiveCohortId} compact />
 
-        {/* Team Formation Section */}
-        {canManage && effectiveCohortId && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4"><p className="text-sm text-muted-foreground">Assign partner briefs separately to existing teams without a brief. Teams creating their own brief are skipped.</p><Button asChild variant="outline"><Link href={`/staff/matching?cohortId=${effectiveCohortId}`}>Assign briefs</Link></Button></div>}
-        {canManage && effectiveCohortId && (participantsReadyForTeams > 0 || formationPreview) && (
-          <div className="rounded-xl border border-border bg-card p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="flex items-center gap-2 text-lg font-semibold">
-                  <UserPlus className="h-5 w-5" />
-                  Team Formation
-                  {participantsReadyForTeams > 0 && (
-                    <span className="ml-2 inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/50 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:text-blue-200">
-                      {participantsReadyForTeams} without team
-                    </span>
-                  )}
-                </h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Form teams and propose backfills without assigning briefs. Assign partner briefs separately when teams are ready.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {formationPreview && (
-                  <>
-                    <StaffOnly permission="manage"><Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleClearFormation}
-                      disabled={clearFormationMutation.isPending}
-                    >
-                      Clear Preview
-                    </Button></StaffOnly>
-                    <Button
-                      size="sm"
-                      onClick={() => setShowFormationDialog(true)}
-                      disabled={finalizeFormationMutation.isPending || formationPreview.configUsed?.useBriefCentricAssignment === true}
-                    >
-                      <CheckCircle className="mr-2 h-4 w-4" />
-                      Finalize ({formationPreview.proposedTeams.length} teams)
-                    </Button>
-                  </>
-                )}
-                {!formationPreview && (
-                  <StaffOnly permission="manage"><Button
-                    onClick={handleRunFormation}
-                    disabled={runFormationMutation.isPending || formationLoading}
-                  >
-                    {runFormationMutation.isPending ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Wand2 className="mr-2 h-4 w-4" />
-                    )}
-                    Run Team Formation
-                  </Button></StaffOnly>
-                )}
-              </div>
-            </div>
-
-            {/* Formation Preview */}
-            {formationPreview && (
-              <div className="mt-4 space-y-4">
-                <Separator />
-                {formationPreview.configUsed?.useBriefCentricAssignment === true && <p role="alert" className="text-sm text-destructive">This preview includes brief assignments. Clear it and run team formation again to keep the steps separate.</p>}
-                <div className="grid gap-4 sm:grid-cols-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold">{formationPreview.statistics?.totalEligibleParticipants ?? 0}</p>
-                    <p className="text-xs text-muted-foreground">Participants Available</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold">{formationPreview.statistics?.proposedTeamCount ?? 0}</p>
-                    <p className="text-xs text-muted-foreground">Teams to Create</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold">{formationPreview.statistics?.averageTeamSize?.toFixed(1) ?? '0.0'}</p>
-                    <p className="text-xs text-muted-foreground">Avg Team Size</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold">{formationPreview.statistics?.averageCompatibilityScore?.toFixed(0) ?? 0}%</p>
-                    <p className="text-xs text-muted-foreground">Avg Match Guide</p>
-                  </div>
-                </div>
-
-                {formationPreview.statistics?.backfillStats?.teamsToBackfillCount > 0 && (
-                  <div className="rounded-md bg-blue-50 dark:bg-blue-950/20 p-3 text-sm">
-                    <p className="text-blue-800 dark:text-blue-200">
-                      <strong>Backfill:</strong> {formationPreview.statistics.backfillStats.participantsToBackfillCount} participants
-                      will be added to {formationPreview.statistics.backfillStats.teamsToBackfillCount} existing teams to reach optimal size.
-                    </p>
-                  </div>
-                )}
-
-                {formationPreview.proposedTeams.length > 0 && <div className="overflow-x-auto rounded-lg border"><table className="w-full text-sm"><thead><tr>{["Proposed team", "Group / country", "Members", "Builders / non-computing", "Role and mix guidance"].map(label => <th key={label} className="p-3 text-left">{label}</th>)}</tr></thead><tbody>{formationPreview.proposedTeams.map(team => <tr key={team.proposedTeamId} className="border-t"><td className="p-3">{team.suggestedName}</td><td className="p-3">{team.group || "No group"} · {team.competitionCountry || "Choose at registration"}</td><td className="p-3">{team.participants.map(person => `${person.firstName} ${person.lastName}`).join(", ")}</td><td className="p-3">{team.eligibility?.builderCount ?? "—"} / {team.eligibility?.nonComputingCount ?? "—"}</td><td className="p-3"><ul>{team.eligibility?.guidance.map(message => <li key={message}>{message}</li>)}</ul></td></tr>)}</tbody></table></div>}
-
-                {formationPreview.warnings.length > 0 && (
-                  <div className="rounded-md bg-amber-50 dark:bg-amber-950/20 p-3">
-                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">Warnings:</p>
-                    <ul className="text-sm text-amber-700 dark:text-amber-300 list-disc list-inside">
-                      {formationPreview.warnings.map((warning, i) => (
-                        <li key={i}>{warning}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                <p className="text-xs text-muted-foreground">
-                  Preview generated {new Date(formationPreview.generatedAt).toLocaleString()}
-                </p>
-              </div>
-            )}
-
-            {!formationPreview && !formationLoading && (
-              <p className="text-sm text-muted-foreground mt-3">
-                Click &quot;Run Team Formation&quot; to generate a preview of proposed teams using ATF sector priorities, builder/non-computing coverage, country consent and group boundaries,
-                skills, and interests. You can review before finalizing.
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Pending Removal Requests Alert */}
-        {pendingRemovalCount > 0 && (
-          <StaffOnly permission="manage"><Link
-            href="/staff/teams/removal-requests"
-            className="flex items-center justify-between p-4 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/50">
-                <UserMinus className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-              </div>
-              <div>
-                <p className="font-medium text-amber-900 dark:text-amber-100">
-                  {pendingRemovalCount} pending removal request{pendingRemovalCount !== 1 ? "s" : ""}
-                </p>
-                <p className="text-sm text-amber-700 dark:text-amber-300">
-                  Team leads are waiting for your review
-                </p>
-              </div>
-            </div>
-            <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
-              Review requests →
-            </span>
-          </Link></StaffOnly>
-        )}
+        {pendingRemovalCount > 0 && <StaffOnly permission="manage"><Link href="/staff/teams/removal-requests" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200 dark:hover:bg-amber-900/30">
+          <span className="flex items-center gap-2"><UserMinus className="h-4 w-4" />{pendingRemovalCount} pending removal request{pendingRemovalCount !== 1 ? "s" : ""}</span>
+          <span className="font-medium">Review requests →</span>
+        </Link></StaffOnly>}
 
         {/* Search and Filter Toggle */}
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 max-w-md">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 basis-full sm:basis-auto sm:flex-1 sm:max-w-md">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
@@ -513,6 +379,8 @@ function TeamsContent() {
             />
           </div>
           <button
+            aria-expanded={showFilters}
+            aria-controls="team-filters"
             onClick={() => setShowFilters(!showFilters)}
             className={`inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
               showFilters || hasActiveFilters
@@ -544,7 +412,7 @@ function TeamsContent() {
 
         {/* Collapsible Filter Row */}
         {showFilters && (
-          <div className="flex flex-wrap items-center gap-4 p-4 rounded-xl bg-muted border border-border/50">
+          <div id="team-filters" className="flex flex-wrap items-center gap-4 p-4 rounded-xl bg-muted border border-border/50">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-muted-foreground">Status:</span>
               <div className="flex flex-wrap gap-1">
@@ -630,8 +498,8 @@ function TeamsContent() {
           </div>
         ) : (
           <>
-            <div className="rounded-xl border border-border bg-card overflow-hidden">
-              <table className="w-full">
+            <div role="region" aria-label="Teams table" tabIndex={0} className="overflow-x-auto rounded-xl border border-border bg-card">
+              <table aria-label="Teams" className="w-full min-w-[840px]">
                 <thead className="bg-muted">
                   <tr>
                     <th className="text-left p-4 text-sm font-medium text-muted-foreground">Team</th>
@@ -678,6 +546,126 @@ function TeamsContent() {
           </>
         )}
       </div>
+
+      {canManage && effectiveCohortId && (participantsReadyForTeams > 0 || formationPreview) && (
+          <Dialog open={showFormationWorkspace} onOpenChange={setShowFormationWorkspace}>
+          <DialogContent
+            className="max-w-5xl max-h-[85dvh] overflow-y-auto min-w-0 p-4 sm:p-6"
+            onCloseAutoFocus={event => { event.preventDefault(); formationButtonRef.current?.focus(); }}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-4 pr-6">
+              <div>
+                <DialogTitle className="flex flex-wrap items-center gap-2 text-lg font-semibold">
+                  <UserPlus className="h-5 w-5" />
+                  Team Formation
+                  {participantsReadyForTeams > 0 && (
+                    <span className="ml-2 inline-flex items-center rounded-full bg-blue-100 dark:bg-blue-900/50 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:text-blue-200">
+                      {participantsReadyForTeams} without team
+                    </span>
+                  )}
+                </DialogTitle>
+                <DialogDescription className="text-sm text-muted-foreground mt-2 max-w-xl">
+                  Form teams and propose backfills without assigning briefs. Assign partner briefs separately when teams are ready.
+                </DialogDescription>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {formationPreview && (
+                  <>
+                    <StaffOnly permission="manage"><Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleClearFormation}
+                      disabled={clearFormationMutation.isPending}
+                    >
+                      Clear Preview
+                    </Button></StaffOnly>
+                    <Button
+                      size="sm"
+                      onClick={() => setShowFormationDialog(true)}
+                      disabled={finalizeFormationMutation.isPending || formationPreview.configUsed?.useBriefCentricAssignment === true}
+                    >
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Finalize ({formationPreview.proposedTeams.length} teams)
+                    </Button>
+                  </>
+                )}
+                {!formationPreview && (
+                  <StaffOnly permission="manage"><Button
+                    onClick={handleRunFormation}
+                    disabled={runFormationMutation.isPending || formationLoading}
+                  >
+                    {runFormationMutation.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Wand2 className="mr-2 h-4 w-4" />
+                    )}
+                    Run Team Formation
+                  </Button></StaffOnly>
+                )}
+              </div>
+            </div>
+
+            {/* Formation Preview */}
+            {formationPreview && (
+              <div className="mt-4 min-w-0 space-y-4">
+                <Separator />
+                {formationPreview.configUsed?.useBriefCentricAssignment === true && <p role="alert" className="text-sm text-destructive">This preview includes brief assignments. Clear it and run team formation again to keep the steps separate.</p>}
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{formationPreview.statistics?.totalEligibleParticipants ?? 0}</p>
+                    <p className="text-xs text-muted-foreground">Participants Available</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{formationPreview.statistics?.proposedTeamCount ?? 0}</p>
+                    <p className="text-xs text-muted-foreground">Teams to Create</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{formationPreview.statistics?.averageTeamSize?.toFixed(1) ?? '0.0'}</p>
+                    <p className="text-xs text-muted-foreground">Avg Team Size</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold">{formationPreview.statistics?.averageCompatibilityScore?.toFixed(0) ?? 0}%</p>
+                    <p className="text-xs text-muted-foreground">Avg Match Guide</p>
+                  </div>
+                </div>
+
+                {formationPreview.statistics?.backfillStats?.teamsToBackfillCount > 0 && (
+                  <div className="rounded-md bg-blue-50 dark:bg-blue-950/20 p-3 text-sm">
+                    <p className="text-blue-800 dark:text-blue-200">
+                      <strong>Backfill:</strong> {formationPreview.statistics.backfillStats.participantsToBackfillCount} participants
+                      will be added to {formationPreview.statistics.backfillStats.teamsToBackfillCount} existing teams to reach optimal size.
+                    </p>
+                  </div>
+                )}
+
+                {formationPreview.proposedTeams.length > 0 && <div className="overflow-x-auto rounded-lg border"><table className="w-full min-w-[720px] text-sm"><thead><tr>{["Proposed team", "Group / country", "Members", "Builders / non-computing", "Role and mix guidance"].map(label => <th key={label} className="p-3 text-left">{label}</th>)}</tr></thead><tbody>{formationPreview.proposedTeams.map(team => <tr key={team.proposedTeamId} className="border-t"><td className="p-3">{team.suggestedName}</td><td className="p-3">{team.group || "No group"} · {team.competitionCountry || "Choose at registration"}</td><td className="p-3">{team.participants.map(person => `${person.firstName} ${person.lastName}`).join(", ")}</td><td className="p-3">{team.eligibility?.builderCount ?? "—"} / {team.eligibility?.nonComputingCount ?? "—"}</td><td className="p-3"><ul>{team.eligibility?.guidance.map(message => <li key={message}>{message}</li>)}</ul></td></tr>)}</tbody></table></div>}
+
+                {formationPreview.warnings.length > 0 && (
+                  <div className="rounded-md bg-amber-50 dark:bg-amber-950/20 p-3">
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200 mb-1">Warnings:</p>
+                    <ul className="text-sm text-amber-700 dark:text-amber-300 list-disc list-inside">
+                      {formationPreview.warnings.map((warning, i) => (
+                        <li key={i}>{warning}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <p className="text-xs text-muted-foreground">
+                  Preview generated {new Date(formationPreview.generatedAt).toLocaleString()}
+                </p>
+              </div>
+            )}
+
+            {!formationPreview && !formationLoading && (
+              <p className="text-sm text-muted-foreground mt-3">
+                Click &quot;Run Team Formation&quot; to generate a preview of proposed teams using ATF sector priorities, builder/non-computing coverage, country consent and group boundaries,
+                skills, and interests. You can review before finalizing.
+              </p>
+            )}
+          </DialogContent>
+          </Dialog>
+      )}
 
       {/* Team Formation Finalize Dialog */}
       <StaffOnly permission="manage"><Dialog open={showFormationDialog} onOpenChange={setShowFormationDialog}>

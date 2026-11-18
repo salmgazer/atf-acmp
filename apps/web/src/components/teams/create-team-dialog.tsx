@@ -1,5 +1,7 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -16,7 +18,7 @@ export function CreateTeamDialog({ cohortId, groups }: { cohortId?: string; grou
   const leads = participants.filter(p => !groups.length || (p.group && groups.includes(p.group)));
   const lead = leads.find(p => p.id === leadId);
   return <>
-    <button disabled={!cohortId} onClick={() => { setName(""); setSearch(""); setLeadId(""); setOpen(true); }} className="rounded-lg border px-4 py-2 text-sm disabled:opacity-50">Create team</button>
+    <Button disabled={!cohortId} onClick={() => { setName(""); setSearch(""); setLeadId(""); setOpen(true); }}><Plus className="h-4 w-4" />Create team</Button>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent>
         <DialogTitle>Create team</DialogTitle>
