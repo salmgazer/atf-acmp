@@ -82,6 +82,7 @@ test('staff reviews the consequences before recording an opt-out', async ({ page
 
 test('staff preview shows each proposed team and its builder/non-computing coverage before finalization', async ({ page, context }) => {
   await setup(page, context, { staff: true }); await page.goto('/staff/teams');
+  await page.getByRole('button', { name: 'Team formation', exact: true }).click();
   await page.getByRole('button', { name: 'Run Team Formation', exact: true }).click();
   await expect(page.getByRole('columnheader', { name: 'Builders / non-computing', exact: true })).toBeVisible();
   await expect(page.getByRole('cell', { name: 'Team 1', exact: true })).toBeVisible();
