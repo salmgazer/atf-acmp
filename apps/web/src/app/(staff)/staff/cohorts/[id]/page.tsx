@@ -95,7 +95,10 @@ function CohortDetailContent({ id }: { id: string }) {
   }
 
   const transition = statusTransitions[cohort.status];
-  const hasNoStages = !stages?.length && (cohort.stageCount ?? 0) === 0;
+  const programmeStages = stages?.filter(stage => stage.workflowKey) ?? [];
+  const overviewStages = [...(programmeStages.length ? programmeStages : stages ?? [])]
+    .sort((a, b) => a.number - b.number);
+  const hasNoStages = overviewStages.length === 0 && (cohort.stageCount ?? 0) === 0;
 
   const handleStatusChange = async () => {
     if (!transition.next) return;
@@ -369,11 +372,11 @@ function CohortDetailContent({ id }: { id: string }) {
           </div>
 
           {/* Stages */}
-          <div className={`rounded-lg border bg-card p-6 lg:col-span-2 ${hasNoStages ? "border-amber-500/50" : ""}`}>
+          <section aria-label="Cohort stages" className={`rounded-lg border bg-card p-6 lg:col-span-2 ${hasNoStages ? "border-amber-500/50" : ""}`}>
             <div className="flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-lg font-semibold">
                 <ClipboardList className="h-5 w-5" />
-                Stages ({stages?.length || 0})
+                Stages ({overviewStages.length})
               </h2>
               <Button asChild variant={hasNoStages ? "default" : "outline"} size="sm">
                 <Link href={`/staff/cohorts/${id}/stages`}>
@@ -382,9 +385,9 @@ function CohortDetailContent({ id }: { id: string }) {
               </Button>
             </div>
             <Separator className="my-4" />
-            {stages?.length ? (
+            {overviewStages.length ? (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {stages.map((stage) => (
+                {overviewStages.map((stage) => (
                   <div
                     key={stage.id}
                     className="rounded-md border p-3"
@@ -393,7 +396,7 @@ function CohortDetailContent({ id }: { id: string }) {
                       <span className="flex h-6 w-6 items-center justify-center rounded bg-primary/10 text-sm font-bold text-primary">
                         {stage.number}
                       </span>
-                      <span className="font-medium truncate">{stage.name}</span>
+                      <h3 className="font-medium truncate">{stage.name}</h3>
                     </div>
                     <div className="text-xs text-muted-foreground space-y-1">
                       <p>Deadline: {formatUtcDeadline(stage.deadline)}</p>
@@ -415,7 +418,7 @@ function CohortDetailContent({ id }: { id: string }) {
                 </p>
               </div>
             )}
-          </div>
+          </section>
         </div>
       </div>
 
