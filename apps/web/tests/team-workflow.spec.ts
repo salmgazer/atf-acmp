@@ -4,12 +4,13 @@ const date = "2040-02-01T23:59:00.000Z";
 const briefAnswers = { hasOrganization: "No", setting: "Community clinics", sector: "Healthcare", country: "Ghana", city: "Accra", title: "Missed clinic appointments", problemStatement: "Patients miss appointments in community clinics.", description: "Patients cannot easily track their appointments.", affected: "About 100 people, based on clinic records.", cost: "Lost time and delayed care.", workarounds: "Paper cards are often misplaced.", urgency: "The clinic serves more patients now.", expectedOutcomes: "Fewer missed appointments.", improvement: "More patients attend on time.", dataDescription: "Two years of clinic appointment records.", contactName: "External Contact", contactRole: "Clinic manager", contactEmail: "contact@example.test", contactPhone: "+233123456789", contactConnection: "Manages appointments.", contactSupport: "Yes", contactConsent: true, discovery: "Research", discoveryDetails: "We interviewed clinic users.", consultationCount: 3, findings: "Appointment cards are often lost.", q1: "judgement", q2: "good_records", q3: "hard", q4: "yes", q5: "clear", q6: "very_often", contactReviewed: "Yes", q7: "meaningful", q8: "local", sensitivities: ["Health information"], conflict: "No", original: true, acceptReview: true, shareWithTeams: false };
 const proposalAnswers = { projectName: "Clinic reminders", summary: "Help patients keep their appointments.", learning: "Patients need reminders.", solution: "A reminder service.", aiApproach: "Classify incoming requests.", whyAi: "Understand varied messages.", technology: "TypeScript and PostgreSQL.", dataPermission: "Clinic data with permission.", llmPlatform: "To be agreed with ATF", creditsPlan: "Small prototype tests.", demoScope: "Working reminders.", milestones: [1, 2, 3].map(i => ({ milestone: `Milestone ${i}`, date: `2040-01-0${i}` })), testing: "Test with clinic volunteers.", risks: "Data delays; start with synthetic data.", responsibleAi: "Keep a human reviewer.", directBeneficiaries: "Clinic patients.", indirectBeneficiaries: "Families.", indicators: [1, 2].map(i => ({ indicator: `Metric ${i}`, measurement: "Survey", target: "20" })), impactType: "Social impact", impactExplanation: "Improved access to care.", afterChallenge: "Pilot with another clinic.", skills: "Research and engineering.", mentorSupport: ["Technical or AI"], mentorSupportDetails: "Review the architecture.", weeklyHours: 6, original: true, aiWriting: "No", acceptRules: true, shareWithContact: true, surveyConsent: true };
 
-async function setup(page: Page, context: BrowserContext, options: { staff?: boolean; viewer?: boolean; passed?: boolean; own?: boolean; noTeam?: boolean; failProgress?: boolean } = {}) {
+async function setup(page: Page, context: BrowserContext, options: { staff?: boolean; viewer?: boolean; passed?: boolean; own?: boolean; choosing?: boolean; noTeam?: boolean; failProgress?: boolean } = {}) {
   const portal = options.staff ? "staff" : "participant";
   const user = { id: participantId, role: options.staff ? options.viewer ? "viewer" : "program_manager" : "participant", firstName: "Synthetic", lastName: "Lead", email: "synthetic@example.test", participantId: "SYNTHETIC-ID", participant: { id: participantId, cohortId }, cohortId, status: "assigned", onboardingComplete: true, mustChangePassword: false, country: "Ghana", skills: [], interests: [] };
-  const team = { id: teamId, name: "Synthetic team", cohortId, briefId, briefPreference: options.own ? "own" : "partner", githubRepoUrl: "https://github.com/example/project" };
+  const team = { id: teamId, name: "Synthetic team", cohortId, briefId: options.choosing ? null : briefId, briefPreference: options.own ? "own" : "partner", githubRepoUrl: "https://github.com/example/project" };
   const stages = ["team", "problem", "proposal", "evaluation", "build"].map((key, index) => ({ id: `workflow-stage-${key}`, cohortId, workflowKey: key, number: index + 1, name: ["Form a team", "Choose a problem", "Submit a proposal", "Pass evaluation", "Build and submit"][index], deadline: date, type: "mixed", requirements: {}, isActive: true, isOpen: true, allowLateSubmissions: false, stats: { total: 0 } }));
-  const progress: any = { team: options.noTeam ? null : { ...team, briefTitle: "Community clinic problem" }, canEdit: true, canSubmitOwnBrief: true, learningComplete: true, ownBrief: options.own ? { id: briefId, status: "draft" } : null, proposal: { id: submissionId, status: options.passed ? "approved" : "draft" }, steps: stages.map((stage, index) => ({ key: stage.workflowKey, number: stage.number, name: stage.name, stageId: stage.id, deadline: date, completed: !options.noTeam && (index < 2 || !!options.passed && index < 4), status: options.noTeam ? index ? "locked" : "available" : index < 2 || options.passed && index < 4 ? "completed" : index === 2 || options.passed && index === 4 ? "available" : "locked" })) };
+  const completedCount = options.noTeam ? 0 : options.passed ? 4 : options.choosing ? 1 : 2;
+  const progress: any = { team: options.noTeam ? null : { ...team, briefTitle: options.choosing ? undefined : "Community clinic problem" }, canEdit: true, canSubmitOwnBrief: true, learningComplete: true, ownBrief: options.own ? { id: briefId, status: "draft" } : null, proposal: { id: submissionId, status: options.passed ? "approved" : "draft" }, steps: stages.map((stage, index) => ({ key: stage.workflowKey, number: stage.number, name: stage.name, stageId: stage.id, deadline: date, completed: index < completedCount, status: index < completedCount ? "completed" : index === completedCount ? "available" : "locked" })) };
   let own = { id: briefId, status: "draft", answers: briefAnswers, fileUrls: [] as any[] }, submission: any = { id: submissionId, teamId, stageId: stages[2].id, stage: stages[2], team, status: options.staff ? "pending_approval" : "draft", content: proposalAnswers, fileUrls: [] };
   const writes: Array<{ path: string; body: any }> = [];
   await context.addCookies([{ name: "auth_token", value: "present", url: "http://localhost:63781" }, { name: "auth_portal", value: portal, url: "http://localhost:63781" }]);
@@ -41,6 +42,7 @@ async function setup(page: Page, context: BrowserContext, options: { staff?: boo
     else if (path.endsWith(`/briefs/${briefId}`)) data = { id: briefId, source: "team", cohortId, title: "Community clinic problem", description: "A clinic problem", status: "submitted", fitScore: 100, impactScore: 4, createdAt: "2026-11-18T12:00:00Z", imageUrls: [], tags: [], maxTeams: 25, teamsCount: 0 };
     else if (path.endsWith("/cohorts")) data = { data: [{ id: cohortId, name: "Synthetic cohort" }], total: 1 };
     else if (path.endsWith(`/cohorts/${cohortId}`)) data = { id: cohortId, name: "Synthetic cohort", status: "active", deadlines: {}, countries: ["Ghana"] };
+    else if (path.endsWith(`/teams/my/${participantId}`)) data = options.noTeam ? null : team;
     else if (path.endsWith("/unread-count")) data = { count: 0 };
     await route.fulfill({ json: data });
   });
@@ -147,4 +149,61 @@ test("read-only staff can inspect proposals but cannot score or approve", async 
   await expect(page.getByRole("heading", { name: "Proposal review — Synthetic team" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save criterion scores" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Approve proposal and unlock building" })).toHaveCount(0);
+});
+
+for (const options of [{ noTeam: true }, { choosing: true, own: true }, {}, { passed: true }]) test(`dashboard shows the full roadmap with only unlocked actions: ${JSON.stringify(options)}`, async ({ page, context }) => {
+  const state = await setup(page, context, options);
+  await page.goto("/participant/dashboard");
+  const roadmap = page.getByRole("region", { name: "Programme roadmap", exact: true });
+  await expect(roadmap.getByRole("heading", { level: 3 })).toHaveCount(5);
+  for (const step of state.progress.steps) {
+    const card = roadmap.getByRole("listitem").filter({ has: page.getByRole("heading", { name: step.name, exact: true }) });
+    await expect(card).toBeVisible();
+    if (step.status === "locked") {
+      await expect(card).toHaveAttribute("data-state", "locked");
+      await expect(card).toContainText("Upcoming · Locked");
+      await expect(card.getByRole("link")).toHaveCount(0);
+    } else await expect(card.getByRole("link")).toBeVisible();
+  }
+  await expect(page.getByText(`Stage ${options.noTeam ? 1 : options.passed ? 5 : options.choosing ? 2 : 3} of 5`, { exact: true })).toBeVisible();
+  await expect(page.getByText("No upcoming deadlines", { exact: true })).toHaveCount(0);
+  expect(state.writes).toEqual([]);
+  if (!options.noTeam && !options.choosing) {
+    await roadmap.getByRole("link", { name: "Continue", exact: true }).click();
+    await expect(page.getByRole("heading", { name: options.passed ? "Final MVP submission" : "Team proposal", exact: true })).toBeVisible();
+  }
+});
+
+test("future opening dates keep a visible stage disabled and direct URLs cannot bypass the locked form", async ({ page, context }) => {
+  const state = await setup(page, context);
+  state.progress.steps[2].startDate = "2040-01-01T12:00:00Z";
+  Object.assign(state.stages[2], { startDate: state.progress.steps[2].startDate });
+  await page.goto("/participant/dashboard");
+  const roadmap = page.getByRole("region", { name: "Programme roadmap", exact: true });
+  const proposal = roadmap.getByRole("listitem").filter({ has: page.getByRole("heading", { name: "Submit a proposal", exact: true }) });
+  await expect(proposal).toHaveAttribute("data-state", "locked");
+  await expect(proposal).toContainText("Opens 2040-01-01 12:00 UTC");
+  await expect(proposal.getByRole("link")).toHaveCount(0);
+  await page.goto("/participant/submissions");
+  const detail = page.locator("section").filter({ has: page.getByRole("heading", { name: "3. Submit a proposal", exact: true }) });
+  await expect(detail).toHaveAttribute("data-state", "locked");
+  await expect(detail.getByRole("link")).toHaveCount(0);
+  await page.goto("/participant/submissions/workflow-stage-proposal");
+  await expect(page.getByText("This submission window has not opened yet.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Submit proposal", exact: true })).toHaveCount(0);
+  await page.goto("/participant/submissions/workflow-stage-build");
+  await expect(page.getByText("Complete the previous steps and eligibility checks before opening this form.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Submit MVP", exact: true })).toHaveCount(0);
+  expect(state.writes).toEqual([]);
+});
+
+for (const viewport of [{ width: 1366, height: 900 }, { width: 390, height: 844 }]) test(`roadmap fits ${viewport.width}px in dark mode before a brief is assigned`, async ({ page, context }) => {
+  await page.setViewportSize(viewport);
+  await page.addInitScript(() => localStorage.setItem("theme", "dark"));
+  await setup(page, context, { choosing: true, own: true });
+  await page.goto("/participant/dashboard");
+  const roadmap = page.getByRole("region", { name: "Programme roadmap", exact: true });
+  await expect(roadmap.getByRole("listitem")).toHaveCount(5);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await roadmap.screenshot({ path: `/tmp/acmp-programme-roadmap-${viewport.width}.png` });
 });
