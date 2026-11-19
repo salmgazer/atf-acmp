@@ -415,6 +415,50 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     expect(await db.getRepository(TeamMember).countBy({ participantId: lead.id })).toBe(0);
   });
 
+  it("excludes ready participants with pending or confirmed memberships before proposing backfills and new teams", async () => {
+    const { team, lead } = await roster();
+    await db.getRepository(Participant).update(lead.id, { status: ParticipantStatus.READY });
+    const waiting = await person({ pythonSkill: "Advanced" }, { buildDeployAbility: "confident", preferredRole: "builder" });
+    await db.getRepository(TeamMember).save({ teamId: team.id, participantId: waiting.id, role: TeamRole.MEMBER, status: TeamMemberStatus.PENDING });
+    await person({ pythonSkill: "Intermediate" }, { buildDeployAbility: "confident", preferredRole: "builder", firstChoiceSector: "education" });
+    for (let i = 0; i < 3; i++) await person({ fieldOfStudy: "Medicine" }, { firstChoiceSector: "education" });
+    const preview = await formation.runTeamFormation(cohort.id);
+    const result = await formation.finalizeTeamFormation(cohort.id);
+    expect(result).toMatchObject({ createdTeamCount: 0, backfilledTeamCount: 1, briefsAssigned: 0 });
+    const proposed = [...preview.proposedTeams.flatMap(item => item.participantIds), ...preview.proposedBackfills.flatMap(item => item.participantIdsToAdd)];
+    expect(proposed).not.toContain(lead.id); expect(proposed).not.toContain(waiting.id);
+    expect(await db.getRepository(TeamMember).countBy({ participantId: waiting.id })).toBe(1);
+    expect(await db.getRepository(TeamMember).countBy({ participantId: lead.id })).toBe(1);
+  });
+
+  it("rejects membership changes after a preview with an actionable message and no formation writes", async () => {
+    const { team } = await roster();
+    const waiting = await person();
+    const preview = await formation.runTeamFormation(cohort.id);
+    expect(preview.proposedBackfills.flatMap(item => item.participantIdsToAdd)).toContain(waiting.id);
+    const before = await db.getRepository(Participant).findOneByOrFail({ id: waiting.id });
+    await db.getRepository(TeamMember).save({ teamId: team.id, participantId: waiting.id, role: TeamRole.MEMBER, status: TeamMemberStatus.PENDING });
+    expect((await db.getRepository(Participant).findOneByOrFail({ id: waiting.id })).updatedAt).toEqual(before.updatedAt);
+    await expect(formation.finalizeTeamFormation(cohort.id)).rejects.toThrow("Clear this preview and run team formation again");
+    expect(await db.getRepository(Team).countBy({ cohortId: cohort.id })).toBe(1);
+    expect(await db.getRepository(TeamMember).countBy({ participantId: waiting.id })).toBe(1);
+    expect((formation as any).sendTeamFormationNotifications).not.toHaveBeenCalled();
+  });
+
+  it("allows participants with only historical soft-deleted memberships into a new team", async () => {
+    const { team } = await roster();
+    await db.getRepository(Team).update(team.id, { status: TeamStatus.ACTIVE });
+    const returning = await builder();
+    const old = await db.getRepository(TeamMember).save({ teamId: team.id, participantId: returning.id, status: TeamMemberStatus.PENDING });
+    await db.getRepository(TeamMember).softDelete(old.id);
+    await person({ fieldOfStudy: "Medicine" }); await person();
+    const preview = await formation.runTeamFormation(cohort.id);
+    expect(preview.proposedTeams).toHaveLength(1);
+    expect(preview.proposedTeams[0].participantIds).toContain(returning.id);
+    expect(await formation.finalizeTeamFormation(cohort.id)).toMatchObject({ createdTeamCount: 1, briefsAssigned: 0 });
+    expect(await db.getRepository(TeamMember).countBy({ participantId: returning.id })).toBe(1);
+  });
+
   it("previews ordered valid teams and finalizes them registered but unstarted, with no automatic challenge activation", async () => {
     for (let index = 0; index < 2; index++) { await builder(); await person({ fieldOfStudy: "Medicine" }); await person(); }
     const preview = await formation.runTeamFormation(cohort.id); expect(preview.proposedTeams).toHaveLength(2);
