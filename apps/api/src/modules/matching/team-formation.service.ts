@@ -176,7 +176,7 @@ export class TeamFormationService {
     statistics.briefAssignmentStats = { totalApprovedBriefs: approvedBriefs.length, briefsAssigned: new Set(assignedBriefs).size, briefsWithoutTeams: approvedBriefs.filter(brief => (capacity.get(brief.id) || 0) > 0).length, existingTeamsAssignedBriefs: proposedBriefAssignments.length, assignmentsByVertical: Object.fromEntries([...new Set(approvedBriefs.map(brief => brief.verticalId).filter(Boolean))].map(id => [id!, assignedBriefs.filter(briefId => approvedBriefs.find(brief => brief.id === briefId)?.verticalId === id).length])) };
     const sourceVersion = (person: Participant) => JSON.stringify([person.updatedAt?.toISOString(), person.preference?.updatedAt?.toISOString()]);
     const sourceVersions = Object.fromEntries([...rows, ...existing.flatMap(team => team.members.map(member => member.participant).filter(Boolean))].map(person => [person.id, sourceVersion(person)]));
-    const preview = { cohortId, cohortName: cohort.name, generatedAt: new Date(), proposedTeams, proposedBackfills, proposedBriefAssignments, unassignedParticipantIds, unassignedBriefIds: approvedBriefs.filter(brief => (capacity.get(brief.id) || 0) > 0).map(brief => brief.id), statistics, configUsed: config, warnings, policyVersion: "atf-2026-v4", deadlineVersion: cohort.teamRuleDeadlineVersion, sourceVersions, cohortVersion: cohort.updatedAt?.toISOString() };
+    const preview = { cohortId, cohortName: cohort.name, generatedAt: new Date(), proposedTeams, proposedBackfills, proposedBriefAssignments, unassignedParticipantIds, unassignedBriefIds: approvedBriefs.filter(brief => (capacity.get(brief.id) || 0) > 0).map(brief => brief.id), statistics, configUsed: config, warnings, policyVersion: "atf-2026-v5", deadlineVersion: cohort.teamRuleDeadlineVersion, sourceVersions, cohortVersion: cohort.updatedAt?.toISOString() };
     await this.previewStore.set("formation:" + cohortId, preview, 30 * 60 * 1000);
     return preview;
   }
@@ -186,7 +186,7 @@ export class TeamFormationService {
    */
   async getTeamFormationPreview(cohortId: string): Promise<TeamFormationPreviewDto | null> {
     const preview = await this.previewStore.get<TeamFormationPreviewDto>("formation:" + cohortId);
-    return preview?.policyVersion === "atf-2026-v4" ? preview : null;
+    return preview?.policyVersion === "atf-2026-v5" ? preview : null;
   }
 
   /**
@@ -205,7 +205,7 @@ export class TeamFormationService {
     dto: FinalizeTeamFormationDto = {},
   ): Promise<{ createdTeamCount: number; backfilledTeamCount: number; briefsAssigned: number; errors: string[] }> {
     const preview = await this.previewStore.get<TeamFormationPreviewDto>("formation:" + cohortId);
-    if (!preview || preview.policyVersion !== "atf-2026-v4") throw new BadRequestException("Run a fresh team formation preview under the current ATF rules before finalizing");
+    if (!preview || preview.policyVersion !== "atf-2026-v5") throw new BadRequestException("Run a fresh team formation preview under the current ATF rules before finalizing");
     const cohort = await this.cohortRepository.findOneBy({ id: cohortId });
     if (!cohort) throw new NotFoundException("Cohort not found");
     await resolveCohortTeamDeadlines(this.teamRepository.manager, cohort);
@@ -219,6 +219,13 @@ export class TeamFormationService {
     let createdTeamCount = 0, backfilledTeamCount = 0, briefsAssigned = 0;
     const excluded = new Set(dto.excludeParticipantIds || []);
     const manualIds = new Set((dto.manualTeams || []).flatMap(team => team.participantIds));
+    const selectedIds = [...new Set([
+      ...preview.proposedBackfills.flatMap(backfill => backfill.participantIdsToAdd),
+      ...preview.proposedTeams.flatMap(team => team.participantIds),
+    ].filter(id => !excluded.has(id) && !manualIds.has(id)).concat([...manualIds]))];
+    if (selectedIds.length && await this.teamMemberRepository.countBy({ participantId: In(selectedIds) })) {
+      throw new BadRequestException("Some participants already belong to a team or have a pending join request. Clear this preview and run team formation again.");
+    }
     const used = new Set<string>();
     for (const backfill of preview.proposedBackfills) {
       const ids = backfill.participantIdsToAdd.filter(id => !excluded.has(id) && !manualIds.has(id));
@@ -419,32 +426,25 @@ export class TeamFormationService {
     cohortId: string,
     participantIds?: string[],
   ): Promise<Participant[]> {
-    // Find participants who are NOT in any team
-    const participantsInTeams = await this.teamMemberRepository
-      .createQueryBuilder("tm")
-      .select("tm.participant_id")
-      .innerJoin("tm.team", "t")
-      .where("t.cohort_id = :cohortId", { cohortId })
-      .getRawMany();
-
-    const inTeamIds = new Set(participantsInTeams.map((r) => r.tm_participant_id));
-
     let query = this.participantRepository
       .createQueryBuilder("p")
       .where("p.cohort_id = :cohortId", { cohortId })
       .andWhere("p.status = :status", {
         status: ParticipantStatus.READY,
       })
-      .andWhere("p.onboarding_complete = true");
+      .andWhere("p.onboarding_complete = true")
+      // Pending requests reserve a participant too. Ignore only soft-deleted
+      // memberships, matching the admission checks used during finalization.
+      .andWhere(`NOT EXISTS (
+        SELECT 1 FROM team_members membership
+        WHERE membership.participant_id = p.id AND membership.deleted_at IS NULL
+      )`);
 
     if (participantIds?.length) {
       query = query.andWhere("p.id IN (:...participantIds)", { participantIds });
     }
 
-    const allParticipants = await query.getMany();
-
-    // Filter out those already in teams
-    return allParticipants.filter((p) => !inTeamIds.has(p.id));
+    return query.getMany();
   }
 
   private async prepareParticipantsWithPreferences(
