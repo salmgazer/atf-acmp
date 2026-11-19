@@ -53,11 +53,14 @@ describe("ATF team formation previews", () => {
   });
   it("leaves role/mix guidance nonblocking and produces a current-policy cache receipt", async () => {
     load([person("a"), person("b"), person("c")]); const preview = await service.runTeamFormation("cohort");
-    expect(preview.policyVersion).toBe("atf-2026-v4"); expect(preview.proposedTeams[0].eligibility).toMatchObject({ canRegister: true, femaleCount: 0 });
+    expect(preview.policyVersion).toBe("atf-2026-v5"); expect(preview.proposedTeams[0].eligibility).toMatchObject({ canRegister: true, femaleCount: 0 });
     expect(await service.getTeamFormationPreview("cohort")).toEqual(preview); await service.clearFormationPreviewCache("cohort"); expect(await service.getTeamFormationPreview("cohort")).toBeNull();
   });
-  it("requires a fresh policy preview before finalization", async () => {
-    await expect(service.finalizeTeamFormation("cohort")).rejects.toThrow("fresh"); data.set("formation:cohort", { policyVersion: "old" }); await expect(service.finalizeTeamFormation("cohort")).rejects.toThrow("fresh");
+  it.each(["old", "atf-2026-v4"])("rejects cached previews created before the membership fix (%s)", async policyVersion => {
+    await expect(service.finalizeTeamFormation("cohort")).rejects.toThrow("fresh");
+    data.set("formation:cohort", { policyVersion });
+    expect(await service.getTeamFormationPreview("cohort")).toBeNull();
+    await expect(service.finalizeTeamFormation("cohort")).rejects.toThrow("fresh");
   });
   it("retains lead-selection choices without changing ATF admission/matching rules", async () => {
     const rows = [person("a"), { ...person("b"), skills: ["Python", "Design", "Writing"] }, person("c")]; load(rows);
