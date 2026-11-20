@@ -5,6 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { isAxiosError } from "axios";
 import { useState, useEffect } from "react";
+import { SUPPORTED_COUNTRIES, normalizeTeamCountry } from "@acmp/shared";
 import Link from "next/link";
 import { StaffLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -21,7 +22,9 @@ import {
   type PartnerBulkInviteRequest,
   type Partner,
   type PartnerStatus,
+  type PaginatedPartners,
 } from "@/lib/api/hooks/use-organizations";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useCohorts } from "@/lib/api/hooks/use-cohorts";
 import { useStaffCohortStore } from "@/lib/stores/staff-cohort-store";
 import { PartnerEventsCalendar } from "@/components/partners/partner-events-calendar";
@@ -226,6 +229,7 @@ function PartnersContent() {
   const [view, setView] = useState<"list" | "calendar">("list");
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<PartnerStatus | "all">("all");
+  const [countryFilter, setCountryFilter] = useState("all");
   const [selectedCohortId, setSelectedCohortId] = useState<string | null>(null);
   const [hasInitialized, setHasInitialized] = useState(false);
   const [search, setSearch] = useState("");
@@ -242,6 +246,7 @@ function PartnersContent() {
 
   const { data: cohortsData } = useCohorts({ limit: 100 });
   const cohorts = cohortsData?.data || [];
+  const countries = [...new Set([...SUPPORTED_COUNTRIES, ...cohorts.flatMap(cohort => cohort.countries || [])].map(country => normalizeTeamCountry(country)))].filter(Boolean).sort();
 
   // Initialize local cohort from global when component mounts or global changes (if not yet set locally)
   useEffect(() => {
@@ -258,10 +263,11 @@ function PartnersContent() {
     status: statusFilter === "all" ? undefined : statusFilter,
     cohortId: effectiveCohortId,
     search: search || undefined,
+    country: countryFilter === "all" ? undefined : countryFilter,
     page,
     limit: 20,
   });
-  const { data: stats } = usePartnerStatistics();
+  const { data: stats } = usePartnerStatistics({ cohortId: effectiveCohortId, country: view === "list" && countryFilter !== "all" ? countryFilter : undefined, search: view === "list" ? search || undefined : undefined });
   const approveMutation = useApprovePartner();
   const rejectMutation = useRejectPartner();
   const sendInviteMutation = useSendPartnerInvite();
@@ -275,7 +281,7 @@ function PartnersContent() {
   const someSelected = selectable.some(org => selectedIds.includes(org.id));
   const cohortName = cohorts.find(cohort => cohort.id === effectiveCohortId)?.name;
 
-  useEffect(() => { setSelectedIds([]); setConfirmation(null); setApproveConfirmation(false); }, [page, effectiveCohortId, statusFilter, search, canManage, view]);
+  useEffect(() => { setSelectedIds([]); setConfirmation(null); setApproveConfirmation(false); }, [page, effectiveCohortId, statusFilter, countryFilter, search, canManage, view]);
   useEffect(() => { setPage(1); }, [effectiveCohortId]);
 
   const queueInvites = async (request: PartnerBulkInviteRequest) => {
@@ -291,6 +297,7 @@ function PartnersContent() {
     if (confirmation === "selected") return queueInvites({ mode: "selected", organizationIds: selectedApprovedIds });
     if (confirmation === "eligible" && effectiveCohortId && (statusFilter === "all" || statusFilter === "approved")) return queueInvites({ mode: "eligible", filters: {
       cohortId: effectiveCohortId, search: search || undefined, status: statusFilter === "all" ? undefined : statusFilter,
+      country: countryFilter === "all" ? undefined : countryFilter,
     } });
   };
 
@@ -302,7 +309,8 @@ function PartnersContent() {
     } catch { /* Keep the selection and confirmation available after an error. */ }
   };
 
-  const hasActiveFilters = statusFilter !== "all" || (selectedCohortId !== null && selectedCohortId !== globalCohortId);
+  const activeFilterCount = Number(statusFilter !== "all") + Number(countryFilter !== "all") + Number(selectedCohortId !== null && selectedCohortId !== globalCohortId);
+  const hasActiveFilters = activeFilterCount > 0;
 
   const handleApprove = async (org: Partner) => {
     await approveMutation.mutateAsync({ id: org.id });
@@ -349,10 +357,17 @@ function PartnersContent() {
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (search) params.set("search", search);
       if (effectiveCohortId) params.set("cohortId", effectiveCohortId);
-      params.set("limit", "10000");
-
-      const response = await api.get<{ data: Partner[] }>(`/organizations?${params.toString()}`);
-      const allOrgs = response.data;
+      if (countryFilter !== "all") params.set("country", countryFilter);
+      params.set("limit", "500");
+      const allOrgs: Partner[] = [];
+      let exportPage = 1, exportPages = 1;
+      do {
+        params.set("page", String(exportPage));
+        const response = await api.get<PaginatedPartners>(`/organizations?${params.toString()}`);
+        allOrgs.push(...response.data);
+        exportPages = response.totalPages || 1;
+        exportPage++;
+      } while (exportPage <= exportPages);
 
       if (allOrgs.length === 0) {
         toast.error("No partners to export");
@@ -485,6 +500,13 @@ function PartnersContent() {
               className="w-full h-10 pl-11 pr-4 text-sm bg-transparent border border-border rounded-full focus:border-zinc-400 focus:outline-none placeholder:text-muted-foreground"
             />
           </div>
+          <Select value={countryFilter} onValueChange={value => { setCountryFilter(value); setPage(1); }}>
+            <SelectTrigger aria-label="Filter partners by country" className="w-48 h-10"><SelectValue placeholder="All countries" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All countries</SelectItem>
+              {countries.map(country => <SelectItem key={country} value={country}>{country}</SelectItem>)}
+            </SelectContent>
+          </Select>
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={`inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
@@ -497,7 +519,7 @@ function PartnersContent() {
             Filters
             {hasActiveFilters && (
               <span className="flex items-center justify-center w-5 h-5 text-xs rounded-full bg-card text-foreground">
-                1
+                {activeFilterCount}
               </span>
             )}
           </button>
@@ -592,6 +614,7 @@ function PartnersContent() {
                 onClick={() => {
                   setPage(1);
                   setStatusFilter("all");
+                  setCountryFilter("all");
                   setSelectedCohortId(null);
                 }}
                 className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"

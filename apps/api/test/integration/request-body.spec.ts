@@ -180,7 +180,7 @@ describe("Organization HTTP request body parsing", () => {
     expect((await fetch(`${url}?pendingReview=invalid`)).status).toBe(400);
     expect(briefs.findAll).not.toHaveBeenCalled();
     expect((await fetch(`${url}/statistics?cohortId=${partnerId}&country=Kenya`)).status).toBe(200);
-    expect(briefs.getStatistics).toHaveBeenCalledWith(partnerId, "Kenya");
+    expect(briefs.getStatistics).toHaveBeenCalledWith(partnerId, "Kenya", undefined, false, undefined);
   });
 
   it("preserves participant cohort and approved-only boundaries when filtering pending briefs", async () => {
@@ -189,7 +189,24 @@ describe("Organization HTTP request body parsing", () => {
     expect(response.status).toBe(200);
     expect(briefs.findAll).toHaveBeenCalledWith(expect.objectContaining({ country: "Kenya", pendingReview: true, cohortId: partnerId, status: "approved" }), actorId);
     expect((await fetch(`${url}/statistics?country=Kenya`, { headers: { "x-test-role": "participant" } })).status).toBe(200);
-    expect(briefs.getStatistics).toHaveBeenCalledWith(partnerId, "Kenya", actorId);
+    expect(briefs.getStatistics).toHaveBeenCalledWith(partnerId, "Kenya", actorId, false, undefined);
+  });
+
+  it.each(["team", "partner"])("validates the %s source filter for lists and statistics without changing role scopes", async source => {
+    const url = base.replace(/\/organizations$/, "/briefs");
+    expect((await fetch(`${url}?source=${source}&country=Kenya&pendingReview=true`)).status).toBe(200);
+    expect(briefs.findAll).toHaveBeenLastCalledWith(expect.objectContaining({ source, country: "Kenya", pendingReview: true }));
+    for (const role of ["program_manager", "participant", "mentor"]) {
+      expect((await fetch(`${url}/statistics?source=${source}&country=Kenya&cohortId=${partnerId}`, { headers: { "x-test-role": role } })).status).toBe(200);
+      expect(briefs.getStatistics).toHaveBeenLastCalledWith(partnerId, "Kenya", role === "participant" ? actorId : undefined, role === "mentor", source);
+    }
+  });
+
+  it.each(["organization", "unknown", "team,partner"])("rejects invalid brief source %s", async source => {
+    const url = base.replace(/\/organizations$/, "/briefs");
+    for (const path of [url, `${url}/statistics`]) expect((await fetch(`${path}?source=${source}`)).status).toBe(400);
+    expect(briefs.findAll).not.toHaveBeenCalled();
+    expect(briefs.getStatistics).not.toHaveBeenCalled();
   });
 
   const patchProfile = (body: unknown, role = "program_manager") => fetch(base.replace(/\/organizations$/, `/participants/${actorId}/profile`), { method: "PATCH", headers: { "Content-Type": "application/json", "x-test-role": role }, body: JSON.stringify(body) });
