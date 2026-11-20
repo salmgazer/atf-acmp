@@ -1,6 +1,6 @@
 import { assertProposalPassed, isPoolBrief } from "@/common/services/team-workflow";
 import { assertParticipantTeamAdmission, assertMemberAdmission, teamRuleContext, clearTeamRegistration } from "@/common/services/team-rules";
-import { ATF_TEAM_MAX, canShareTeam, evaluateTeamRules, normalizeTeamCountry, TeamBriefPreference } from "@acmp/shared";
+import { ATF_TEAM_MAX, canShareTeam, evaluateTeamRules, normalizeTeamCountry, TeamBriefPreference, isQualifiedBuilder, hasNonComputingStudy, GITHUB_USERNAME_PATTERN, type ParticipantPeerProfile } from "@acmp/shared";
 import { resolveCohortGroup } from "@/common/services/cohort-groups";
 import { briefCountry, confirmedTeamCountries, isBriefCountryAllowed } from "@/common/services/brief-country-access";
 import { Transactional, afterCommit } from "@/common/decorators/transactional.decorator";
@@ -1504,6 +1504,35 @@ export class TeamsService {
   }
 
   // ============ Search ============
+
+  async getParticipantMatchingProfile(participantId: string, viewerId: string): Promise<ParticipantPeerProfile> {
+    const viewer = await this.participantRepository.findOne({ where: { id: viewerId }, select: { id: true, cohortId: true, onboardingComplete: true, programmeOptedOut: true, status: true } });
+    if (!viewer?.onboardingComplete || viewer.programmeOptedOut || viewer.status === ParticipantStatus.INACTIVE) throw new ForbiddenException("Complete onboarding and remain active in the programme to view matching profiles");
+    const participant = await this.participantRepository.findOne({
+      where: { id: participantId, cohortId: viewer.cohortId, onboardingComplete: true, programmeOptedOut: false, status: Not(ParticipantStatus.INACTIVE), preference: { matchingProfileConsent: true } },
+      relations: ["preference"],
+    });
+    if (!participant?.preference) throw new NotFoundException("This matching profile is not available. The participant may not have enabled profile sharing.");
+    const preference = participant.preference;
+    const username = participant.githubUsername?.trim();
+    // Explicit projection: never serialize account/contact, certificate or
+    // staff verification fields from the participant or preference entities.
+    return {
+      id: participant.id, firstName: participant.firstName, lastName: participant.lastName,
+      country: normalizeTeamCountry(participant.country), profileImageUrl: participant.profileImageUrl,
+      institution: participant.institution, educationLevel: participant.educationLevel,
+      fieldOfStudy: participant.fieldOfStudy, currentAffiliation: participant.currentAffiliation,
+      pythonSkill: participant.pythonSkill, gitSkill: participant.gitSkill, aiExperience: participant.aiExperience,
+      githubUsername: username && GITHUB_USERNAME_PATTERN.test(username) ? username : null,
+      skills: participant.skills || [], interests: participant.interests || [],
+      qualifiedBuilder: isQualifiedBuilder(participant), nonComputingStudy: hasNonComputingStudy(participant),
+      matching: {
+        preferredRole: preference.preferredRole, buildDeployAbility: preference.buildDeployAbility,
+        firstChoiceSector: preference.firstChoiceSector, backupSector: preference.backupSector,
+        teamStatus: preference.teamStatus, crossCountryWilling: preference.crossCountryWilling,
+      },
+    };
+  }
 
   async searchAvailableParticipants(
     cohortId: string,

@@ -17,7 +17,7 @@ describe("Participant team creation authorization over HTTP", () => {
   const cohortId = "4753d422-d547-4071-9e31-c85324f06031";
   const teamId = "52f1db29-267c-4125-8dab-d7155293370f";
   let membership: { participantId: string; teamId: string; status: string; role: string } | null = null;
-  const service = { create: jest.fn(async dto => ({ id: teamId, ...dto })), delete: jest.fn(async () => undefined), removeMember: jest.fn(async () => undefined), updateBriefPreference: jest.fn(async (id, briefPreference) => ({ id, briefPreference })), requestMemberRemoval: jest.fn(async () => ({ immediate: false })), withdrawJoinRequest: jest.fn(async () => undefined), findOpenTeams: jest.fn(async () => []) };
+  const service = { getParticipantMatchingProfile: jest.fn(async id => ({ id, firstName: "Shared", lastName: "Profile" })), create: jest.fn(async dto => ({ id: teamId, ...dto })), delete: jest.fn(async () => undefined), removeMember: jest.fn(async () => undefined), updateBriefPreference: jest.fn(async (id, briefPreference) => ({ id, briefPreference })), requestMemberRemoval: jest.fn(async () => ({ immediate: false })), withdrawJoinRequest: jest.fn(async () => undefined), findOpenTeams: jest.fn(async () => []) };
   const database = { getRepository: jest.fn(() => ({ findOne: jest.fn(async ({ where }) => {
     if (!membership || membership.participantId !== where.participantId || (where.teamId && membership.teamId !== where.teamId)) return null;
     if (!where.status) return membership;
@@ -46,6 +46,25 @@ describe("Participant team creation authorization over HTTP", () => {
   beforeEach(() => { membership = null; jest.clearAllMocks(); });
   afterAll(async () => { if (app) await app.close(); });
   const input = () => ({ name: "Example team", description: "A participant-created team", cohortId, creatorId: participantId });
+
+  it("allows teamless participants to request the dedicated matching profile using their authenticated identity and prevents caching", async () => {
+    const response = await fetch(`${base}/participants/${otherId}/profile?viewerId=${otherId}&cohortId=${otherId}`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(service.getParticipantMatchingProfile).toHaveBeenCalledWith(otherId, participantId);
+    expect(database.getRepository).not.toHaveBeenCalled();
+  });
+
+  it.each(["anonymous", "organization", "mentor", "viewer", "evaluator", "program_manager", "super_admin"])("denies the participant-only matching profile endpoint to %s", async role => {
+    const response = await fetch(`${base}/participants/${otherId}/profile`, { headers: { "x-test-role": role } });
+    expect(response.status).toBe(403);
+    expect(service.getParticipantMatchingProfile).not.toHaveBeenCalled();
+  });
+
+  it("validates profile IDs before service access", async () => {
+    expect((await fetch(`${base}/participants/invalid/profile`)).status).toBe(400);
+    expect(service.getParticipantMatchingProfile).not.toHaveBeenCalled();
+  });
   const post = (body: unknown, role = "participant", path = "") => fetch(base + path, {
     method: "POST", headers: { "Content-Type": "application/json", "x-test-role": role }, body: JSON.stringify(body),
   });

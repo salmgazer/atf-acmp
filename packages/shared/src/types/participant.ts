@@ -52,3 +52,25 @@ export interface ParticipantWithTeam extends Participant {
     role: string;
   };
 }
+
+/** The consented profile available to other participants for team matching. */
+export interface ParticipantPeerProfile {
+  id: string;
+  firstName: string;
+  lastName: string;
+  country: string;
+  profileImageUrl?: string | null;
+  institution?: string | null;
+  educationLevel?: string | null;
+  fieldOfStudy?: string | null;
+  currentAffiliation?: string | null;
+  pythonSkill?: string | null;
+  gitSkill?: string | null;
+  aiExperience?: string | null;
+  githubUsername?: string | null;
+  skills: string[];
+  interests: string[];
+  qualifiedBuilder: boolean;
+  nonComputingStudy: boolean;
+  matching: Pick<import("../constants/participant-matching").ParticipantMatchingProfile, "buildDeployAbility" | "preferredRole" | "firstChoiceSector" | "backupSector" | "teamStatus"> & { crossCountryWilling: boolean };
+}

@@ -1,5 +1,6 @@
 "use client";
-import type { TeamRuleReport, TeamBriefPreference } from "@acmp/shared";
+import type { TeamRuleReport, TeamBriefPreference, ParticipantPeerProfile } from "@acmp/shared";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/client";
@@ -341,6 +342,18 @@ export function useSearchAvailableParticipants(cohortId: string, query: string, 
         `/teams/search/participants?cohortId=${cohortId}&query=${encodeURIComponent(query)}${group === null ? "&ungrouped=true" : group !== undefined ? `&group=${encodeURIComponent(group)}` : ""}`
       ),
     enabled: !!cohortId && query.length >= 2,
+  });
+}
+
+export function useParticipantMatchingProfile(participantId: string) {
+  const viewerId = useAuthStore(state => state.user?.id);
+  return useQuery({
+    queryKey: [...teamKeys.all, "participant-profile", viewerId, participantId],
+    queryFn: () => api.get<ParticipantPeerProfile>(`/teams/participants/${participantId}/profile`),
+    enabled: !!viewerId && !!participantId,
+    retry: false,
+    staleTime: 0,
+    gcTime: 0,
   });
 }
 
