@@ -11,6 +11,7 @@ import {
   HttpStatus,
   ParseUUIDPipe,
   UseInterceptors,
+  Header,
 } from "@nestjs/common";
 import {
   ApiTags,
@@ -45,6 +46,8 @@ import { CurrentUser } from "@/common/decorators/current-user.decorator";
 import { Audit } from "@/common/decorators/audit.decorator";
 import { AuditInterceptor } from "@/common/interceptors/audit.interceptor";
 import { AuditAction } from "@/database/entities/audit-log.entity";
+import { Roles } from "@/common/decorators/roles.decorator";
+import { Role } from "@/database/entities/user.entity";
 
 @ApiTags("teams")
 @Controller("teams")
@@ -439,6 +442,14 @@ export class TeamsController {
   }
 
   // ============ Participant Search ============
+
+  @Get("participants/:participantId/profile")
+  @Roles(Role.PARTICIPANT)
+  @Header("Cache-Control", "private, no-store")
+  @ApiOperation({ summary: "View a consented participant matching profile within your cohort" })
+  async getParticipantMatchingProfile(@Param("participantId", ParseUUIDPipe) participantId: string, @CurrentUser() user: { id: string }) {
+    return this.teamsService.getParticipantMatchingProfile(participantId, user.id);
+  }
 
   @Get("search/participants")
   @ApiOperation({ summary: "Search available participants for team invitations" })

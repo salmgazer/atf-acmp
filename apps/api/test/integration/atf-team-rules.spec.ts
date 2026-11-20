@@ -53,6 +53,44 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     await db.getRepository(ParticipantPreference).save({ participantId: p.id, buildDeployAbility: "with_support", firstChoiceSector: "health", backupSector: "education", preferredRole: "sector_specialist", teamStatus: "need_team", matchingProfileCompletedAt: new Date(), crossCountryWilling: false, matchingProfileConsent: true, ...preference }); return p;
   }
   const builder = () => person({ pythonSkill: "Intermediate" }, { buildDeployAbility: "confident", preferredRole: "builder" });
+
+  it("shares only the consented matching projection and checks consent again on every request", async () => {
+    const viewer = await person();
+    const target = await person({ firstName: "Potential", lastName: "Teammate", skills: ["Python"], interests: ["Health"], pythonSkill: "Advanced", fieldOfStudy: "Medicine", githubUsername: "octocat", phoneNumber: "private-phone", lmsEmail: "private-lms@example.test", whatsappNumber: "private-whatsapp", learningCertificateId: "private-certificate", gender: "private-gender" }, { preferredRole: "builder", buildDeployAbility: "confident", availabilityNotes: "private-notes" });
+    const profile = await teams.getParticipantMatchingProfile(target.id, viewer.id);
+    expect(profile).toMatchObject({ id: target.id, firstName: "Potential", country: "Ghana", skills: ["Python"], fieldOfStudy: "Medicine", qualifiedBuilder: true, nonComputingStudy: true, githubUsername: "octocat", matching: { preferredRole: "builder", buildDeployAbility: "confident", firstChoiceSector: "health", crossCountryWilling: false } });
+    for (const key of ["email", "phoneNumber", "whatsappNumber", "lmsEmail", "participantId", "passwordHash", "passwordResetToken", "gender", "learningCertificateId", "learningCertificateDate", "programmeOptOutReason", "codeLabsVerifiedBy"]) expect(profile).not.toHaveProperty(key);
+    expect(profile.matching).not.toHaveProperty("availabilityNotes");
+    expect(profile.matching).not.toHaveProperty("briefRankings");
+    expect(JSON.stringify(profile)).not.toContain("private-");
+    await db.getRepository(ParticipantPreference).update({ participantId: target.id }, { matchingProfileConsent: false });
+    await expect(teams.getParticipantMatchingProfile(target.id, viewer.id)).rejects.toThrow("not available");
+    await db.getRepository(ParticipantPreference).update({ participantId: target.id }, { matchingProfileConsent: true });
+    await db.getRepository(Participant).update(target.id, { githubUsername: "javascript:alert(1)", pythonSkill: "Beginner" });
+    expect(await teams.getParticipantMatchingProfile(target.id, viewer.id)).toMatchObject({ qualifiedBuilder: false, githubUsername: null });
+  });
+
+  it("hides private, inactive, opted-out, incomplete, deleted and cross-cohort matching profiles", async () => {
+    const viewer = await person();
+    const other = await db.getRepository(Cohort).save({ name: "Other cohort", status: CohortStatus.ACTIVE, groups: ["A"] });
+    const hidden = await Promise.all([
+      person({}, { matchingProfileConsent: false }), person({ status: ParticipantStatus.INACTIVE }),
+      person({ programmeOptedOut: true }), person({ onboardingComplete: false }), person({ cohortId: other.id }),
+    ]);
+    const removed = await person(); await db.getRepository(Participant).softDelete(removed.id);
+    for (const target of [...hidden, removed]) await expect(teams.getParticipantMatchingProfile(target.id, viewer.id)).rejects.toThrow("not available");
+  });
+
+  it("rejects incomplete or opted-out viewers and permits reading existing team members without changing membership", async () => {
+    const { lead } = await roster();
+    const viewer = await person();
+    expect(await teams.getParticipantMatchingProfile(lead.id, viewer.id)).toMatchObject({ qualifiedBuilder: true });
+    for (const values of [{ onboardingComplete: false }, { status: ParticipantStatus.INACTIVE }, { programmeOptedOut: true }]) {
+      const restricted = await person(values);
+      await expect(teams.getParticipantMatchingProfile(lead.id, restricted.id)).rejects.toThrow("Complete onboarding");
+    }
+    expect(await db.getRepository(TeamMember).countBy({ participantId: lead.id })).toBe(1);
+  });
   async function roster() {
     const lead = await builder(), specialist = await person({ fieldOfStudy: "Medicine" }), impact = await person({ fieldOfStudy: "Law" }, { preferredRole: "business_impact_lead" });
     const team = await teams.create({ name: "Draft ATF team", cohortId: cohort.id, creatorId: lead.id });
@@ -413,6 +451,50 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     const batch = await imports.enqueue({ ...input, previewHash: preview.previewHash }, actor); await imports.process(batch.id);
     expect(await imports.status(batch.id, actor)).toMatchObject({ state: "completed", result: { affectedTeamIds: [team.id] } });
     expect(await db.getRepository(TeamMember).countBy({ participantId: lead.id })).toBe(0);
+  });
+
+  it("excludes ready participants with pending or confirmed memberships before proposing backfills and new teams", async () => {
+    const { team, lead } = await roster();
+    await db.getRepository(Participant).update(lead.id, { status: ParticipantStatus.READY });
+    const waiting = await person({ pythonSkill: "Advanced" }, { buildDeployAbility: "confident", preferredRole: "builder" });
+    await db.getRepository(TeamMember).save({ teamId: team.id, participantId: waiting.id, role: TeamRole.MEMBER, status: TeamMemberStatus.PENDING });
+    await person({ pythonSkill: "Intermediate" }, { buildDeployAbility: "confident", preferredRole: "builder", firstChoiceSector: "education" });
+    for (let i = 0; i < 3; i++) await person({ fieldOfStudy: "Medicine" }, { firstChoiceSector: "education" });
+    const preview = await formation.runTeamFormation(cohort.id);
+    const result = await formation.finalizeTeamFormation(cohort.id);
+    expect(result).toMatchObject({ createdTeamCount: 0, backfilledTeamCount: 1, briefsAssigned: 0 });
+    const proposed = [...preview.proposedTeams.flatMap(item => item.participantIds), ...preview.proposedBackfills.flatMap(item => item.participantIdsToAdd)];
+    expect(proposed).not.toContain(lead.id); expect(proposed).not.toContain(waiting.id);
+    expect(await db.getRepository(TeamMember).countBy({ participantId: waiting.id })).toBe(1);
+    expect(await db.getRepository(TeamMember).countBy({ participantId: lead.id })).toBe(1);
+  });
+
+  it("rejects membership changes after a preview with an actionable message and no formation writes", async () => {
+    const { team } = await roster();
+    const waiting = await person();
+    const preview = await formation.runTeamFormation(cohort.id);
+    expect(preview.proposedBackfills.flatMap(item => item.participantIdsToAdd)).toContain(waiting.id);
+    const before = await db.getRepository(Participant).findOneByOrFail({ id: waiting.id });
+    await db.getRepository(TeamMember).save({ teamId: team.id, participantId: waiting.id, role: TeamRole.MEMBER, status: TeamMemberStatus.PENDING });
+    expect((await db.getRepository(Participant).findOneByOrFail({ id: waiting.id })).updatedAt).toEqual(before.updatedAt);
+    await expect(formation.finalizeTeamFormation(cohort.id)).rejects.toThrow("Clear this preview and run team formation again");
+    expect(await db.getRepository(Team).countBy({ cohortId: cohort.id })).toBe(1);
+    expect(await db.getRepository(TeamMember).countBy({ participantId: waiting.id })).toBe(1);
+    expect((formation as any).sendTeamFormationNotifications).not.toHaveBeenCalled();
+  });
+
+  it("allows participants with only historical soft-deleted memberships into a new team", async () => {
+    const { team } = await roster();
+    await db.getRepository(Team).update(team.id, { status: TeamStatus.ACTIVE });
+    const returning = await builder();
+    const old = await db.getRepository(TeamMember).save({ teamId: team.id, participantId: returning.id, status: TeamMemberStatus.PENDING });
+    await db.getRepository(TeamMember).softDelete(old.id);
+    await person({ fieldOfStudy: "Medicine" }); await person();
+    const preview = await formation.runTeamFormation(cohort.id);
+    expect(preview.proposedTeams).toHaveLength(1);
+    expect(preview.proposedTeams[0].participantIds).toContain(returning.id);
+    expect(await formation.finalizeTeamFormation(cohort.id)).toMatchObject({ createdTeamCount: 1, briefsAssigned: 0 });
+    expect(await db.getRepository(TeamMember).countBy({ participantId: returning.id })).toBe(1);
   });
 
   it("previews ordered valid teams and finalizes them registered but unstarted, with no automatic challenge activation", async () => {

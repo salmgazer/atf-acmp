@@ -3,6 +3,7 @@ import {
   IsString,
   IsOptional,
   IsEnum,
+  IsIn,
   IsArray,
   IsUUID,
   MaxLength,
@@ -398,6 +399,7 @@ export class RestoreRevisionDto {
 }
 
 export class BriefQueryDto {
+  @IsOptional() @IsIn(["partner", "team"]) source?: "partner" | "team";
   @IsOptional() @IsString() @MaxLength(255) country?: string;
   @IsOptional() @IsBoolean() @StrictBoolean() pendingReview?: boolean;
   @IsOptional()

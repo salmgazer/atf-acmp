@@ -136,6 +136,12 @@ export class ResourceAccessGuard implements CanActivate {
         else { query.cohortId = user.cohortId; query.status = "approved"; }
       }
     } else if (base === "teams") {
+      if (route === "participants/:participantId/profile") {
+        if (!read || user.role !== "participant") return this.deny();
+        // The service resolves both participants from the database and enforces
+        // current cohort membership and the target's current sharing consent.
+        return true;
+      }
       if (route === ":id/brief-preference" && user.role !== "participant") return this.deny();
       if (route === ":id/join-request" && user.role !== "participant") return this.deny();
       if (staff) staffOnly();

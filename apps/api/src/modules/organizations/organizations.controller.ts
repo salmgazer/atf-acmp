@@ -151,8 +151,8 @@ export class OrganizationsController {
   @Get("statistics")
   @ApiOperation({ summary: "Get organization statistics" })
   @ApiResponse({ status: 200, description: "Organization statistics" })
-  getStatistics() {
-    return this.organizationsService.getStatistics();
+  getStatistics(@Query() query: OrganizationQueryDto) {
+    return this.organizationsService.getStatistics(query);
   }
 
   @Get(":id")
