@@ -6,8 +6,9 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, ILike, In } from "typeorm";
+import { Repository, ILike, In, Raw, FindOptionsWhere } from "typeorm";
 import { ensurePartnerContactLogin } from "@/common/services/brief-contacts";
+import { countryValues } from "@/common/services/brief-country-access";
 import {
   Organization,
   OrganizationStatus,
@@ -70,22 +71,10 @@ export class OrganizationsService {
     const limit = query.limit || 20;
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where = this.filterWhere(query);
 
     if (query.status) {
       where.status = query.status;
-    }
-
-    if (query.country) {
-      where.country = query.country;
-    }
-
-    if (query.cohortId) {
-      where.cohortId = query.cohortId;
-    }
-
-    if (query.search) {
-      where.name = ILike(`%${query.search}%`);
     }
 
     const [data, total] = await this.organizationRepository.findAndCount({
@@ -311,17 +300,26 @@ export class OrganizationsService {
     return orgUsers.map((ou) => ou.organization);
   }
 
-  async getStatistics(): Promise<{
+  private filterWhere(query: Pick<OrganizationQueryDto, "cohortId" | "country" | "search">): FindOptionsWhere<Organization> {
+    const where: FindOptionsWhere<Organization> = {};
+    if (query.cohortId) where.cohortId = query.cohortId;
+    if (query.search) where.name = ILike(`%${query.search}%`);
+    if (query.country?.trim()) where.country = Raw(alias => `LOWER(BTRIM(${alias})) IN (:...partnerCountryValues)`, { partnerCountryValues: countryValues(query.country) });
+    return where;
+  }
+
+  async getStatistics(query: OrganizationQueryDto = {}): Promise<{
     total: number;
     pending: number;
     approved: number;
     rejected: number;
   }> {
+    const where = this.filterWhere(query);
     const [total, pending, approved, rejected] = await Promise.all([
-      this.organizationRepository.count(),
-      this.organizationRepository.count({ where: { status: OrganizationStatus.PENDING } }),
-      this.organizationRepository.count({ where: { status: OrganizationStatus.APPROVED } }),
-      this.organizationRepository.count({ where: { status: OrganizationStatus.REJECTED } }),
+      this.organizationRepository.count({ where }),
+      this.organizationRepository.count({ where: { ...where, status: OrganizationStatus.PENDING } }),
+      this.organizationRepository.count({ where: { ...where, status: OrganizationStatus.APPROVED } }),
+      this.organizationRepository.count({ where: { ...where, status: OrganizationStatus.REJECTED } }),
     ]);
 
     return { total, pending, approved, rejected };

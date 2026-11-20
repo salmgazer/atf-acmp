@@ -135,6 +135,8 @@ export interface PartnerStatistics {
   rejected: number;
 }
 
+type PartnerStatisticsFilters = Pick<PartnerQueryParams, "cohortId" | "country" | "search">;
+
 // Query keys
 export const organizationKeys = {
   all: ["organizations"] as const,
@@ -142,7 +144,7 @@ export const organizationKeys = {
   list: (params?: PartnerQueryParams) => [...organizationKeys.lists(), params] as const,
   details: () => [...organizationKeys.all, "detail"] as const,
   detail: (id: string) => [...organizationKeys.details(), id] as const,
-  statistics: () => [...organizationKeys.all, "statistics"] as const,
+  statistics: (filters?: PartnerStatisticsFilters) => [...organizationKeys.all, "statistics", filters] as const,
   current: () => [...organizationKeys.all, "current"] as const,
 };
 
@@ -179,11 +181,15 @@ export function useCurrentPartner() {
   });
 }
 
-export function usePartnerStatistics() {
+export function usePartnerStatistics(filters?: PartnerStatisticsFilters) {
   return useQuery({
-    queryKey: organizationKeys.statistics(),
+    queryKey: organizationKeys.statistics(filters),
     queryFn: async (): Promise<PartnerStatistics> => {
-      const result = await api.get<PartnerStatistics>("/organizations/statistics");
+      const params = new URLSearchParams();
+      if (filters?.cohortId) params.set("cohortId", filters.cohortId);
+      if (filters?.country) params.set("country", filters.country);
+      if (filters?.search) params.set("search", filters.search);
+      const result = await api.get<PartnerStatistics>(`/organizations/statistics?${params.toString()}`);
       return result ?? { total: 0, pending: 0, approved: 0, rejected: 0 };
     },
   });
