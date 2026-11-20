@@ -18,6 +18,8 @@ export type BriefStatus =
   | "rejected" 
   | "revision_requested";
 
+export type BriefSource = "partner" | "team";
+
 export interface BriefResource {
   name: string;
   url: string;
@@ -51,7 +53,7 @@ export interface ScoringAnswers {
 }
 
 export interface Brief {
-  source?: "partner" | "team";
+  source?: BriefSource;
   submittedByTeamId?: string;
   shareWithTeams?: boolean;
   problemCountry?: string | null;
@@ -194,6 +196,7 @@ export interface ReviewBriefDto {
 }
 
 export interface BriefQueryParams {
+  source?: BriefSource;
   country?: string;
   pendingReview?: boolean;
   cohortId?: string;
@@ -236,7 +239,7 @@ export const briefKeys = {
   detail: (id: string) => [...briefKeys.details(), id] as const,
   revisions: (id: string) => [...briefKeys.detail(id), "revisions"] as const,
   revision: (briefId: string, revisionId: string) => [...briefKeys.revisions(briefId), revisionId] as const,
-  statistics: (cohortId?: string, country?: string) => [...briefKeys.all, "statistics", cohortId, country] as const,
+  statistics: (cohortId?: string, country?: string, source?: BriefSource) => [...briefKeys.all, "statistics", cohortId, country, source] as const,
 };
 
 // Hooks
@@ -251,6 +254,7 @@ export function useBriefs(params?: BriefQueryParams) {
       if (params?.status) searchParams.set("status", params.status);
       if (params?.search) searchParams.set("search", params.search);
       if (params?.country) searchParams.set("country", params.country);
+      if (params?.source) searchParams.set("source", params.source);
       if (params?.pendingReview !== undefined) searchParams.set("pendingReview", String(params.pendingReview));
       if (params?.page) searchParams.set("page", String(params.page));
       if (params?.limit) searchParams.set("limit", String(params.limit));
@@ -298,11 +302,12 @@ export function useBriefRevisions(id: string) {
   });
 }
 
-export function useBriefStatistics(cohortId?: string | null, country?: string) {
+export function useBriefStatistics(cohortId?: string | null, country?: string, source?: BriefSource) {
   return useQuery({
-    queryKey: briefKeys.statistics(cohortId ?? undefined, country),
+    queryKey: briefKeys.statistics(cohortId ?? undefined, country, source),
     queryFn: async (): Promise<BriefStatistics> => {
       const params = new URLSearchParams();
+      if (source) params.set("source", source);
       if (cohortId) params.set("cohortId", cohortId);
       if (country) params.set("country", country);
       const url = `/briefs/statistics?${params.toString()}`;
