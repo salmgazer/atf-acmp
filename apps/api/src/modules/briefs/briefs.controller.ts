@@ -101,7 +101,7 @@ export class BriefsController {
   @ApiQuery({ name: "cohortId", required: false, description: "Filter by cohort" })
   @ApiResponse({ status: 200, description: "Brief statistics" })
   getStatistics(@Query() query: BriefQueryDto, @CurrentUser() user?: { id: string; role: string }) {
-    return user?.role === "participant" ? this.briefsService.getStatistics(query.cohortId, query.country, user.id) : user?.role === "mentor" ? this.briefsService.getStatistics(query.cohortId, query.country, undefined, true) : this.briefsService.getStatistics(query.cohortId, query.country);
+    return this.briefsService.getStatistics(query.cohortId, query.country, user?.role === "participant" ? user.id : undefined, user?.role === "mentor", query.source);
   }
 
   @Get(":id")

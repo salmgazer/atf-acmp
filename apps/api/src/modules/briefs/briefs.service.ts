@@ -115,6 +115,10 @@ export class BriefsService {
       where.verticalId = query.verticalId;
     }
 
+    if (query.source) {
+      where.source = query.source;
+    }
+
     if (query.status) {
       where.status = query.status;
     }
@@ -157,7 +161,7 @@ export class BriefsService {
     }
     if (scope || poolOnly) scopedWhere = (Array.isArray(scopedWhere) ? scopedWhere : [scopedWhere]).flatMap(term => [
       { ...term, source: "partner" }, { ...term, source: "team", shareWithTeams: true },
-    ]);
+    ].filter(branch => !query.source || branch.source === query.source));
     const [data, total] = await this.briefRepository.findAndCount({
       where: scopedWhere,
       relations: ["vertical", "organization"],
@@ -602,7 +606,7 @@ export class BriefsService {
     return this.briefRepository.save(brief);
   }
 
-  async getStatistics(cohortId?: string, country?: string, participantId?: string, poolOnly = false): Promise<{
+  async getStatistics(cohortId?: string, country?: string, participantId?: string, poolOnly = false, source?: BriefQueryDto["source"]): Promise<{
     total: number;
     draft: number;
     submitted: number;
@@ -618,6 +622,7 @@ export class BriefsService {
       .select("brief.status", "status")
       .addSelect("COUNT(*)", "count")
       .where(cohortId ? "brief.cohort_id = :cohortId" : "1=1", { cohortId });
+    if (source) countsQuery.andWhere("brief.source = :source", { source });
     if (poolOnly) countsQuery.andWhere("brief.status = 'approved' AND (brief.source = 'partner' OR brief.share_with_teams = true)");
     if (scope) {
       const values = [...new Set(scope.countries.flatMap(countryValues))];

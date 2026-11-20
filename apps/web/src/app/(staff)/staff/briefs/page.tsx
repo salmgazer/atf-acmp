@@ -10,6 +10,7 @@ import {
   useBriefStatistics,
   type Brief,
   type BriefStatus,
+  type BriefSource,
   type BriefQueryParams,
   type PaginatedBriefs,
 } from "@/lib/api/hooks/use-briefs";
@@ -32,6 +33,7 @@ import {
   Eye,
   Loader2,
   Building2,
+  Users,
   SlidersHorizontal,
   X,
   Video,
@@ -117,7 +119,7 @@ function BriefRow({ brief }: { brief: Brief }) {
       </td>
       <td className="p-4">
         <div className="flex items-center gap-2 text-muted-foreground">
-          <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+          {brief.source === "team" ? <Users className="h-4 w-4 shrink-0" /> : <Building2 className="h-4 w-4 shrink-0" />}
           <span className="text-sm truncate max-w-[140px]">{brief.source === "team" ? "Team brief" : brief.organization?.name || "Unknown"}</span>
         </div>
       </td>
@@ -182,6 +184,7 @@ function BriefsReviewContent() {
   const [statusFilter, setStatusFilter] = useState<BriefStatus | "all" | "pending">("all");
   const [search, setSearch] = useState("");
   const [countryFilter, setCountryFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState<BriefSource | "all">("all");
   const [showFilters, setShowFilters] = useState(false);
   const [sortBy, setSortBy] = useState<BriefQueryParams["sortBy"]>("createdAt");
   const [sortOrder, setSortOrder] = useState<BriefQueryParams["sortOrder"]>("desc");
@@ -213,18 +216,19 @@ function BriefsReviewContent() {
     status: apiStatus,
     search: search || undefined,
     country: countryFilter === "all" ? undefined : countryFilter,
+    source: sourceFilter === "all" ? undefined : sourceFilter,
     pendingReview: statusFilter === "pending" ? true : undefined,
     limit: 100,
     sortBy,
     sortOrder,
   });
   
-  const { data: stats } = useBriefStatistics(effectiveCohortId, countryFilter === "all" ? undefined : countryFilter);
+  const { data: stats } = useBriefStatistics(effectiveCohortId, countryFilter === "all" ? undefined : countryFilter, sourceFilter === "all" ? undefined : sourceFilter);
 
   const briefs = briefsData?.data || [];
 
   const pendingCount = (stats?.submitted || 0) + (stats?.inReview || 0);
-  const activeFilterCount = Number(statusFilter !== "all") + Number(countryFilter !== "all") + Number(selectedCohortId !== null && selectedCohortId !== globalCohortId);
+  const activeFilterCount = Number(statusFilter !== "all") + Number(countryFilter !== "all") + Number(sourceFilter !== "all") + Number(selectedCohortId !== null && selectedCohortId !== globalCohortId);
   const hasActiveFilters = activeFilterCount > 0;
 
   // Toggle sort order or change sort field
@@ -255,6 +259,7 @@ function BriefsReviewContent() {
       if (apiStatus) params.set("status", apiStatus);
       if (search) params.set("search", search);
       if (countryFilter !== "all") params.set("country", countryFilter);
+      if (sourceFilter !== "all") params.set("source", sourceFilter);
       if (statusFilter === "pending") params.set("pendingReview", "true");
       params.set("limit", "500");
       if (sortBy) params.set("sortBy", sortBy);
@@ -287,11 +292,12 @@ function BriefsReviewContent() {
         "Submitted At",
         "Approved At",
         "Created At",
+        "Source",
       ];
 
       const rows = allBriefs.map((b) => [
         b.title,
-        b.organization?.name || "",
+        b.source === "team" ? "Team brief" : b.organization?.name || "",
         briefCountry(b),
         b.vertical?.name || "",
         b.status,
@@ -302,6 +308,7 @@ function BriefsReviewContent() {
         b.submittedAt ? formatDistanceToNow(new Date(b.submittedAt), { addSuffix: true }) : "",
         b.approvedAt ? format(new Date(b.approvedAt), "yyyy-MM-dd HH:mm:ss") : "",
         format(new Date(b.createdAt), "yyyy-MM-dd HH:mm:ss"),
+        b.source === "team" ? "Team" : "Organization",
       ]);
 
       const escapeCSV = (value: string) => {
@@ -341,7 +348,7 @@ function BriefsReviewContent() {
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Brief Review Queue</h1>
           <p className="text-sm text-muted-foreground">
-            Review and manage organization brief submissions
+            Review and manage team and organization brief submissions
             {selectedCohort && ` for ${selectedCohort.name}`}
           </p>
         </div>
@@ -390,6 +397,14 @@ function BriefsReviewContent() {
               className="w-full h-10 pl-11 pr-4 text-sm bg-transparent border border-border rounded-full focus:border-zinc-400 focus:outline-none placeholder:text-muted-foreground"
             />
           </div>
+          <Select value={sourceFilter} onValueChange={(value: BriefSource | "all") => setSourceFilter(value)}>
+            <SelectTrigger aria-label="Filter briefs by source" className="w-48 h-10"><SelectValue placeholder="All briefs" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All briefs</SelectItem>
+              <SelectItem value="team">Team briefs</SelectItem>
+              <SelectItem value="partner">Organization briefs</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={countryFilter} onValueChange={setCountryFilter}>
             <SelectTrigger aria-label="Filter briefs by country" className="w-48 h-10"><SelectValue placeholder="All countries" /></SelectTrigger>
             <SelectContent>
@@ -479,6 +494,7 @@ function BriefsReviewContent() {
                   setStatusFilter("all");
                   setSelectedCohortId(null);
                   setCountryFilter("all");
+                  setSourceFilter("all");
                 }}
                 className="ml-auto inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
               >
@@ -512,7 +528,7 @@ function BriefsReviewContent() {
               <thead className="bg-muted">
                 <tr>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Brief</th>
-                  <th className="text-left p-4 text-sm font-medium text-muted-foreground">Partner</th>
+                  <th className="text-left p-4 text-sm font-medium text-muted-foreground">Team / Organization</th>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Country</th>
                   <th className="text-left p-4 text-sm font-medium text-muted-foreground">Vertical</th>
                   <th 

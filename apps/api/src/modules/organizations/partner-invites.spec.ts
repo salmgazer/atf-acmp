@@ -43,7 +43,7 @@ describe("Partner bulk invitation batches", () => {
     expect(query.andWhere).toHaveBeenCalledWith("organization.isActive = true");
     expect(query.andWhere).toHaveBeenCalledWith("organization.cohortId = :cohortId", { cohortId: first });
     expect(query.andWhere).toHaveBeenCalledWith("organization.name ILIKE :search", { search: "%Batch%" });
-    expect(query.andWhere).toHaveBeenCalledWith("organization.country = :country", { country: "GH" });
+    expect(query.andWhere).toHaveBeenCalledWith("LOWER(BTRIM(organization.country)) IN (:...partnerCountryValues)", { partnerCountryValues: ["gh", "ghana"] });
   });
   it("rejects pending and rejected filters and empty matches", async () => {
     const { service, queue } = fixture([]);

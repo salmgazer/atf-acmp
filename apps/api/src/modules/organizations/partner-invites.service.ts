@@ -6,6 +6,7 @@ import { Queue } from "bullmq";
 import { randomUUID } from "crypto";
 import { Organization, OrganizationStatus } from "@/database/entities/organization.entity";
 import { EmailService } from "@/email/email.service";
+import { countryValues } from "@/common/services/brief-country-access";
 import { ResendEligiblePartnerInvitesDto, PartnerInviteBatch, PartnerInviteProgress } from "./dto/partner-invites.dto";
 
 export const PARTNER_INVITES_QUEUE = "partner-invites";
@@ -37,7 +38,7 @@ export class PartnerInvitesService implements OnModuleInit {
     if (filters.status && filters.status !== OrganizationStatus.APPROVED) throw new BadRequestException("No approved, active partners match the current filters");
     const query = this.eligible().andWhere("organization.cohortId = :cohortId", { cohortId: filters.cohortId });
     if (filters.search) query.andWhere("organization.name ILIKE :search", { search: `%${filters.search}%` });
-    if (filters.country) query.andWhere("organization.country = :country", { country: filters.country });
+    if (filters.country?.trim()) query.andWhere("LOWER(BTRIM(organization.country)) IN (:...partnerCountryValues)", { partnerCountryValues: countryValues(filters.country) });
     const eligible = await query.select("organization.id", "id").orderBy("organization.id", "ASC").getRawMany<{ id: string }>();
     return this.enqueue(eligible.map(organization => organization.id), requestedBy);
   }

@@ -32,6 +32,32 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
   const fixture = (values: Partial<Organization> = {}) => db.getRepository(Organization).save({ name: "Partner", email: `${randomUUID()}@example.test`, status: OrganizationStatus.APPROVED, isActive: true, cohortId: cohort.id, ...values });
   const queue = () => ({ add: jest.fn(async (_name: string, _data: any) => ({ id: randomUUID() })) });
 
+  it("uses the same country aliases, cohort and search for paginated lists, summary counts and approved invitation batches", async () => {
+    const scoped = await db.getRepository(Cohort).save({ name: "Country filter cohort", status: CohortStatus.ACTIVE });
+    const values = { cohortId: scoped.id, name: "Country partner" };
+    const approved = await fixture({ ...values, country: "Ghana" });
+    const code = await fixture({ ...values, country: " gh " });
+    await fixture({ ...values, country: "GH", status: OrganizationStatus.PENDING });
+    await fixture({ ...values, country: "GHANA", status: OrganizationStatus.REJECTED });
+    await fixture({ ...values, country: "Ghana", isActive: false });
+    await fixture({ ...values, country: "Kenya" });
+    await fixture({ ...values, country: "Ghana", name: "Unrelated" });
+    await fixture({ country: "Ghana", name: values.name });
+    const removed = await fixture({ ...values, country: "GH" });
+    await db.getRepository(Organization).softDelete(removed.id);
+    const filters = { cohortId: scoped.id, country: "GH", search: "Country" };
+    expect(await service.findAll({ ...filters, page: 2, limit: 2 })).toMatchObject({ total: 5, totalPages: 3, data: expect.any(Array) });
+    expect((await service.findAll({ ...filters, status: OrganizationStatus.PENDING })).data).toHaveLength(1);
+    for (const country of ["GH", "ghana", " Ghana "]) expect(await service.getStatistics({ ...filters, country })).toEqual({ total: 5, pending: 1, approved: 3, rejected: 1 });
+    expect((await service.findAll({ ...filters, country: "Gha%" })).total).toBe(0);
+    expect((await service.findAll({ ...filters, country: "Ghana' OR 1=1 --" })).total).toBe(0);
+    const batches = queue();
+    const invites = new PartnerInvitesService(db.getRepository(Organization), batches as any, email as any);
+    expect(await invites.resendEligible(filters, randomUUID())).toMatchObject({ total: 2 });
+    expect(batches.add.mock.calls[0][1].organizationIds.sort()).toEqual([approved.id, code.id].sort());
+    expect(email.sendOrganizationInvite).not.toHaveBeenCalled();
+  });
+
   it("bulk approves pending partners with staff attribution, owner access and unchanged existing credentials", async () => {
     const first = await fixture({ status: OrganizationStatus.PENDING }), second = await fixture({ status: OrganizationStatus.PENDING });
     const existing = await db.getRepository(User).save({ email: second.email, role: Role.ORGANIZATION, isActive: true, passwordHash: "existing-password-hash" });

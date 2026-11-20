@@ -2,6 +2,7 @@
 
 import { TeamEligibility } from "@/components/teams/team-eligibility";
 import { TeamBriefPreferenceControl } from "@/components/teams/team-brief-preference";
+import { ParticipantProfileButton } from "@/components/teams/participant-profile-button";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -145,6 +146,7 @@ function MemberCard({
           <span>{member.participant.country}</span>
         </div>
       </div>
+      {!isCurrentUser && <ParticipantProfileButton participantId={member.participantId} name={`${member.participant.firstName} ${member.participant.lastName}`} />}
       {canRemove && !isCurrentUser && (
         <Button
           variant="ghost"
@@ -333,7 +335,7 @@ function TeamDashboard({
             {pendingMembers.map((member) => (
               <div
                 key={member.id}
-                className="flex items-center justify-between p-3 rounded-lg border bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-900"
+                className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-900"
               >
                 <div className="flex items-center gap-3">
                   {member.participant.profileImageUrl ? (
@@ -362,7 +364,8 @@ function TeamDashboard({
                     </div>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <ParticipantProfileButton participantId={member.participantId} name={`${member.participant.firstName} ${member.participant.lastName}`} />
                   <Button
                     size="sm"
                     onClick={() => handleConfirmMember(member.id)}
@@ -718,7 +721,7 @@ function InviteDialog({
                 participants.map((p: any) => (
                   <div
                     key={p.id}
-                    className="flex items-center justify-between p-3 rounded-lg border"
+                    className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border"
                   >
                     <div>
                       <p className="font-medium text-sm">
@@ -726,14 +729,17 @@ function InviteDialog({
                       </p>
                       <p className="text-xs text-muted-foreground">{p.country}</p>
                     </div>
-                    <Button
-                      size="sm"
-                      onClick={() => handleInvite(p.id)}
-                      disabled={sendInvitation.isPending}
-                    >
-                      <Send className="h-3 w-3 mr-1" />
-                      Invite
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <ParticipantProfileButton participantId={p.id} name={`${p.firstName} ${p.lastName}`} />
+                      <Button
+                        size="sm"
+                        onClick={() => handleInvite(p.id)}
+                        disabled={sendInvitation.isPending}
+                      >
+                        <Send className="h-3 w-3 mr-1" />
+                        Invite
+                      </Button>
+                    </div>
                   </div>
                 ))
               ) : (
@@ -1078,16 +1084,11 @@ function OpenTeamCard({
           </div>
           {/* Show member names */}
           <div className="flex flex-wrap gap-1 mt-2">
-            {confirmedMembers.slice(0, 3).map((member) => (
-              <Badge key={member.id} variant="secondary" className="text-xs">
+            {confirmedMembers.map((member) => (
+              <ParticipantProfileButton key={member.id} participantId={member.participantId} name={`${member.participant.firstName} ${member.participant.lastName}`} compact>
                 {member.participant.firstName}
-              </Badge>
+              </ParticipantProfileButton>
             ))}
-            {confirmedMembers.length > 3 && (
-              <Badge variant="secondary" className="text-xs">
-                +{confirmedMembers.length - 3} more
-              </Badge>
-            )}
           </div>
         </div>
         <Button size="sm" onClick={onJoin} disabled={isJoining || spotsLeft === 0}>
@@ -1126,6 +1127,7 @@ function InvitationCard({ invitation }: { invitation: TeamInvitation }) {
         </div>
       </div>
       <div className="flex gap-2 mt-3">
+        {invitation.invitedBy && <ParticipantProfileButton participantId={invitation.invitedBy} name={`${invitation.inviter?.firstName || "Team"} ${invitation.inviter?.lastName || "lead"}`} />}
         <Button
           size="sm"
           onClick={() => acceptMutation.mutate(invitation.id)}

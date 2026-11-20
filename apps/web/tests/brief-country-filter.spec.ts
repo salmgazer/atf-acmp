@@ -3,10 +3,12 @@ import { readFile } from 'node:fs/promises';
 
 const cohortId = 'country-cohort';
 const briefs = [
-  { id: 'explicit', title: 'Kenya problem', problemCountry: 'Kenya', organization: { name: 'Ghana partner', country: 'Ghana' }, status: 'submitted' },
-  { id: 'fallback', title: 'Legacy Kenya problem', problemCountry: null, organization: { name: 'Kenya partner', country: 'KE' }, status: 'in_review' },
-  { id: 'ghana', title: 'Ghana problem', problemCountry: 'GH', organization: { name: 'Kenya partner', country: 'Kenya' }, status: 'approved' },
-  { id: 'unknown', title: 'Country not provided', organization: { name: 'Unknown partner' }, status: 'submitted' },
+  { id: 'explicit', source: 'partner', title: 'Kenya problem', problemCountry: 'Kenya', organization: { name: 'Ghana partner', country: 'Ghana' }, status: 'submitted' },
+  { id: 'fallback', source: 'partner', title: 'Legacy Kenya problem', problemCountry: null, organization: { name: 'Kenya partner', country: 'KE' }, status: 'in_review' },
+  { id: 'ghana', source: 'partner', title: 'Ghana problem', problemCountry: 'GH', organization: { name: 'Kenya partner', country: 'Kenya' }, status: 'approved' },
+  { id: 'unknown', source: 'partner', title: 'Country not provided', organization: { name: 'Unknown partner' }, status: 'submitted' },
+  { id: 'team-ke', source: 'team', title: 'Team transport problem', problemCountry: 'Kenya', organization: null, status: 'in_review' },
+  { id: 'team-gh', source: 'team', title: 'Team health problem', problemCountry: 'Ghana', organization: null, status: 'submitted' },
 ].map(b => ({ ...b, cohortId, description: 'A challenge brief for review', maxTeams: 5, teamsCount: 0, createdAt: '2026-11-01T12:00:00Z', submittedAt: '2026-11-02T12:00:00Z' }));
 async function setup(page: Page, context: BrowserContext) {
   const user = { id: 'staff', role: 'program_manager', email: 'staff@example.test', firstName: 'Test', lastName: 'Staff' };
@@ -21,7 +23,8 @@ async function setup(page: Page, context: BrowserContext) {
     const url = new URL(route.request().url()), path = url.pathname;
     requests.push(url);
     const country = url.searchParams.get('country');
-    const selected = briefs.filter(b => !country || (b.problemCountry || b.organization.country || '').replace(/^KE$/, 'Kenya').replace(/^GH$/, 'Ghana') === country);
+    const source = url.searchParams.get('source');
+    const selected = briefs.filter(b => (!source || b.source === source) && (!country || (b.problemCountry || b.organization?.country || '').replace(/^KE$/, 'Kenya').replace(/^GH$/, 'Ghana') === country));
     let data: unknown = [];
     if (path.endsWith('/auth/me')) data = user;
     else if (path.endsWith('/cohorts')) data = { data: [{ id: cohortId, name: 'Country cohort', status: 'active', countries: ['GH', 'KE', 'NG', 'ZA'] }], total: 1 };
@@ -79,6 +82,49 @@ test('CSV export includes Country and fetches every page using the selected coun
   expect(csv).toContain('Legacy Kenya problem,Kenya partner,Kenya');
   expect(csv).not.toContain('Ghana problem,');
   const exports = requests.filter(url => url.searchParams.get('limit') === '500');
-  expect(exports.map(url => url.searchParams.get('page'))).toEqual(['1', '2']);
+  expect(exports.map(url => url.searchParams.get('page'))).toEqual(['1', '2', '3']);
   expect(exports.every(url => url.searchParams.get('country') === 'Kenya' && url.searchParams.get('pendingReview') === 'true')).toBe(true);
+});
+
+test('source filters team and organization briefs, scopes summary counts, combines with country and pending review, and clears', async ({ page, context }) => {
+  const requests = await setup(page, context);
+  const source = page.getByRole('combobox', { name: 'Filter briefs by source' });
+  await source.click();
+  await page.getByRole('option', { name: 'Team briefs', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Team health problem', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Ghana problem', exact: true })).toHaveCount(0);
+  await expect(page.getByText('Total', { exact: true }).locator('..')).toHaveText('Total2');
+  await selectKenya(page);
+  await page.getByRole('button', { name: /Filters/ }).click();
+  await page.getByRole('button', { name: /^Pending Review/ }).click();
+  await expect(page.getByRole('link', { name: 'Team transport problem', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Team health problem', exact: true })).toHaveCount(0);
+  await expect.poll(() => requests.some(url => url.pathname.endsWith('/briefs') && url.searchParams.get('source') === 'team' && url.searchParams.get('country') === 'Kenya' && url.searchParams.get('pendingReview') === 'true')).toBe(true);
+  await expect(page.getByText('Total', { exact: true }).locator('..')).toHaveText('Total1');
+  await source.click();
+  await page.getByRole('option', { name: 'Organization briefs', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Legacy Kenya problem', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Team transport problem', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Clear', exact: true }).click();
+  await expect(source).toContainText('All briefs');
+  await expect(page.getByRole('link', { name: 'Ghana problem', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Team health problem', exact: true })).toBeVisible();
+});
+
+test('CSV export keeps the source filter on every page and labels the brief source', async ({ page, context }) => {
+  const requests = await setup(page, context);
+  await page.getByRole('combobox', { name: 'Filter briefs by source' }).click();
+  await page.getByRole('option', { name: 'Team briefs', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Team health problem', exact: true })).toBeVisible();
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export CSV', exact: true }).click();
+  const csv = await readFile((await (await downloaded).path())!, 'utf8');
+  expect(csv.split('\n')[0]).toMatch(/,Source$/);
+  expect(csv).toContain('Team transport problem,Team brief,Kenya');
+  expect(csv).toContain('Team health problem,Team brief,Ghana');
+  expect(csv).not.toContain('Ghana partner');
+  expect(csv.trim().split('\n').slice(1).every(row => row.endsWith(',Team'))).toBe(true);
+  const exports = requests.filter(url => url.searchParams.get('limit') === '500');
+  expect(exports.map(url => url.searchParams.get('page'))).toEqual(['1', '2']);
+  expect(exports.every(url => url.searchParams.get('source') === 'team')).toBe(true);
 });

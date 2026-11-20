@@ -6,6 +6,7 @@ import { Cohort, CohortStatus } from "@/database/entities/cohort.entity";
 import { Organization } from "@/database/entities/organization.entity";
 import { Brief, BriefStatus } from "@/database/entities/brief.entity";
 import { BriefsService } from "@/modules/briefs/briefs.service";
+import { Team } from "@/database/entities/team.entity";
 
 const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
 (databaseUrl ? describe : describe.skip)("Brief country filtering with PostgreSQL", () => {
@@ -39,5 +40,34 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     expect([BriefStatus.SUBMITTED, BriefStatus.IN_REVIEW]).toContain(pending.data[0].status);
     expect(await service.getStatistics(cohort.id, "ghana")).toMatchObject({ total: 3, submitted: 1, inReview: 1, approved: 1 });
     expect((await service.findAll({ cohortId: cohort.id, country: "Gha%" })).total).toBe(0);
+  });
+
+  it("separates team and organization briefs before pagination, combines country and pending filters, and keeps private team briefs out of the pool", async () => {
+    const cohort = await db.getRepository(Cohort).save({ name: randomUUID(), status: CohortStatus.ACTIVE });
+    const organization = await db.getRepository(Organization).save({ name: "Partner", email: `${randomUUID()}@example.test`, country: "Ghana", cohortId: cohort.id });
+    const partner = await db.getRepository(Brief).save({ title: "Partner problem", description: "Source filter fixture", problemStatement: "A sufficiently detailed problem", expectedOutcomes: "A working solution", cohortId: cohort.id, organizationId: organization.id, status: BriefStatus.SUBMITTED });
+    const teamBrief = async (country: string, status: BriefStatus, shareWithTeams = false) => {
+      const team = await db.getRepository(Team).save({ name: randomUUID(), cohortId: cohort.id, inviteCode: randomUUID().slice(0, 8) });
+      return db.getRepository(Brief).save({ source: "team", submittedByTeamId: team.id, title: "Team problem", description: "Source filter fixture", problemStatement: "A sufficiently detailed problem", expectedOutcomes: "A working solution", cohortId: cohort.id, problemCountry: country, status, shareWithTeams });
+    };
+    const submitted = await teamBrief("GH", BriefStatus.SUBMITTED);
+    const inReview = await teamBrief("Ghana", BriefStatus.IN_REVIEW);
+    const privateApproved = await teamBrief("Ghana", BriefStatus.APPROVED);
+    const sharedApproved = await teamBrief("Ghana", BriefStatus.APPROVED, true);
+    await teamBrief("Kenya", BriefStatus.SUBMITTED);
+    const service: BriefsService = Object.assign(Object.create(BriefsService.prototype), { briefRepository: db.getRepository(Brief) });
+    expect((await service.findAll({ cohortId: cohort.id, source: "partner", country: "GH" })).data.map(b => b.id)).toEqual([partner.id]);
+    const query = { cohortId: cohort.id, source: "team" as const, country: "GH", pendingReview: true, limit: 1 };
+    const first = await service.findAll({ ...query, page: 1 });
+    const second = await service.findAll({ ...query, page: 2 });
+    expect(first).toMatchObject({ total: 2, totalPages: 2 });
+    expect([...first.data, ...second.data].map(b => b.id).sort()).toEqual([submitted.id, inReview.id].sort());
+    expect(await service.getStatistics(cohort.id, "GH", undefined, false, "team")).toMatchObject({ total: 4, submitted: 1, inReview: 1, approved: 2 });
+    expect(await service.getStatistics(cohort.id, "GH", undefined, false, "partner")).toMatchObject({ total: 1, submitted: 1 });
+    const pool = await service.findAll({ cohortId: cohort.id, source: "team", status: BriefStatus.APPROVED }, undefined, true);
+    expect(pool.data.map(b => b.id)).toEqual([sharedApproved.id]);
+    expect(pool.data.map(b => b.id)).not.toContain(privateApproved.id);
+    expect(await service.getStatistics(cohort.id, "GH", undefined, true, "team")).toMatchObject({ total: 1, approved: 1 });
+    expect((await service.findAll({ cohortId: cohort.id })).total).toBe(6);
   });
 });
