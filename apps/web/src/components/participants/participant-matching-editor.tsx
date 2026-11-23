@@ -50,7 +50,7 @@ export function ParticipantMatchingEditor({ participantId, cohortId, preference 
     <Button variant="outline" onClick={() => { setBaseline(preference); setDraft(initial(preference)); setError(""); setOpen(true); }}>Edit matching profile</Button>
     <Dialog open={open} onOpenChange={value => { if (!update.isPending) setOpen(value); }}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader><DialogTitle>Edit matching profile</DialogTitle><DialogDescription>Your answers inform team matching and eligibility. Team status describes your preference; use the Team page to create, join or leave a team.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Edit matching profile</DialogTitle><DialogDescription>Your answers inform team matching and eligibility. Sharing your profile includes your phone and WhatsApp numbers so potential teammates can contact you. Team status describes your preference; use the Team page to create, join or leave a team.</DialogDescription></DialogHeader>
         <form className="space-y-5" onSubmit={save}>
           {error && <div role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">{error}<Button className="mt-2" type="button" variant="outline" onClick={() => { setOpen(false); void cache.invalidateQueries({ queryKey: participantKeys.preferences(participantId) }); }}>Reload latest answers</Button></div>}
           <fieldset disabled={update.isPending} className="grid gap-4 sm:grid-cols-2">
