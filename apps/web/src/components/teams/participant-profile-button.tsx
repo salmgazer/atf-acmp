@@ -24,6 +24,9 @@ function Profile({ profile }: { profile: ParticipantPeerProfile }) {
       <Avatar className="h-14 w-14"><AvatarImage src={profile.profileImageUrl || undefined} alt="" /><AvatarFallback>{profile.firstName[0]}{profile.lastName[0]}</AvatarFallback></Avatar>
       <div className="min-w-0"><h3 className="text-lg font-semibold break-words">{profile.firstName} {profile.lastName}</h3><p className="flex items-center gap-1 text-sm text-muted-foreground"><MapPin className="h-3.5 w-3.5" />{profile.country}</p></div>
     </div>
+    <section className="space-y-3"><h3 className="font-medium">Contact details</h3><Details items={[
+      ["Phone number", profile.phoneNumber], ["WhatsApp number", profile.whatsappNumber],
+    ]} /></section>
     <section className="space-y-3"><h3 className="font-medium">Team matching</h3><Details items={[
       ["Preferred role", matchingOptionLabel(MATCHING_ROLE_OPTIONS, matching.preferredRole)],
       ["Build and deploy ability", matchingOptionLabel(BUILD_DEPLOY_OPTIONS, matching.buildDeployAbility)],

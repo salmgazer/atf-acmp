@@ -56,18 +56,18 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
 
   it("shares only the consented matching projection and checks consent again on every request", async () => {
     const viewer = await person();
-    const target = await person({ firstName: "Potential", lastName: "Teammate", skills: ["Python"], interests: ["Health"], pythonSkill: "Advanced", fieldOfStudy: "Medicine", githubUsername: "octocat", phoneNumber: "private-phone", lmsEmail: "private-lms@example.test", whatsappNumber: "private-whatsapp", learningCertificateId: "private-certificate", gender: "private-gender" }, { preferredRole: "builder", buildDeployAbility: "confident", availabilityNotes: "private-notes" });
+    const target = await person({ firstName: "Potential", lastName: "Teammate", skills: ["Python"], interests: ["Health"], pythonSkill: "Advanced", fieldOfStudy: "Medicine", githubUsername: "octocat", phoneNumber: "+233201234567", lmsEmail: "private-lms@example.test", whatsappNumber: "+233209876543", learningCertificateId: "private-certificate", gender: "private-gender" }, { preferredRole: "builder", buildDeployAbility: "confident", availabilityNotes: "private-notes" });
     const profile = await teams.getParticipantMatchingProfile(target.id, viewer.id);
-    expect(profile).toMatchObject({ id: target.id, firstName: "Potential", country: "Ghana", skills: ["Python"], fieldOfStudy: "Medicine", qualifiedBuilder: true, nonComputingStudy: true, githubUsername: "octocat", matching: { preferredRole: "builder", buildDeployAbility: "confident", firstChoiceSector: "health", crossCountryWilling: false } });
-    for (const key of ["email", "phoneNumber", "whatsappNumber", "lmsEmail", "participantId", "passwordHash", "passwordResetToken", "gender", "learningCertificateId", "learningCertificateDate", "programmeOptOutReason", "codeLabsVerifiedBy"]) expect(profile).not.toHaveProperty(key);
+    expect(profile).toMatchObject({ id: target.id, firstName: "Potential", country: "Ghana", phoneNumber: "+233201234567", whatsappNumber: "+233209876543", skills: ["Python"], fieldOfStudy: "Medicine", qualifiedBuilder: true, nonComputingStudy: true, githubUsername: "octocat", matching: { preferredRole: "builder", buildDeployAbility: "confident", firstChoiceSector: "health", crossCountryWilling: false } });
+    for (const key of ["email", "lmsEmail", "participantId", "passwordHash", "passwordResetToken", "gender", "learningCertificateId", "learningCertificateDate", "programmeOptOutReason", "codeLabsVerifiedBy"]) expect(profile).not.toHaveProperty(key);
     expect(profile.matching).not.toHaveProperty("availabilityNotes");
     expect(profile.matching).not.toHaveProperty("briefRankings");
     expect(JSON.stringify(profile)).not.toContain("private-");
     await db.getRepository(ParticipantPreference).update({ participantId: target.id }, { matchingProfileConsent: false });
     await expect(teams.getParticipantMatchingProfile(target.id, viewer.id)).rejects.toThrow("not available");
     await db.getRepository(ParticipantPreference).update({ participantId: target.id }, { matchingProfileConsent: true });
-    await db.getRepository(Participant).update(target.id, { githubUsername: "javascript:alert(1)", pythonSkill: "Beginner" });
-    expect(await teams.getParticipantMatchingProfile(target.id, viewer.id)).toMatchObject({ qualifiedBuilder: false, githubUsername: null });
+    await db.getRepository(Participant).update(target.id, { githubUsername: "javascript:alert(1)", pythonSkill: "Beginner", phoneNumber: null, whatsappNumber: null });
+    expect(await teams.getParticipantMatchingProfile(target.id, viewer.id)).toMatchObject({ qualifiedBuilder: false, githubUsername: null, phoneNumber: null, whatsappNumber: null });
   });
 
   it("hides private, inactive, opted-out, incomplete, deleted and cross-cohort matching profiles", async () => {
