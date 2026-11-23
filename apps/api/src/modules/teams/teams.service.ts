@@ -1515,12 +1515,12 @@ export class TeamsService {
     if (!participant?.preference) throw new NotFoundException("This matching profile is not available. The participant may not have enabled profile sharing.");
     const preference = participant.preference;
     const username = participant.githubUsername?.trim();
-    // Explicit projection: never serialize account email, certificate or
+    // Explicit projection: never serialize credentials, LMS email, certificate or
     // staff verification fields from the participant or preference entities.
     return {
       id: participant.id, firstName: participant.firstName, lastName: participant.lastName,
       country: normalizeTeamCountry(participant.country), profileImageUrl: participant.profileImageUrl,
-      phoneNumber: participant.phoneNumber, whatsappNumber: participant.whatsappNumber,
+      email: participant.email, phoneNumber: participant.phoneNumber, whatsappNumber: participant.whatsappNumber,
       institution: participant.institution, educationLevel: participant.educationLevel,
       fieldOfStudy: participant.fieldOfStudy, currentAffiliation: participant.currentAffiliation,
       pythonSkill: participant.pythonSkill, gitSkill: participant.gitSkill, aiExperience: participant.aiExperience,
