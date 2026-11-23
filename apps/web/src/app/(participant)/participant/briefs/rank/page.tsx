@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Fragment, useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ParticipantLayout } from "@/components/layouts";
@@ -27,7 +27,6 @@ import {
   Trophy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 
 // DnD Kit imports
 import {
@@ -57,13 +56,17 @@ interface SortableBriefItemProps {
   brief: Brief;
   rank: number;
   isTopRanked: boolean;
+  total: number;
+  isSorting: boolean;
+  onMove: (id: string, index: number) => void;
 }
 
-function SortableBriefItem({ brief, rank, isTopRanked }: SortableBriefItemProps) {
+function SortableBriefItem({ brief, rank, isTopRanked, total, isSorting, onMove }: SortableBriefItemProps) {
   const {
     attributes,
     listeners,
     setNodeRef,
+    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
@@ -82,31 +85,39 @@ function SortableBriefItem({ brief, rank, isTopRanked }: SortableBriefItemProps)
       ref={setNodeRef}
       style={style}
       className={cn(
-        "flex items-center gap-3 p-3 rounded-lg border bg-card transition-shadow",
+        "flex items-center gap-2 p-3 rounded-lg border bg-card transition-shadow",
         isDragging && "opacity-50 shadow-lg z-50",
         isFull && "opacity-60"
       )}
     >
       {/* Drag Handle */}
-      <div
+      <button
+        ref={setActivatorNodeRef}
+        type="button"
         {...attributes}
         {...listeners}
-        className="flex-shrink-0 touch-none cursor-grab active:cursor-grabbing p-1 -m-1"
+        aria-label={`Drag ${brief.title} to reorder`}
+        title="Drag to reorder; or choose a rank beside it"
+        className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg touch-none cursor-grab active:cursor-grabbing hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <GripVertical className="h-5 w-5 text-muted-foreground" />
-      </div>
+      </button>
 
       {/* Rank Number */}
-      <div
+      <select
+        aria-label={`Rank for ${brief.title}`}
+        value={rank}
+        disabled={isSorting}
+        onChange={event => onMove(brief.id, Number(event.target.value) - 1)}
         className={cn(
-          "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm",
+          "h-11 w-14 flex-shrink-0 rounded-lg border px-1 text-sm font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60",
           isTopRanked
-            ? "bg-primary text-primary-foreground"
+            ? "border-primary bg-primary text-primary-foreground"
             : "bg-muted text-muted-foreground"
         )}
       >
-        {rank}
-      </div>
+        {Array.from({ length: total }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}
+      </select>
 
       {/* Brief Info */}
       <div className="flex-1 min-w-0">
@@ -193,21 +204,21 @@ function DragOverlayItem({ brief, rank }: { brief: Brief; rank: number }) {
 function RankingContent() {
   const router = useRouter();
   const [orderedBriefs, setOrderedBriefs] = useState<Brief[]>([]);
-  const [hasChanges, setHasChanges] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
 
   const { data: participant, isLoading: participantLoading } = useCurrentParticipant();
   const { data: team, isLoading: teamLoading } = useMyTeam(participant?.id || "");
-  const { data: preferences, isLoading: preferencesLoading } = useParticipantPreferences(
+  const { data: preferences, isLoading: preferencesLoading, isError: preferencesError, refetch: refetchPreferences } = useParticipantPreferences(
     participant?.id || ""
   );
-  const { data: briefs, isLoading: briefsLoading } = useApprovedBriefs(
+  const { data: briefs, isLoading: briefsLoading, isError: briefsError, refetch: refetchBriefs } = useApprovedBriefs(
     participant?.cohortId || "", undefined, undefined, participantBriefScopeKey(participant, team),
   );
   const updateRankingsMutation = useUpdateBriefRankings();
 
   const isLoading = participantLoading || teamLoading || preferencesLoading || briefsLoading;
+  const loadFailed = preferencesError || briefsError;
 
   // Redirect if team already has a brief assigned
   useEffect(() => {
@@ -236,7 +247,7 @@ function RankingContent() {
 
   // Reconcile visibility when the confirmed roster changes, preserving local ranking order.
   useEffect(() => {
-    if (briefs && !preferencesLoading && !teamLoading) {
+    if (briefs && !preferencesLoading && !teamLoading && !loadFailed) {
       setOrderedBriefs(current => {
         const existingRankings = initialized ? current.map(brief => brief.id) : preferences?.briefRankings || [];
         const rankedBriefs = existingRankings.map(id => briefs.find(brief => brief.id === id)).filter(Boolean) as Brief[];
@@ -244,7 +255,15 @@ function RankingContent() {
       });
       setInitialized(true);
     }
-  }, [briefs, preferences, initialized, preferencesLoading, teamLoading]);
+  }, [briefs, preferences, initialized, preferencesLoading, teamLoading, loadFailed]);
+
+  const moveBrief = (id: string, newIndex: number) => {
+    setOrderedBriefs(items => {
+      const oldIndex = items.findIndex(item => item.id === id);
+      return oldIndex < 0 || newIndex < 0 || newIndex >= items.length || oldIndex === newIndex
+        ? items : arrayMove(items, oldIndex, newIndex);
+    });
+  };
 
   // Handle drag start
   const handleDragStart = (event: DragStartEvent) => {
@@ -260,9 +279,8 @@ function RankingContent() {
       setOrderedBriefs((items) => {
         const oldIndex = items.findIndex((item) => item.id === active.id);
         const newIndex = items.findIndex((item) => item.id === over.id);
-        return arrayMove(items, oldIndex, newIndex);
+        return oldIndex < 0 || newIndex < 0 ? items : arrayMove(items, oldIndex, newIndex);
       });
-      setHasChanges(true);
     }
   };
 
@@ -272,21 +290,17 @@ function RankingContent() {
 
   // Get top rankings (first MAX_RANKINGS)
   const topRankings = orderedBriefs.slice(0, MAX_RANKINGS).map((b) => b.id);
+  const savedRankings = preferences?.briefRankings || [];
+  // Compare with the last server-confirmed order. An older save must never
+  // mark newer edits as saved, including edits made while its request is pending.
+  const hasChanges = initialized && topRankings.length > 0 && (
+    topRankings.length !== savedRankings.length || topRankings.some((id, index) => id !== savedRankings[index])
+  );
 
   // Handle save
-  const handleSave = async () => {
-    if (!participant) return;
-    
-    try {
-      await updateRankingsMutation.mutateAsync({
-        participantId: participant.id,
-        briefRankings: topRankings,
-      });
-      setHasChanges(false);
-      toast.success("Rankings saved successfully!");
-    } catch (error) {
-      toast.error("Failed to save rankings");
-    }
+  const handleSave = () => {
+    if (!participant || !hasChanges || loadFailed || activeId || updateRankingsMutation.isPending) return;
+    updateRankingsMutation.mutate({ participantId: participant.id, briefRankings: topRankings });
   };
 
   if (isLoading) {
@@ -299,12 +313,9 @@ function RankingContent() {
     );
   }
 
-  const topBriefs = orderedBriefs.slice(0, MAX_RANKINGS);
-  const otherBriefs = orderedBriefs.slice(MAX_RANKINGS);
-
   return (
     <ParticipantLayout>
-      <div className="space-y-4 pb-24">
+      <div className="space-y-4 pb-40 md:pb-28">
         {/* Header */}
         <div className="flex items-center gap-3">
           <Button asChild variant="ghost" size="icon">
@@ -315,63 +326,40 @@ function RankingContent() {
           <div className="flex-1">
             <h1 className="text-xl font-bold">Rank Your Briefs</h1>
             <p className="text-sm text-muted-foreground">
-              Drag to reorder • Top {MAX_RANKINGS} are your preferences
+              Choose a rank or drag the grip. Only your top {MAX_RANKINGS} preferences are saved.
             </p>
           </div>
         </div>
+
+        {loadFailed && <div role="alert" className="space-y-2 rounded-lg border border-destructive p-3 text-sm"><p>Could not load your briefs or saved rankings. Try again before saving.</p><Button variant="outline" onClick={() => { void refetchPreferences(); void refetchBriefs(); }}>Try again</Button></div>}
+        {!loadFailed && !orderedBriefs.length && <p className="py-8 text-center text-sm text-muted-foreground">No approved briefs are currently available to rank.</p>}
 
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
+          onDragCancel={() => setActiveId(null)}
         >
-          {/* Top Rankings Section */}
-          <div>
-            <h2 className="font-semibold text-sm text-muted-foreground mb-2 flex items-center gap-2">
+          <SortableContext items={orderedBriefs.map(brief => brief.id)} strategy={verticalListSortingStrategy}>
+            {orderedBriefs.length > 0 && <h2 className="font-semibold text-sm text-muted-foreground mb-2 flex items-center gap-2">
               <Trophy className="h-4 w-4 text-yellow-500" />
               Your Top {MAX_RANKINGS} Preferences
-            </h2>
-            <SortableContext
-              items={orderedBriefs.map((b) => b.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <div className="space-y-2">
-                {topBriefs.map((brief, index) => (
-                  <SortableBriefItem
-                    key={brief.id}
-                    brief={brief}
-                    rank={index + 1}
-                    isTopRanked={true}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          </div>
-
-          {/* Other Briefs Section */}
-          {otherBriefs.length > 0 && (
-            <div className="mt-6">
-              <h2 className="font-semibold text-sm text-muted-foreground mb-2">
-                Other Available Briefs
-              </h2>
-              <SortableContext
-                items={orderedBriefs.map((b) => b.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                <div className="space-y-2">
-                  {otherBriefs.map((brief, idx) => (
-                    <SortableBriefItem
-                      key={brief.id}
-                      brief={brief}
-                      rank={MAX_RANKINGS + idx + 1}
-                      isTopRanked={false}
-                    />
-                  ))}
-                </div>
-              </SortableContext>
+            </h2>}
+            <div className="space-y-2">
+              {orderedBriefs.map((brief, index) => <Fragment key={brief.id}>
+                {index === MAX_RANKINGS && <h2 className="pt-4 pb-1 text-sm font-semibold text-muted-foreground">Other Available Briefs</h2>}
+                <SortableBriefItem
+                  brief={brief}
+                  rank={index + 1}
+                  isTopRanked={index < MAX_RANKINGS}
+                  total={orderedBriefs.length}
+                  isSorting={activeId !== null}
+                  onMove={moveBrief}
+                />
+              </Fragment>)}
             </div>
-          )}
+          </SortableContext>
 
           {/* Drag Overlay - Shows the item being dragged */}
           <DragOverlay>
@@ -383,12 +371,13 @@ function RankingContent() {
       </div>
 
       {/* Fixed Save Button */}
-      <div className="fixed bottom-20 left-0 right-0 p-4 bg-background/80 backdrop-blur-sm border-t">
+      <div className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom,0px))] left-0 right-0 z-30 p-4 bg-background/80 backdrop-blur-sm border-t md:bottom-0 md:left-64">
+        {!loadFailed && orderedBriefs.length > 0 && <p aria-live="polite" className="mb-2 text-center text-xs text-muted-foreground">{hasChanges ? "Your current preferences have unsaved changes." : "Your current preferences are saved."}</p>}
         <Button
           className="w-full"
           size="lg"
           onClick={handleSave}
-          disabled={updateRankingsMutation.isPending || !hasChanges}
+          disabled={updateRankingsMutation.isPending || !hasChanges || loadFailed || activeId !== null}
         >
           {updateRankingsMutation.isPending ? (
             <>
