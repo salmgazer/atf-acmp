@@ -25,6 +25,7 @@ function Profile({ profile }: { profile: ParticipantPeerProfile }) {
       <div className="min-w-0"><h3 className="text-lg font-semibold break-words">{profile.firstName} {profile.lastName}</h3><p className="flex items-center gap-1 text-sm text-muted-foreground"><MapPin className="h-3.5 w-3.5" />{profile.country}</p></div>
     </div>
     <section className="space-y-3"><h3 className="font-medium">Contact details</h3><Details items={[
+      ["Email", profile.email],
       ["Phone number", profile.phoneNumber], ["WhatsApp number", profile.whatsappNumber],
     ]} /></section>
     <section className="space-y-3"><h3 className="font-medium">Team matching</h3><Details items={[
