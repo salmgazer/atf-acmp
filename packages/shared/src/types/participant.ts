@@ -59,6 +59,8 @@ export interface ParticipantPeerProfile {
   firstName: string;
   lastName: string;
   country: string;
+  phoneNumber?: string | null;
+  whatsappNumber?: string | null;
   profileImageUrl?: string | null;
   institution?: string | null;
   educationLevel?: string | null;
