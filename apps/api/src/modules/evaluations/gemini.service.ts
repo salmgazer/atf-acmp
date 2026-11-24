@@ -148,7 +148,7 @@ export class GeminiService implements OnModuleInit {
     const rubricText = rubric.criteria
       .map(
         (c) =>
-          `- ${c.name} (${c.weight}% weight, max ${c.maxScore} points): ${c.description}`,
+          `- ID ${c.id}: ${c.name} (${c.weight}% weight, max ${c.maxScore} points): ${c.description}`,
       )
       .join("\n");
 
@@ -215,7 +215,7 @@ Return a JSON object with this exact structure:
   "overallConfidence": number (0.0-1.0)
 }
 
-Be objective and consistent. Score based on evidence in the code repository.`;
+Be objective and consistent. Return exactly one score per criterion using the exact criterion IDs shown above. Score using the supplied artifacts and code evidence; never infer missing measurements or claim to execute code.`;
   }
 
 
