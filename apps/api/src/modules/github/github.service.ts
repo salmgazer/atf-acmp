@@ -81,6 +81,7 @@ export class GitHubService {
   private readonly cache = new Map<string, { data: any; expiry: number }>();
   private readonly cacheTTL: number;
   private readonly token?: string;
+  private tokenRejected = false;
 
   constructor(private configService: ConfigService) {
     this.token = this.configService.get<string>("GITHUB_TOKEN");
@@ -92,7 +93,7 @@ export class GitHubService {
       Accept: "application/vnd.github.v3+json",
       "User-Agent": "ACMP-Platform",
     };
-    if (this.token) {
+    if (this.token && !this.tokenRejected) {
       headers.Authorization = `Bearer ${this.token}`;
     }
     return headers;
@@ -151,9 +152,13 @@ export class GitHubService {
       return cached;
     }
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      headers: this.getHeaders(),
-    });
+    const headers = this.getHeaders();
+    const response = await fetch(`${this.baseUrl}${endpoint}`, { headers, signal: AbortSignal.timeout(15000) });
+    if (response.status === 401 && headers.Authorization) {
+      if (!this.tokenRejected) this.logger.warn("Configured GitHub credential was rejected; using public repository access");
+      this.tokenRejected = true;
+      return this.fetchGitHub<T>(endpoint);
+    }
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -397,6 +402,11 @@ export class GitHubService {
 
   async getFileStructure(owner: string, repo: string): Promise<GitHubTreeItem[]> {
     return this.getFileTree(owner, repo);
+  }
+
+  clearRepositoryCache(owner: string, repo: string): void {
+    const prefix = this.getCacheKey(`/repos/${owner}/${repo}`);
+    for (const key of this.cache.keys()) if (key === prefix || key.startsWith(prefix + "/") || key.startsWith(prefix + "?")) this.cache.delete(key);
   }
 
   clearCache(): void {

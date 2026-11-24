@@ -403,7 +403,7 @@ jobs:
               {"name": "REDIS_PORT", "value": "6379"},
               {"name": "GEMINI_MODEL", "value": "${{ vars.GEMINI_MODEL }}"},
               {"name": "GEMINI_API_KEY", "value": "${{ secrets.GEMINI_API_KEY }}"},
-              {"name": "GITHUB_TOKEN", "value": "${{ secrets.GITHUB_TOKEN }}"},
+              {"name": "GITHUB_TOKEN", "value": "${{ secrets.GH_REPO_READ_TOKEN }}"},
               {"name": "ONESIGNAL_APP_ID", "value": "${{ vars.ONESIGNAL_APP_ID }}"},
               {"name": "ONESIGNAL_REST_API_KEY", "value": "${{ secrets.ONESIGNAL_REST_API_KEY }}"},
               {"name": "ZOOM_ACCOUNT_ID", "value": ${{ toJSON(vars.ZOOM_ACCOUNT_ID) }}},
