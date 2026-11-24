@@ -5,6 +5,7 @@ import { api } from "../client";
 import { toast } from "sonner";
 
 export interface StageRequirements {
+  exerciseUrl?: string;
   minimumConsultations?: number;
   documentRequired?: boolean;
   documentMaxSize?: number;
@@ -29,7 +30,7 @@ export interface StageRequirements {
 }
 
 export interface Stage {
-  workflowKey?: "team" | "problem" | "proposal" | "evaluation" | "build" | null;
+  workflowKey?: "team" | "problem" | "proposal" | "warmup" | "evaluation" | "build" | null;
   id: string;
   cohortId: string;
   number: number;

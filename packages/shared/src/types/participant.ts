@@ -1,4 +1,5 @@
-export interface ParticipantLearningProfile {
+import type { BuilderProfile } from "../constants/builder-profile";
+export interface ParticipantLearningProfile extends BuilderProfile {
   programmeOptedOut?: boolean;
   programmeOptedOutAt?: string | null;
   programmeOptOutReason?: string | null;
@@ -54,7 +55,7 @@ export interface ParticipantWithTeam extends Participant {
 }
 
 /** The consented profile available to other participants for team matching. */
-export interface ParticipantPeerProfile {
+export interface ParticipantPeerProfile extends BuilderProfile {
   id: string;
   firstName: string;
   lastName: string;

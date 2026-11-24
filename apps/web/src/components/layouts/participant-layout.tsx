@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BuilderProfileEditor } from "@/components/participants/builder-profile";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -100,6 +101,7 @@ export function ParticipantLayout({ children, noPadding }: ParticipantLayoutProp
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
+      {participant && <BuilderProfileEditor key={participant.updatedAt} participant={participant} required />}
       {/* Mobile overlay */}
       {mobileOpen && (
         <div

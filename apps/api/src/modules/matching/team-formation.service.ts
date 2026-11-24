@@ -176,7 +176,7 @@ export class TeamFormationService {
     statistics.briefAssignmentStats = { totalApprovedBriefs: approvedBriefs.length, briefsAssigned: new Set(assignedBriefs).size, briefsWithoutTeams: approvedBriefs.filter(brief => (capacity.get(brief.id) || 0) > 0).length, existingTeamsAssignedBriefs: proposedBriefAssignments.length, assignmentsByVertical: Object.fromEntries([...new Set(approvedBriefs.map(brief => brief.verticalId).filter(Boolean))].map(id => [id!, assignedBriefs.filter(briefId => approvedBriefs.find(brief => brief.id === briefId)?.verticalId === id).length])) };
     const sourceVersion = (person: Participant) => JSON.stringify([person.updatedAt?.toISOString(), person.preference?.updatedAt?.toISOString()]);
     const sourceVersions = Object.fromEntries([...rows, ...existing.flatMap(team => team.members.map(member => member.participant).filter(Boolean))].map(person => [person.id, sourceVersion(person)]));
-    const preview = { cohortId, cohortName: cohort.name, generatedAt: new Date(), proposedTeams, proposedBackfills, proposedBriefAssignments, unassignedParticipantIds, unassignedBriefIds: approvedBriefs.filter(brief => (capacity.get(brief.id) || 0) > 0).map(brief => brief.id), statistics, configUsed: config, warnings, policyVersion: "atf-2026-v5", deadlineVersion: cohort.teamRuleDeadlineVersion, sourceVersions, cohortVersion: cohort.updatedAt?.toISOString() };
+    const preview = { cohortId, cohortName: cohort.name, generatedAt: new Date(), proposedTeams, proposedBackfills, proposedBriefAssignments, unassignedParticipantIds, unassignedBriefIds: approvedBriefs.filter(brief => (capacity.get(brief.id) || 0) > 0).map(brief => brief.id), statistics, configUsed: config, warnings, policyVersion: "atf-2026-v6", deadlineVersion: cohort.teamRuleDeadlineVersion, sourceVersions, cohortVersion: cohort.updatedAt?.toISOString() };
     await this.previewStore.set("formation:" + cohortId, preview, 30 * 60 * 1000);
     return preview;
   }
@@ -186,7 +186,7 @@ export class TeamFormationService {
    */
   async getTeamFormationPreview(cohortId: string): Promise<TeamFormationPreviewDto | null> {
     const preview = await this.previewStore.get<TeamFormationPreviewDto>("formation:" + cohortId);
-    return preview?.policyVersion === "atf-2026-v5" ? preview : null;
+    return preview?.policyVersion === "atf-2026-v6" ? preview : null;
   }
 
   /**
@@ -205,7 +205,7 @@ export class TeamFormationService {
     dto: FinalizeTeamFormationDto = {},
   ): Promise<{ createdTeamCount: number; backfilledTeamCount: number; briefsAssigned: number; errors: string[] }> {
     const preview = await this.previewStore.get<TeamFormationPreviewDto>("formation:" + cohortId);
-    if (!preview || preview.policyVersion !== "atf-2026-v5") throw new BadRequestException("Run a fresh team formation preview under the current ATF rules before finalizing");
+    if (!preview || preview.policyVersion !== "atf-2026-v6") throw new BadRequestException("Run a fresh team formation preview under the current ATF rules before finalizing");
     const cohort = await this.cohortRepository.findOneBy({ id: cohortId });
     if (!cohort) throw new NotFoundException("Cohort not found");
     await resolveCohortTeamDeadlines(this.teamRepository.manager, cohort);

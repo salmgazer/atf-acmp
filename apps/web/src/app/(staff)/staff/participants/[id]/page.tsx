@@ -1,5 +1,6 @@
 "use client";
 
+import { BuilderProfileSummary } from "@/components/participants/builder-profile";
 import { StaffOnly } from "@/components/auth/staff-only";
 import { ParticipantGroupEditor } from "@/components/cohorts/participant-group-editor";
 import { MatchingProfile } from "@/components/participants/matching-profile";
@@ -233,6 +234,7 @@ function ParticipantDetailContent({ id }: { id: string }) {
 
         <LearningProfile profile={participant} />
       <StaffOnly permission="manage"><ParticipantProgrammeControls participant={participant} /></StaffOnly>
+      <BuilderProfileSummary profile={participant} />
       <MatchingProfile preference={preferences} participantId={participant.id} />
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Main Content */}

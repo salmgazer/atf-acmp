@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { ParticipantPreference } from "@/lib/api/hooks/use-participants";
 import { useUpdateCrossCountryPreference, useUpdateMatchingConsent } from "@/lib/api/hooks/use-participants";
-import { BUILD_DEPLOY_OPTIONS, MATCHING_ROLE_OPTIONS, MATCHING_SECTOR_OPTIONS, MATCHING_TEAM_STATUS_OPTIONS, matchingOptionLabel } from "@acmp/shared";
+import { MATCHING_ROLE_OPTIONS, MATCHING_SECTOR_OPTIONS, MATCHING_TEAM_STATUS_OPTIONS, matchingOptionLabel } from "@acmp/shared";
 import { Button } from "@/components/ui/button";
 import { ParticipantMatchingEditor } from "./participant-matching-editor";
 import { Label } from "@/components/ui/label";
@@ -42,7 +42,6 @@ export function MatchingProfile({ preference, participantId, cohortId, editable 
   const update = useUpdateMatchingConsent();
   if (!preference?.matchingProfileCompletedAt && !editable) return null;
   const rows = [
-    ["Build and deploy", matchingOptionLabel(BUILD_DEPLOY_OPTIONS, preference?.buildDeployAbility)],
     ["Preferred team role", matchingOptionLabel(MATCHING_ROLE_OPTIONS, preference?.preferredRole)],
     ["First-choice sector", matchingOptionLabel(MATCHING_SECTOR_OPTIONS, preference?.firstChoiceSector)],
     ["Backup sector", matchingOptionLabel(MATCHING_SECTOR_OPTIONS, preference?.backupSector)],

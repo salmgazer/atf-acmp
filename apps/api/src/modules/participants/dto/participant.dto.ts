@@ -1,3 +1,4 @@
+import { BuilderProfileDto } from "./builder-profile.dto";
 import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
 import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import {
@@ -334,6 +335,7 @@ export class UpdateCrossCountryPreferenceDto {
 }
 
 export class CompleteOnboardingDto {
+  @IsOptional() @ValidateNested() @Type(() => BuilderProfileDto) builderProfile?: BuilderProfileDto;
   @ApiProperty()
   @ValidateNested()
   @IsDefined()

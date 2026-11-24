@@ -150,7 +150,7 @@ function DashboardContent() {
   const { currentPhase, progressPercent, totalStages } = useMemo(() => {
     if (workflow?.steps?.length) {
       const next = workflow.steps.find(step => !step.completed) || workflow.steps[4];
-      return { currentPhase: { phase: "challenge" as const, label: next.name, number: next.number }, progressPercent: workflow.steps.filter(step => step.completed).length * 20, totalStages: 5 };
+      return { currentPhase: { phase: "challenge" as const, label: next.name, number: next.number }, progressPercent: Math.round(workflow.steps.filter(step => step.completed).length / workflow.steps.length * 100), totalStages: workflow.steps.length };
     }
     const hasTeam = !!team;
     const hasBrief = !!team?.briefId;
@@ -237,7 +237,7 @@ function DashboardContent() {
               />
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {hasFixedWorkflow ? `Stage ${currentPhase.number} of 5` : `Phase ${currentPhase.number} of 3`}
+              {hasFixedWorkflow ? `Stage ${currentPhase.number} of ${totalStages}` : `Phase ${currentPhase.number} of 3`}
               {!hasFixedWorkflow && totalStages > 0 && hasBrief && ` • ${totalStages} challenge stage${totalStages !== 1 ? "s" : ""}`}
             </div>
           </div>

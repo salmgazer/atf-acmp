@@ -29,6 +29,7 @@ import {
   ApiConsumes,
   ApiBody,
 } from "@nestjs/swagger";
+import { ConfirmBuilderProfileDto } from "./dto/builder-profile.dto";
 import { ParticipantsService } from "./participants.service";
 import { AssignParticipantGroupDto } from './dto/participant.dto';
 import { Roles } from '@/common/decorators/roles.decorator';
@@ -90,6 +91,13 @@ export class ParticipantsController {
 
   // ============ Current Participant Endpoint ============
   
+  @Patch("me/builder-profile")
+  @UseGuards(JwtAuthGuard)
+  @Roles(Role.PARTICIPANT)
+  confirmBuilderProfile(@CurrentUser() user: { id: string }, @Body() dto: ConfirmBuilderProfileDto) {
+    return this.participantsService.confirmBuilderProfile(user.id, dto);
+  }
+
   @Get("me")
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

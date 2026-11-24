@@ -15,7 +15,7 @@ function SubmissionsContent() {
     <ParticipantLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Your team’s five steps</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Your team’s six steps</h1>
           <p className="text-muted-foreground">
             Follow your team’s progress from formation to the final MVP
           </p>

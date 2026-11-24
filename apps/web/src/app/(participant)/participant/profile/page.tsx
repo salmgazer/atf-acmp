@@ -10,6 +10,7 @@ import { useTheme } from "next-themes";
 import { ParticipantLayout } from "@/components/layouts";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { MatchingProfile } from "@/components/participants/matching-profile";
+import { BuilderProfileEditor } from "@/components/participants/builder-profile";
 import { ParticipantProfileEditor } from "@/components/participants/participant-profile-editor";
 import { LearningProfile } from "@/components/participants/learning-profile";
 import { Button } from "@/components/ui/button";
@@ -264,6 +265,7 @@ function ProfileContent() {
     <div className="space-y-6 pb-20">
       <div className="flex justify-end"><ParticipantProfileEditor participant={participant} /></div>
       <LearningProfile profile={participant} />
+      <BuilderProfileEditor participant={participant} />
       <MatchingProfile preference={preferences} participantId={participant.id} cohortId={participant.cohortId} editable />
       {/* Profile Header */}
       <Card>

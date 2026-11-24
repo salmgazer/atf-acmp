@@ -35,7 +35,7 @@ export function ProgrammeSubmissionForm({ kind, stageId = "" }: { kind: "brief" 
   const team = workflow.data.team;
   if (kind === "brief" && team.briefPreference !== "own") return <p>Choose “Create our own brief” on your team page first. <Link href="/participant/team" className="underline">Open team settings</Link></p>;
   const step = workflow.data.steps.find(item => item.key === (kind === "brief" ? "problem" : kind));
-  if (kind !== "brief" && step?.status === "locked") return <p>Complete the previous steps and eligibility checks before opening this form. <Link href="/participant/submissions" className="underline">View the five steps</Link></p>;
+  if (kind !== "brief" && step?.status === "locked") return <p>Complete the previous steps and eligibility checks before opening this form. <Link href="/participant/submissions" className="underline">View the six steps</Link></p>;
   const forNewBrief = kind !== "brief" && !!existing.data?.content.briefId && existing.data.content.briefId !== team.briefId;
   const submitted = !forNewBrief && !!current && !["draft", "rejected", "revision_requested"].includes(current.status);
   const deadline = kind === "brief" ? workflow.data.steps.find(item => item.key === "problem")?.deadline : stage.data?.deadline;
@@ -62,7 +62,7 @@ export function ProgrammeSubmissionForm({ kind, stageId = "" }: { kind: "brief" 
       if (kind === "brief") toast.success(final ? "Brief submitted for ATF review" : "Brief draft saved");
     } catch (error) { setErrors([error instanceof Error ? error.message : "Could not save. Please retry."]); }
   }
-  return <div className="space-y-6"><Link href="/participant/submissions" className="text-sm underline">Back to the five steps</Link><div><h1 className="text-2xl font-bold">{kind === "brief" ? "Your team's problem brief" : kind === "proposal" ? "Team proposal" : "Final MVP submission"}</h1><p className="mt-2 text-muted-foreground">{kind === "brief" ? "Describe the problem, not the solution. ATF must approve it before you submit a proposal. Team and member details are taken from your team profile." : kind === "proposal" ? `For your assigned brief: ${team.briefTitle || "No brief assigned"}. Team details are taken from your profile.` : "Submit your MVP video, slides and supporting documents."}</p>{deadline && <p className="mt-2 text-sm">Deadline: {formatUtcDeadline(deadline)}</p>}</div>
+  return <div className="space-y-6"><Link href="/participant/submissions" className="text-sm underline">Back to the six steps</Link><div><h1 className="text-2xl font-bold">{kind === "brief" ? "Your team's problem brief" : kind === "proposal" ? "Team proposal" : "Final MVP submission"}</h1><p className="mt-2 text-muted-foreground">{kind === "brief" ? "Describe the problem, not the solution. ATF must approve it before you submit a proposal. Team and member details are taken from your team profile." : kind === "proposal" ? `For your assigned brief: ${team.briefTitle || "No brief assigned"}. Team details are taken from your profile.` : "Submit your MVP video, slides and supporting documents."}</p>{deadline && <p className="mt-2 text-sm">Deadline: {formatUtcDeadline(deadline)}</p>}</div>
     {forNewBrief && <p className="rounded-lg border p-4 text-sm">Your assigned brief has changed. Review and revise these materials for the new brief; previous versions will be preserved.</p>}
     <p className="text-sm text-muted-foreground">Team: {team.name}</p>
     {current?.status && <p className="rounded-lg bg-muted p-3 text-sm">Status: {current.status.replace(/_/g, " ")}</p>}
