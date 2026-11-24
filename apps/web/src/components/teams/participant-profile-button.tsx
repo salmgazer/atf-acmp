@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { BUILD_DEPLOY_OPTIONS, MATCHING_ROLE_OPTIONS, MATCHING_SECTOR_OPTIONS, MATCHING_TEAM_STATUS_OPTIONS, matchingOptionLabel, type ParticipantPeerProfile } from "@acmp/shared";
+import { MATCHING_ROLE_OPTIONS, MATCHING_SECTOR_OPTIONS, MATCHING_TEAM_STATUS_OPTIONS, matchingOptionLabel, type ParticipantPeerProfile } from "@acmp/shared";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -30,13 +30,12 @@ function Profile({ profile }: { profile: ParticipantPeerProfile }) {
     ]} /></section>
     <section className="space-y-3"><h3 className="font-medium">Team matching</h3><Details items={[
       ["Preferred role", matchingOptionLabel(MATCHING_ROLE_OPTIONS, matching.preferredRole)],
-      ["Build and deploy ability", matchingOptionLabel(BUILD_DEPLOY_OPTIONS, matching.buildDeployAbility)],
       ["Qualified builder", profile.qualifiedBuilder ? "Yes" : "No"],
       ["First-choice sector", matchingOptionLabel(MATCHING_SECTOR_OPTIONS, matching.firstChoiceSector)],
       ["Backup sector", matchingOptionLabel(MATCHING_SECTOR_OPTIONS, matching.backupSector)],
       ["Open to a cross-country team", matching.crossCountryWilling ? "Yes" : "No"],
       ["Team status preference", matchingOptionLabel(MATCHING_TEAM_STATUS_OPTIONS, matching.teamStatus)],
-    ]} /><p className="text-xs text-muted-foreground">A qualified builder has Intermediate, Advanced or Expert Python skills and confident build/deploy ability, or staff-verified CodeLabs completion.</p></section>
+    ]} /><p className="text-xs text-muted-foreground">A qualified builder has development, testing and deployment experience. Any programming language and proficiency level are welcome.</p></section>
     <Tags title="Skills" values={profile.skills} />
     <Tags title="Interests" values={profile.interests} />
     <section className="space-y-3"><h3 className="font-medium">Background</h3><Details items={[
@@ -45,7 +44,7 @@ function Profile({ profile }: { profile: ParticipantPeerProfile }) {
       ["Non-computing study requirement", profile.nonComputingStudy ? "Yes" : "No"],
     ]} /></section>
     <section className="space-y-3"><h3 className="font-medium">Technical experience</h3><Details items={[
-      ["Python skill", profile.pythonSkill], ["Git skill", profile.gitSkill], ["AI experience", profile.aiExperience],
+      ["Preferred language", profile.preferredLanguage === "Other" ? profile.otherLanguage : profile.preferredLanguage], ["Language proficiency", profile.languageProficiency], ["Development experience", profile.developmentExperience == null ? "Not answered" : profile.developmentExperience ? "Yes" : "No"], ["Testing experience", profile.testingExperience == null ? "Not answered" : profile.testingExperience ? "Yes" : "No"], ["Deployment experience", profile.deploymentExperience == null ? "Not answered" : profile.deploymentExperience ? "Yes" : "No"], ["Git skill", profile.gitSkill], ["AI experience", profile.aiExperience],
     ]} />{profile.githubUsername && <a href={`https://github.com/${encodeURIComponent(profile.githubUsername)}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-sm text-primary underline"><Github className="h-4 w-4" />{profile.githubUsername} on GitHub</a>}</section>
   </div>;
 }

@@ -34,6 +34,7 @@ describe("Organization HTTP request body parsing", () => {
   };
   const participantImports = { preview: jest.fn(async () => ({ ready: true })), enqueue: jest.fn(async () => ({ id: "batch" })) };
   const participantProfiles = {
+    confirmBuilderProfile: jest.fn(async (id: string, dto: any) => ({ id, ...dto, builderConfirm: true })),
     updateStaffProfile: jest.fn(async (id: string, dto: any) => ({ id, city: dto.city })),
     updateCrossCountryPreference: jest.fn(async (participantId: string, crossCountryWilling: boolean) => ({ participantId, crossCountryWilling })),
     update: jest.fn(async (id: string, dto: any) => ({ id, city: dto.city })),
@@ -77,6 +78,15 @@ describe("Organization HTTP request body parsing", () => {
   const importBody = () => ({ cohortId: partnerId, sourceName: "large.csv", sourceTimezone: "Africa/Accra", csv: "a".repeat(150000) });
 
   const patchSelf = (suffix: string, body: unknown, role = "participant", id = actorId) => fetch(`${base.replace(/organizations$/, "participants")}/${id}${suffix}`, { method: "PATCH", headers: { "Content-Type": "application/json", "x-test-role": role }, body: JSON.stringify(body) });
+  it("binds builder confirmation to the signed-in participant and preserves explicit No answers", async () => {
+    const answers = { expectedUpdatedAt: "2026-11-24T08:00:00Z", preferredLanguage: "JavaScript", otherLanguage: "", languageProficiency: "Beginner", developmentExperience: true, testingExperience: false, deploymentExperience: false };
+    const response = await patchSelf("/builder-profile", answers, "participant", "me");
+    expect(response.status).toBe(200);
+    expect(participantProfiles.confirmBuilderProfile).toHaveBeenCalledWith(actorId, expect.objectContaining({ testingExperience: false, deploymentExperience: false }));
+    expect((await patchSelf("/builder-profile", { ...answers, builderConfirm: true }, "participant", "me")).status).toBe(400);
+    expect((await patchSelf("/builder-profile", { ...answers, developmentExperience: null }, "participant", "me")).status).toBe(400);
+    expect((await patchSelf("/builder-profile", answers, "program_manager", "me")).status).toBe(403);
+  });
   it("accepts only allowed profile fields with the profile version and explicit matching No answers", async () => {
     const expectedUpdatedAt = "2026-11-14T08:00:00.000Z";
     expect((await patchSelf("", { expectedUpdatedAt, city: "Kumasi", githubUsername: null })).status).toBe(200);

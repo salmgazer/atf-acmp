@@ -55,9 +55,9 @@ test('prefills imported fields, keeps learning records read-only and submits exp
   await expect(page.getByRole('textbox', { name: 'Learning certificate ID' })).toHaveCount(0);
   await page.getByLabel('City', { exact: true }).fill('Kumasi');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.getByLabel('Python skill', { exact: true })).toHaveValue('Intermediate');
+  await expect(page.getByLabel('Python skill', { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('GitHub username', { exact: false })).toHaveValue('imported-user');
-  await page.getByRole('radio', { name: 'With support', exact: true }).check();
+  await builderAnswers(page, false);
   await page.getByLabel('GitHub username').fill('confirmed-user');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await sectorsAndPreferences(page);
@@ -65,9 +65,9 @@ test('prefills imported fields, keeps learning records read-only and submits exp
   await page.getByRole('button', { name: 'Complete Setup', exact: true }).click();
   await expect(page).toHaveURL(/\/participant\/dashboard$/);
   expect(submissions).toHaveLength(1);
-  expect(submissions[0]).toMatchObject({ profile: { city: 'Kumasi', country: 'Ghana', githubUsername: 'confirmed-user', githubAccountStatus: 'has_account' }, skills: { skills: [], interests: [] }, preferences: { firstChoiceSector: 'education', backupSector: 'health', buildDeployAbility: 'with_support', teamStatus: 'partial_team', preferredRole: 'sector_specialist', crossCountryWilling: false, matchingProfileConsent: false } });
+  expect(submissions[0]).toMatchObject({ profile: { city: 'Kumasi', country: 'Ghana', githubUsername: 'confirmed-user', githubAccountStatus: 'has_account' }, skills: { skills: [], interests: [] }, preferences: { firstChoiceSector: 'education', backupSector: 'health', buildDeployAbility: 'no', teamStatus: 'partial_team', preferredRole: 'sector_specialist', crossCountryWilling: false, matchingProfileConsent: false } });
   expect(submissions[0].profile).not.toHaveProperty('learningCertificateIssued');
-  expect(await page.evaluate(() => sessionStorage.getItem('acmp-onboarding-v2:matching-onboarding-user'))).toBeNull();
+  expect(await page.evaluate(() => sessionStorage.getItem('acmp-onboarding-v3:matching-onboarding-user'))).toBeNull();
 });
 
 test('requires explicit answers, supports no GitHub account and retains drafts through back navigation and reload', async ({ page, context }) => {
@@ -75,8 +75,8 @@ test('requires explicit answers, supports no GitHub account and retains drafts t
   await page.getByLabel('City', { exact: true }).fill('Saved city');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(page.locator('p[role=alert]')).toContainText('build and deploy');
-  await page.getByRole('radio', { name: 'No', exact: true }).check();
+  await expect(page.locator('p[role=alert]')).toContainText('development, testing and deployment');
+  await builderAnswers(page, false);
   await page.getByRole('radio', { name: 'I do not have an account yet', exact: true }).check();
   await expect(page.getByRole('link', { name: 'Create a GitHub account' })).toHaveAttribute('href', 'https://github.com/signup');
   await page.reload();
@@ -99,7 +99,7 @@ test('requires explicit answers, supports no GitHub account and retains drafts t
 test('rejects imported non-username GitHub text and keeps all answers after a failed submission', async ({ page, context }) => {
   const submissions = await setup(page, context, { failSubmit: true });
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await page.getByRole('radio', { name: 'Yes, confidently', exact: true }).check();
+  await builderAnswers(page, true);
   await page.getByLabel('GitHub username').fill('Please contact me');
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await expect(page.locator('p[role=alert]')).toContainText('valid GitHub username');
@@ -180,3 +180,9 @@ test('keeps an unsaved cross-country answer after a failed save and supports ret
   await page.reload();
   await expect(selector).toHaveValue('yes');
 });
+
+async function builderAnswers(page: Page, qualifies: boolean) {
+  await page.getByLabel('Preferred programming language', { exact: true }).selectOption('JavaScript');
+  await page.getByLabel('Proficiency in your preferred language', { exact: true }).selectOption('Beginner');
+  for (const name of ['Development experience', 'Testing experience', 'Deployment experience']) await page.getByLabel(name, { exact: true }).selectOption(qualifies ? 'yes' : 'no');
+}

@@ -1,3 +1,9 @@
+import { Optional } from "@nestjs/common";
+import { randomUUID } from "crypto";
+import { EvaluationsService } from "../evaluations/evaluations.service";
+import { EvaluationJob, EvaluationJobStatus } from "@/database/entities/evaluation.entity";
+import { assertProposalSubmitted } from "@/common/services/team-workflow";
+import { afterCommit } from "@/common/decorators/transactional.decorator";
 import { assertProblemChosen, assertProposalPassed } from "@/common/services/team-workflow";
 import { PROPOSAL_FIELDS, validateProgrammeForm } from "@acmp/shared";
 import { parseStageTimestamp } from "@/common/services/stage-time";
@@ -53,12 +59,13 @@ export class SubmissionsService {
     private userRepository: Repository<User>,
     private notificationTriggers: NotificationTriggersService,
     private uploads: UploadService,
+    @Optional() private readonly evaluations?: EvaluationsService,
   ) {}
 
   // ============ Stage Operations ============
 
   async createStage(dto: CreateStageDto): Promise<Stage> {
-    if (await this.stageRepository.exists({ where: { cohortId: dto.cohortId, workflowKey: "team" } })) throw new BadRequestException("ATF cohorts use five fixed steps; edit their dates and instructions instead");
+    if (await this.stageRepository.exists({ where: { cohortId: dto.cohortId, workflowKey: "team" } })) throw new BadRequestException("ATF cohorts use six fixed steps; edit their dates and instructions instead");
     if (dto.evaluationCriteria) scoreAgainstRubric(dto.evaluationCriteria, dto.evaluationCriteria.map(item => ({ criterionId: item.id, score: 0 })));
     const stage = this.stageRepository.create({
       ...dto,
@@ -77,11 +84,17 @@ export class SubmissionsService {
     }
 
     if (!stage.workflowKey && await this.stageRepository.exists({ where: { cohortId: stage.cohortId, workflowKey: "team" } })) throw new BadRequestException("Historical stages are read-only");
-    if (stage.workflowKey && Object.keys(dto).some(key => !["deadline", "startDate", "instructions", "description", "evaluationCriteria", "allowLateSubmissions", ...(stage.workflowKey === "problem" ? ["requirements"] : [])].includes(key))) throw new BadRequestException("Only dates, instructions, late-submission policy and review criteria can change for fixed steps");
-    if (stage.workflowKey && dto.requirements && (Object.keys(dto.requirements).some(key => key !== "minimumConsultations") || !Number.isInteger(dto.requirements.minimumConsultations) || dto.requirements.minimumConsultations! < 0 || dto.requirements.minimumConsultations! > 100)) throw new BadRequestException("Set a consultation minimum between 0 and 100");
+    if (stage.workflowKey && Object.keys(dto).filter(key => (dto as any)[key] !== undefined).some(key => !["deadline", "startDate", "instructions", "description", ...(stage.workflowKey === "warmup" ? [] : ["evaluationCriteria"]), "allowLateSubmissions", ...(["problem", "warmup"].includes(stage.workflowKey || "") ? ["requirements"] : [])].includes(key))) throw new BadRequestException("Only dates, instructions, late-submission policy and review criteria can change for fixed steps");
+    if (stage.workflowKey === "problem" && dto.requirements && (Object.keys(dto.requirements).some(key => key !== "minimumConsultations") || !Number.isInteger(dto.requirements.minimumConsultations) || dto.requirements.minimumConsultations! < 0 || dto.requirements.minimumConsultations! > 100)) throw new BadRequestException("Set a consultation minimum between 0 and 100");
+    if (stage.workflowKey && dto.requirements === null) throw new BadRequestException("Stage requirements must be an object");
+    if (stage.workflowKey === "warmup" && dto.requirements) {
+      if (Object.keys(dto.requirements).some(key => key !== "exerciseUrl")) throw new BadRequestException("Only the warmup exercise URL can be configured");
+      if (dto.requirements.exerciseUrl !== undefined && (typeof dto.requirements.exerciseUrl !== "string" || dto.requirements.exerciseUrl.length > 2000)) throw new BadRequestException("Provide an HTTPS exercise URL up to 2000 characters");
+      if (dto.requirements.exerciseUrl) { try { const url = new URL(dto.requirements.exerciseUrl); if (url.protocol !== "https:" || url.username || url.password) throw new Error(); } catch { throw new BadRequestException("Provide an HTTPS exercise URL"); } }
+    }
     if (stage.workflowKey) await this.stageRepository.manager.query("SELECT id FROM cohorts WHERE id=$1 FOR UPDATE", [stage.cohortId]);
     Object.assign(stage, {
-      ...dto,
+      ...Object.fromEntries(Object.entries(dto).filter(([, value]) => value !== undefined)),
       startDate: dto.startDate === null ? null : dto.startDate ? parseStageTimestamp(dto.startDate) : stage.startDate,
       deadline: dto.deadline ? parseStageTimestamp(dto.deadline) : stage.deadline,
     });
@@ -100,7 +113,7 @@ export class SubmissionsService {
       throw new NotFoundException("Stage not found");
     }
 
-    if (stage.workflowKey) throw new BadRequestException("The five ATF steps cannot be deleted");
+    if (stage.workflowKey) throw new BadRequestException("The six ATF steps cannot be deleted");
     // Check for submissions
     const submissionCount = await this.submissionRepository.count({
       where: { stageId: id },
@@ -365,7 +378,19 @@ export class SubmissionsService {
       submission.githubUrl = team.githubRepoUrl;
       submission.content = { ...submission.content, briefId: team.briefId, schemaVersion: 1 };
     }
+    if (stage.workflowKey === "warmup") {
+      submission.content = { deploymentUrl: content.deploymentUrl, repositoryUrl: content.repositoryUrl, briefId: team.briefId, schemaVersion: 1 };
+      submission.githubUrl = content.repositoryUrl;
+      Object.assign(submission, { evaluatedAt: null, evaluatedBy: null, feedback: null, approvedAt: null, approvalNotes: null, rejectedAt: null, rejectionReason: null });
+    }
     const savedSubmission = await this.submissionRepository.save(submission);
+    if (stage.workflowKey === "warmup") {
+      const manager = this.submissionRepository.manager;
+      const id = randomUUID();
+      await manager.save(EvaluationJob, manager.create(EvaluationJob, { id, bullJobId: id, teamId: team.id, stageId: stage.id, cohortId: team.cohortId, status: EvaluationJobStatus.PENDING }));
+      if (this.evaluations) afterCommit(this, () => this.evaluations!.dispatchPendingJob(id));
+    }
+
 
     // If stage requires manual approval, notify staff
     if (stage.requiresManualApproval) {
@@ -385,12 +410,21 @@ export class SubmissionsService {
       if (content?.briefId && content.briefId !== team.briefId) throw new BadRequestException("The proposal must address the team's assigned brief");
       const errors = validateProgrammeForm(PROPOSAL_FIELDS, content || {}, final);
       if (errors.length) throw new BadRequestException(errors.join("; "));
+    } else if (stage.workflowKey === "warmup") {
+      await assertProposalSubmitted(this.teamRepository.manager, team);
+      const { report } = await assertProblemChosen(this.teamRepository.manager, team.id);
+      if (!report.canStartChallenge) throw new BadRequestException(report.challengeIssues.map(issue => issue.message).join("; "));
+      if (!stage.requirements.exerciseUrl) throw new BadRequestException("ATF has not configured the warmup exercise link yet");
+      if (final) {
+        try { if (typeof content?.deploymentUrl !== "string" || content.deploymentUrl.length > 2000) throw new Error(); const url = new URL(content.deploymentUrl); if (url.protocol !== "https:" || url.username || url.password || url.port && url.port !== "443") throw new Error(); } catch { throw new BadRequestException("Provide the public HTTPS URL of your deployed warmup web app"); }
+        if (typeof content?.repositoryUrl !== "string" || content.repositoryUrl.length > 500 || !/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/?$/.test(content?.repositoryUrl || "")) throw new BadRequestException("Provide the GitHub repository URL for your warmup app");
+      }
     } else if (stage.workflowKey === "build") {
       await assertProposalPassed(this.teamRepository.manager, team);
       await assertChallengeStarted(this.teamRepository.manager, team.id);
     } else if (stage.workflowKey) throw new BadRequestException("This step is completed by team membership, brief approval or staff review; it has no submission form");
     else {
-      if (await this.stageRepository.exists({ where: { cohortId: team.cohortId, workflowKey: "team" } })) throw new BadRequestException("Historical submissions are read-only; use the five ATF steps");
+      if (await this.stageRepository.exists({ where: { cohortId: team.cohortId, workflowKey: "team" } })) throw new BadRequestException("Historical submissions are read-only; use the six ATF steps");
       await assertChallengeStarted(this.teamRepository.manager, team.id);
     }
   }
@@ -576,8 +610,9 @@ export class SubmissionsService {
       throw new BadRequestException("Cannot evaluate a draft submission");
     }
 
+    if (submission.stage?.workflowKey === "warmup") throw new BadRequestException("Warmup results are recorded by AI evaluation");
     if (submission.stage?.workflowKey === "proposal") {
-      if (![SubmissionStatus.PENDING_APPROVAL, SubmissionStatus.EVALUATED, SubmissionStatus.LATE].includes(submission.status)) throw new BadRequestException("Submit the current proposal for review before scoring it");
+      if (![SubmissionStatus.SUBMITTED, SubmissionStatus.APPROVED, SubmissionStatus.PENDING_APPROVAL, SubmissionStatus.EVALUATED, SubmissionStatus.LATE].includes(submission.status)) throw new BadRequestException("Submit the current proposal for review before scoring it");
       if (!dto.criterionScores || Object.keys(dto.criterionScores).sort().join(",") !== "capacity,feasibility,impact,problem,responsible_ai,solution" || Object.values(dto.criterionScores).some(value => !Number.isFinite(value) || value < 0 || value > 5)) throw new BadRequestException("Score all six proposal criteria from 0 to 5");
       submission.feedback = { ...dto.feedback, proposalScores: dto.criterionScores };
     } else if (dto.score === undefined) throw new BadRequestException("A score is required");
@@ -613,7 +648,7 @@ export class SubmissionsService {
       .createQueryBuilder("submission")
       .leftJoinAndSelect("submission.stage", "stage")
       .leftJoinAndSelect("submission.team", "team")
-      .where("stage.requiresManualApproval = true");
+      .where("(stage.requiresManualApproval = true OR stage.workflowKey = :proposal)", { proposal: "proposal" });
 
     if (query.stageId) {
       qb.andWhere("submission.stageId = :stageId", { stageId: query.stageId });
@@ -649,6 +684,7 @@ export class SubmissionsService {
 
     // Allow approval for pending_approval status, or late submissions on stages that require approval
     const stage = await this.stageRepository.findOne({ where: { id: submission.stageId } });
+    if (stage?.workflowKey === "warmup") throw new BadRequestException("Warmup results are recorded by AI evaluation");
     const canApprove = 
       submission.status === SubmissionStatus.PENDING_APPROVAL ||
       (submission.status === SubmissionStatus.LATE && stage?.requiresManualApproval) || (stage?.workflowKey === "proposal" && submission.status === SubmissionStatus.EVALUATED);
@@ -663,7 +699,8 @@ export class SubmissionsService {
       if (submission.content.briefId !== team.briefId) throw new BadRequestException("The team brief changed; a new proposal is required");
       if (!report.canStartChallenge) throw new BadRequestException(report.challengeIssues.map(issue => issue.message).join("; "));
       if (!submission.evaluatedAt || !submission.feedback?.proposalScores) throw new BadRequestException("Score the six proposal criteria before approving");
-      await this.teamRepository.update(team.id, { challengeStartedAt: new Date(), status: "active" as any });
+      const warmupStage = await this.stageRepository.findOne({ where: { cohortId: team.cohortId, workflowKey: "warmup" } });
+      if (!warmupStage) await this.teamRepository.update(team.id, { challengeStartedAt: new Date(), status: "active" as any });
     }
     submission.status = SubmissionStatus.APPROVED;
     submission.approvedAt = new Date();
@@ -671,7 +708,6 @@ export class SubmissionsService {
     submission.approvalNotes = dto.approvalNotes;
 
     const savedSubmission = await this.submissionRepository.save(submission);
-
     // Notify team members
     await this.notifyTeamOfApprovalResult(savedSubmission, true, dto.approvalNotes);
 
@@ -688,9 +724,10 @@ export class SubmissionsService {
 
     // Allow rejection for pending_approval status, or late submissions on stages that require approval
     const stage = await this.stageRepository.findOne({ where: { id: submission.stageId } });
+    if (stage?.workflowKey === "warmup") throw new BadRequestException("Warmup results are recorded by AI evaluation");
     const canReject = 
       submission.status === SubmissionStatus.PENDING_APPROVAL ||
-      (submission.status === SubmissionStatus.LATE && stage?.requiresManualApproval) || (stage?.workflowKey === "proposal" && submission.status === SubmissionStatus.EVALUATED);
+      (submission.status === SubmissionStatus.LATE && stage?.requiresManualApproval) || (stage?.workflowKey === "proposal" && [SubmissionStatus.SUBMITTED, SubmissionStatus.APPROVED, SubmissionStatus.EVALUATED].includes(submission.status));
 
     if (!canReject) {
       throw new BadRequestException("Submission is not pending approval");
@@ -702,7 +739,6 @@ export class SubmissionsService {
     submission.rejectionReason = dto.rejectionReason;
 
     const savedSubmission = await this.submissionRepository.save(submission);
-
     // Notify team members
     await this.notifyTeamOfApprovalResult(savedSubmission, false, undefined, dto.rejectionReason);
 

@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/client";
 import { toast } from "sonner";
-import type { ParticipantLearningProfile, ParticipantMatchingProfile, BuildDeployAbility, MatchingRole, MatchingSector, MatchingTeamStatus, PARTICIPANT_PROFILE_IMPORT_FIELDS, PARTICIPANT_LEARNING_FIELDS } from "@acmp/shared";
+import type { BuilderAnswers, ParticipantLearningProfile, ParticipantMatchingProfile, BuildDeployAbility, MatchingRole, MatchingSector, MatchingTeamStatus, PARTICIPANT_PROFILE_IMPORT_FIELDS, PARTICIPANT_LEARNING_FIELDS } from "@acmp/shared";
 
 // Types
 export type ParticipantStatus =
@@ -140,6 +140,7 @@ export interface OnboardingPreferences {
 }
 
 export interface CompleteOnboardingDto {
+  builderProfile?: BuilderAnswers;
   profile: OnboardingProfile;
   skills: OnboardingSkills;
   preferences: OnboardingPreferences & {
@@ -512,4 +513,15 @@ export function useUpdateParticipantProgramme() {
   const cache = useQueryClient();
   return useMutation({ mutationFn: ({ id, ...body }: { id: string; programmeOptedOut: boolean; codeLabsCompleted: boolean; reason?: string }) => api.patch<Participant>(`/participants/${id}/programme-status`, body),
     onSuccess: () => { cache.invalidateQueries({ queryKey: participantKeys.all }); cache.invalidateQueries({ queryKey: ["teams"] }); toast.success("Programme status updated"); }, onError: (error: Error) => toast.error(error.message || "Could not update programme status") });
+}
+
+export function useConfirmBuilderProfile() {
+  const cache = useQueryClient();
+  return useMutation({
+    mutationFn: (answers: BuilderAnswers & { expectedUpdatedAt: string }) => api.patch<Participant>("/participants/me/builder-profile", answers),
+    onSuccess: participant => {
+      cache.setQueryData(participantKeys.current(), participant);
+      void cache.invalidateQueries({ predicate: query => ["participants", "teams", "team-workflow", "matching", "team-formation"].includes(String(query.queryKey[0])) });
+    },
+  });
 }

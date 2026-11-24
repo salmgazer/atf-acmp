@@ -69,10 +69,12 @@ test("password change keeps participants signed in through complete onboarding",
   expect(await page.evaluate(() => localStorage.getItem("auth_token"))).toBe("new-access-token");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Skills & GitHub" })).toBeVisible();
-  await page.getByRole("radio", { name: "Yes, confidently", exact: true }).check();
+  await page.getByLabel("Preferred programming language", { exact: true }).selectOption("JavaScript");
+  await page.getByLabel("Proficiency in your preferred language", { exact: true }).selectOption("Beginner");
+  for (const name of ["Development experience", "Testing experience", "Deployment experience"]) await page.getByLabel(name, { exact: true }).selectOption("yes");
   await page.getByRole("radio", { name: "I do not have an account yet", exact: true }).check();
   await page.getByText("Additional skills and interests (optional)", { exact: true }).click();
-  await page.getByText("Python", { exact: true }).click();
+  await page.getByRole("button", { name: "Python", exact: true }).click();
   await page.getByText("Education", { exact: true }).click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Preferred Sectors" })).toBeVisible();

@@ -76,7 +76,7 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     await db.getRepository(Cohort).update(cohort.id, { teamJoiningStageId: stages[0].id, learningCertificationStageId: stages[2].id });
     members = [];
     for (const index of [0, 1, 2]) {
-      const person = await db.getRepository(Participant).save({ participantId: randomUUID(), firstName: "Synthetic", lastName: `Member ${index}`, email: `${randomUUID()}@example.test`, country: "Ghana", cohortId: cohort.id, status: ParticipantStatus.READY, onboardingComplete: true, learningHalfwayReached: true, learningFinishedAllLessons: true, learningCertificateIssued: true, learningCertificateId: randomUUID(), learningCertificateDate: "2026-11-01", pythonSkill: "Intermediate", fieldOfStudy: index ? "Medicine" : "Computer Science" });
+      const person = await db.getRepository(Participant).save({ participantId: randomUUID(), firstName: "Synthetic", lastName: `Member ${index}`, email: `${randomUUID()}@example.test`, country: "Ghana", cohortId: cohort.id, status: ParticipantStatus.READY, onboardingComplete: true, learningHalfwayReached: true, learningFinishedAllLessons: true, learningCertificateIssued: true, learningCertificateId: randomUUID(), learningCertificateDate: "2026-11-01", developmentExperience: true, testingExperience: true, deploymentExperience: true, pythonSkill: "Intermediate", fieldOfStudy: index ? "Medicine" : "Computer Science" });
       await db.getRepository(ParticipantPreference).save({ participantId: person.id, buildDeployAbility: "confident", preferredRole: index ? "sector_specialist" : "builder", firstChoiceSector: "health", matchingProfileCompletedAt: new Date(), crossCountryWilling: false } as any);
       members.push(person);
     }
@@ -94,7 +94,7 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
 
   it("completes membership without a submission and locks downstream steps", async () => {
     const result = await workflow.progressForParticipant(members[0].id);
-    expect(result.steps.map(step => step.completed)).toEqual([true, false, false, false, false]);
+    expect(result.steps.map(step => step.completed)).toEqual([true, false, false, false, false, false]);
     await expect(submissions.saveDraft(members[0].id, { stageId: stages[3].id, content: {} })).rejects.toThrow("no submission form");
     await expect(submissions.saveDraft(members[0].id, { stageId: stages[2].id, content: {} })).rejects.toThrow("approved brief");
     expect(await db.getRepository(Submission).count({ where: { teamId: team.id } })).toBe(0);
@@ -143,13 +143,13 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     await expect(submissions.approveSubmission(proposal.id, randomUUID(), {})).rejects.toThrow("six proposal criteria");
     await submissions.evaluateSubmission(proposal.id, randomUUID(), { criterionScores: scores });
     await submissions.approveSubmission(proposal.id, randomUUID(), { approvalNotes: "Approved for building" });
-    expect((await workflow.progress(team.id)).steps.map(step => step.completed)).toEqual([true, true, true, true, false]);
+    expect((await workflow.progress(team.id)).steps.map(step => step.completed)).toEqual([true, true, true, true, true, false]);
     const files = [{ name: "Slides.pptx", url: `https://storage.example.test/submissions/${team.id}/documents/slides.pptx`, type: "application/vnd.openxmlformats-officedocument.presentationml.presentation", size: 1000 }];
     await expect(submissions.submit(members[0].id, { stageId: stages[4].id, fileUrls: [], videoUrl: "https://storage.example.test/video.mp4", content: { acceptApacheLicense: true } })).rejects.toThrow("PowerPoint");
     const final = await submissions.submit(members[0].id, { stageId: stages[4].id, fileUrls: files, videoUrl: "https://storage.example.test/video.mp4", content: { acceptApacheLicense: true } });
     expect(final.githubUrl).toBe(team.githubRepoUrl);
     expect(uploads.validateSubmissionVideo).toHaveBeenCalledWith(expect.any(String), team.id, 100, undefined, true);
-    expect((await workflow.progress(team.id)).steps[4].completed).toBe(true);
+    expect((await workflow.progress(team.id)).steps[5].completed).toBe(true);
   });
 
   it("denies a foreign stage, wrong brief, fake completion and final submission before review", async () => {

@@ -1526,6 +1526,7 @@ export class TeamsService {
       pythonSkill: participant.pythonSkill, gitSkill: participant.gitSkill, aiExperience: participant.aiExperience,
       githubUsername: username && GITHUB_USERNAME_PATTERN.test(username) ? username : null,
       skills: participant.skills || [], interests: participant.interests || [],
+      preferredLanguage: participant.preferredLanguage, otherLanguage: participant.otherLanguage, languageProficiency: participant.languageProficiency, developmentExperience: participant.developmentExperience, testingExperience: participant.testingExperience, deploymentExperience: participant.deploymentExperience,
       qualifiedBuilder: isQualifiedBuilder(participant), nonComputingStudy: hasNonComputingStudy(participant),
       matching: {
         preferredRole: preference.preferredRole, buildDeployAbility: preference.buildDeployAbility,

@@ -86,8 +86,9 @@ export function useMySubmissions() {
 }
 
 // Get my submission for a specific stage
-export function useMySubmissionForStage(stageId: string) {
+export function useMySubmissionForStage(stageId: string, poll = false) {
   return useQuery({
+    refetchInterval: query => poll && ["submitted", "late"].includes(query.state.data?.status || "") ? 5000 : false,
     queryKey: submissionKeys.myStage(stageId),
     queryFn: () => api.get<Submission | null>(`/submissions/my/stage/${stageId}`),
     enabled: !!stageId,
