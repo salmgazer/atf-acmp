@@ -170,3 +170,16 @@ test('beginner and intermediate participants are asked all three questions even 
   expect(state.builderWrites[0]).toMatchObject({ languageProficiency: 'Beginner', developmentExperience: true, testingExperience: true, deploymentExperience: true });
   await expect(page.getByText('Qualified builder', { exact: true })).toBeVisible();
 });
+
+
+test('participants with no programming experience can confirm No without selecting a language, and the empty choice stays saved', async ({ page, context }) => {
+  await setup(page, context, { needsReview: true }); const modal = page.getByRole('dialog');
+  await expect(modal).toBeVisible();
+  await modal.getByLabel('Preferred programming language', { exact: true }).selectOption('');
+  for (const name of ['Development experience', 'Testing experience', 'Deployment experience']) await modal.getByLabel(name, { exact: true }).selectOption('no');
+  await modal.getByRole('button', { name: 'Confirm my experience' }).click(); await expect(modal).toHaveCount(0);
+  await page.reload(); await expect(page.getByRole('button', { name: 'Edit builder experience' })).toBeVisible(); await expect(modal).toHaveCount(0);
+  await page.getByRole('button', { name: 'Edit builder experience' }).click();
+  await expect(modal.getByLabel('Preferred programming language', { exact: true })).toHaveValue('');
+  await expect(modal.getByLabel('Proficiency in your preferred language', { exact: true })).toHaveValue('');
+});
