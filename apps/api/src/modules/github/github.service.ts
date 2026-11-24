@@ -128,7 +128,15 @@ export class GitHubService {
   }
 
   async getSourceSamples(owner: string, repo: string, tree: GitHubTreeItem[]): Promise<string[]> {
-    const files = tree.filter(file => file.type === "blob" && /\.(ts|tsx|js|jsx|py|go|rs|java|rb|cs|cpp|c)$/.test(file.path) && !/(node_modules|vendor|dist|build|package-lock)/.test(file.path) && (file.size || 0) < 50000).slice(0, 3);
+    const sourceExtension = /\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|rb|cs|cpp|c|h|php|r|sql|dart|kt|kts|swift|ex|exs|erl|clj|cljs|scala|fs|fsx|jl|lua|pl|elm|hs|ml|vue|svelte|astro|html)$/i;
+    const priority = (path: string) => {
+      if (/(?:^|[/.])(test|tests|spec|specs|__tests__)(?:[/.]|$)/i.test(path)) return -10;
+      if (/(?:config|eslint|prettier|webpack|rollup|babel|jest|tailwind|postcss|vite)(?:[./-]|$)/i.test(path)) return -20;
+      return /(?:^|\/)(?:src|app|lib|pages|routes|components)\//i.test(path) ? 10 : /(?:^|\/)(?:app|main|index|server|todo)\./i.test(path) ? 5 : 0;
+    };
+    const files = tree.filter(file => file.type === "blob" && sourceExtension.test(file.path) &&
+      !/(?:^|\/)(?:node_modules|vendor|dist|build|coverage|\.git)(?:\/|$)/.test(file.path) && (file.size || 0) < 50000)
+      .sort((a, b) => priority(b.path) - priority(a.path) || a.path.localeCompare(b.path)).slice(0, 3);
     return Promise.all(files.map(async file => {
       const item = await this.fetchGitHub<{ encoding: string; content: string }>("/repos/" + encodeURIComponent(owner) + "/" + encodeURIComponent(repo) + "/contents/" + file.path.split("/").map(encodeURIComponent).join("/"));
       if (item.encoding !== "base64") throw new Error("Unsupported repository content encoding");
