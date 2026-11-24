@@ -179,7 +179,7 @@ export class EvaluationProcessor extends WorkerHost {
     let passed = false, summary = "", result: any;
     try {
       const deployment = await inspectWarmupDeployment(submission.content.deploymentUrl);
-      const code = await this.analyzeGitHub(submission.githubUrl || "");
+      const code = await this.analyzeGitHub(submission.githubUrl || "", true);
       if (!code?.sampleCode?.length) throw new WarmupEvidenceError("The warmup repository must be accessible and contain source code for AI review");
       await this.updateJobProgress(jobId, 60, EVALUATION_STEPS.GENERATE_SCORES);
       result = await this.geminiService.evaluateSubmission({ teamName: team.name, stageName: stage.name, stageNumber: stage.number,
@@ -234,7 +234,7 @@ export class EvaluationProcessor extends WorkerHost {
     });
   }
 
-  private async analyzeGitHub(githubUrl: string): Promise<CodeAnalysisData | undefined> {
+  private async analyzeGitHub(githubUrl: string, publicOnly = false): Promise<CodeAnalysisData | undefined> {
     try {
       const parsed = this.githubService.parseGitHubUrl(githubUrl);
       if (!parsed) {
@@ -246,7 +246,9 @@ export class EvaluationProcessor extends WorkerHost {
       const repoName = repo.replace(/\.git$/, "");
 
       // Fetch repository data
+      if (publicOnly) this.githubService.clearRepositoryCache(owner, repoName);
       const repoData = await this.githubService.getRepositoryInfo(owner, repoName);
+      if (publicOnly && repoData.isPrivate) throw new WarmupEvidenceError("The warmup repository must be public so it can be reviewed");
       const commits = await this.githubService.getRecentCommits(owner, repoName, 30);
       const languages = await this.githubService.getLanguages(owner, repoName);
       const readme = await this.githubService.getReadme(owner, repoName);
@@ -268,6 +270,10 @@ export class EvaluationProcessor extends WorkerHost {
       };
     } catch (error: any) {
       this.logger.warn(`Failed to analyze GitHub: ${error.message}`);
+      if (publicOnly) {
+        if (error.message === "Repository not found or is private") throw new WarmupEvidenceError("The warmup repository must be public and available for review");
+        throw error;
+      }
       return undefined;
     }
   }
