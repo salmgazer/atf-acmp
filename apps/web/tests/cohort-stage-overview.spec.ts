@@ -1,8 +1,8 @@
 import { test, expect, type Page, type BrowserContext } from '@playwright/test';
 
 const cohortId = 'cohort-stage-overview';
-const names = ['Form a team', 'Choose a problem', 'Submit a proposal', 'Pass evaluation', 'Build and submit'];
-const fixed = ['team', 'problem', 'proposal', 'evaluation', 'build'].map((key, index) => ({
+const names = ['Form a team', 'Choose a problem', 'Submit a proposal', 'Team warmup', 'Pass evaluation', 'Build and submit'];
+const fixed = ['team', 'problem', 'proposal', 'warmup', 'evaluation', 'build'].map((key, index) => ({
   id: `fixed-${key}`, cohortId, number: index + 1, workflowKey: key, name: names[index], type: 'mixed',
   deadline: '2027-03-26T23:59:00Z', isActive: true, requirements: {}, stats: { submitted: 0, late: 0, evaluated: 0, draft: 0, total: 0 },
 }));
@@ -38,16 +38,16 @@ async function setup(page: Page, context: BrowserContext, stages: unknown[]) {
   return writes;
 }
 
-test('cohort overview shows five programme stages in order while Manage retains historical submissions', async ({ page, context }) => {
-  const stages = [historical[0], fixed[4], fixed[0], historical[3], fixed[2], historical[1], fixed[1], historical[2], fixed[3]];
+test('cohort overview shows six programme stages in order while Manage retains historical submissions', async ({ page, context }) => {
+  const stages = [historical[0], fixed[5], fixed[4], fixed[0], historical[3], fixed[2], historical[1], fixed[1], historical[2], fixed[3]];
   const writes = await setup(page, context, stages);
   await page.goto(`/staff/cohorts/${cohortId}`);
   const overview = page.getByRole('region', { name: 'Cohort stages', exact: true });
-  await expect(overview.getByRole('heading', { name: 'Stages (5)', exact: true })).toBeVisible();
+  await expect(overview.getByRole('heading', { name: 'Stages (6)', exact: true })).toBeVisible();
   await expect(overview.getByRole('heading', { level: 3 })).toHaveText(names);
   for (const old of historical) await expect(overview.getByText(old.name, { exact: true })).toHaveCount(0);
   await overview.getByRole('link', { name: 'Manage', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '5. Build and submit', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '6. Build and submit', exact: true })).toBeVisible();
   await page.getByText('Historical stages — submissions preserved', { exact: true }).click();
   await expect(page.getByText('Stage 1:', { exact: false })).toContainText('2 submissions');
   expect(writes).toEqual([]);

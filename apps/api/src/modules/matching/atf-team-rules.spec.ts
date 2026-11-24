@@ -3,15 +3,15 @@ import { compareMatchingCandidates, formAtfTeams } from "./atf-team-matcher";
 const now = new Date("2026-11-07T12:00:00Z");
 const cohort = { id: "cohort", status: "active", groups: ["A", "B"], teamRuleDeadlines: { joining: "2026-11-13T23:59:59.999Z", certification: "2026-11-27T23:59:59.999Z" } };
 const person = (id: string, changes: Partial<TeamRuleParticipant> = {}): TeamRuleParticipant => ({ id, cohortId: cohort.id, group: "A", country: "Ghana", status: "ready", onboardingComplete: true, learningHalfwayReached: true, fieldOfStudy: "Computer Science", pythonSkill: "Beginner", preference: { matchingProfileCompletedAt: now.toISOString(), crossCountryWilling: false, buildDeployAbility: "with_support", firstChoiceSector: "health", backupSector: "education", preferredRole: "sector_specialist", teamStatus: "need_team" }, ...changes });
-const builder = (id: string) => person(id, { pythonSkill: "Intermediate — I can write functions and work with libraries", preference: { ...person(id).preference, buildDeployAbility: "confident", preferredRole: "builder" } });
+const builder = (id: string) => person(id, { developmentExperience: true, testingExperience: true, deploymentExperience: true, pythonSkill: "Intermediate — I can write functions and work with libraries", preference: { ...person(id).preference, buildDeployAbility: "confident", preferredRole: "builder" } });
 const baseline = () => [builder("builder"), person("specialist", { fieldOfStudy: "Medicine" }), person("impact", { preference: { ...person("impact").preference, preferredRole: "business_impact_lead" } })];
 const report = (members = baseline(), extra = {}) => evaluateTeamRules(cohort, members, { competitionCountry: "Ghana", now, ...extra });
 
 describe("ATF hard rules and matching priorities", () => {
-  it.each(["Intermediate", "Advanced", "Expert"])("qualifies a confident %s Python builder", level => expect(isQualifiedBuilder({ ...builder("b"), pythonSkill: level })).toBe(true));
-  it("requires confident build/deploy ability or separately verified CodeLabs evidence", () => {
+  it.each(["Beginner", "Intermediate", "Advanced", "Expert"])("qualifies a builder regardless of %s proficiency", level => expect(isQualifiedBuilder({ ...builder("b"), preferredLanguage: "TypeScript", languageProficiency: level, pythonSkill: "Beginner", builderConfirm: false })).toBe(true));
+  it("requires all three experiences and does not substitute Python, role or CodeLabs evidence", () => {
     expect(isQualifiedBuilder(person("p", { pythonSkill: "Expert" }))).toBe(false);
-    expect(isQualifiedBuilder(person("p", { codeLabsCompleted: true }))).toBe(true);
+    expect(isQualifiedBuilder(person("p", { codeLabsCompleted: true }))).toBe(false);
     expect(isQualifiedBuilder(person("p"))).toBe(false);
   });
   it.each(["Computer Science", "Information Technology", "Software Engineering", "Computer Engineering", "IT", "", "N/A", "Unknown"])("does not count %s as a confirmed non-computing field", field => expect(hasNonComputingStudy(person("p", { fieldOfStudy: field }))).toBe(false));
@@ -24,7 +24,7 @@ describe("ATF hard rules and matching priorities", () => {
   it("blocks opt-outs, missing halfway status, incomplete matching and missing hard role coverage", () => {
     for (const changes of [{ programmeOptedOut: true }, { learningHalfwayReached: false }, { onboardingComplete: false }]) expect(report([{ ...baseline()[0], ...changes }, ...baseline().slice(1)]).canRegister).toBe(false);
     expect(report(baseline().map(p => ({ ...p, fieldOfStudy: "Computer Science" }))).canRegister).toBe(false);
-    expect(report(baseline().map(p => ({ ...p, pythonSkill: "Beginner" }))).canRegister).toBe(false);
+    expect(report(baseline().map(p => ({ ...p, developmentExperience: false }))).canRegister).toBe(false);
   });
   it("normalizes country codes and requires every cross-country member's opt-in while retaining group boundaries", () => {
     expect(report([{ ...baseline()[0], country: "GH" }, ...baseline().slice(1)]).canRegister).toBe(true);

@@ -1,3 +1,4 @@
+import { EvaluationJob } from "@/database/entities/evaluation.entity";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
@@ -10,7 +11,7 @@ import { TeamBriefDetails } from "@/database/entities/team-brief-details.entity"
 import { Stage, Submission } from "@/database/entities/stage.entity";
 import { Vertical } from "@/database/entities/vertical.entity";
 import { GitHubAnalysis } from "@/database/entities/github-analysis.entity";
-import { assertProposalPassed } from "@/common/services/team-workflow";
+import { assertProposalPassed, warmupIsPassed } from "@/common/services/team-workflow";
 import { JournalEntry } from "@/database/entities/journal.entity";
 import { teamRuleContext } from "@/common/services/team-rules";
 import { UploadService } from "@/common/services/upload.service";
@@ -48,8 +49,12 @@ export class TeamWorkflowService {
     const problemChosen = !!team.registeredAt && !!team.briefId && team.brief?.status === BriefStatus.APPROVED;
     const proposalSubmitted = !!proposal?.submittedAt && proposal.status !== "draft" && proposal.status !== "rejected" && proposal.content.briefId === team.briefId;
     const learningComplete = !report.challengeIssues.some(issue => ["certificate", "certificate_date", "certificate_deadline"].includes(issue.code)) && members.every(member => member.learningFinishedAllLessons && member.learningCertificateIssued && member.learningCertificateId?.trim());
-    const passed = !!proposal?.approvedAt && ["approved", "evaluated"].includes(proposal.status) && proposal.content.briefId === team.briefId;
-    const completed = [true, problemChosen, proposalSubmitted && learningComplete, passed, !!final?.submittedAt && final.content.briefId === team.briefId && !["draft", "rejected"].includes(final.status)];
+    const warmupStage = stages.find(stage => stage.workflowKey === "warmup");
+    const warmup = submissions.find(submission => submission.stageId === warmupStage?.id);
+    const warmupJob = warmup && await this.manager.findOne(EvaluationJob, { where: { teamId, stageId: warmupStage!.id }, order: { createdAt: "DESC" } });
+    const warmupPassed = warmupIsPassed(warmup, warmupStage, team);
+    const passed = warmupStage ? proposalSubmitted && warmupPassed : !!proposal?.approvedAt && ["approved", "evaluated"].includes(proposal.status) && proposal.content.briefId === team.briefId;
+    const completed = [true, problemChosen, proposalSubmitted && learningComplete, warmupStage ? warmupPassed : passed, passed, !!final?.submittedAt && final.content.briefId === team.briefId && !["draft", "rejected"].includes(final.status)];
     const lastJournal = await this.manager.findOne(JournalEntry, { where: { teamId }, order: { updatedAt: "DESC" } });
     const analysis = await this.manager.findOne(GitHubAnalysis, { where: { teamId }, order: { analyzedAt: "DESC" } });
     const lastPush = Date.parse(analysis?.metrics?.lastPushedAt || "");
@@ -59,6 +64,7 @@ export class TeamWorkflowService {
       team: { id: team.id, name: team.name, briefId: team.briefId, briefTitle: team.brief?.title, briefPreference: team.briefPreference, registered: !!team.registeredAt, githubRepoUrl: team.githubRepoUrl },
       ownBrief: ownBrief ? { id: ownBrief.id, title: ownBrief.title, status: ownBrief.status, reviewFeedback: ownBrief.reviewFeedback } : null,
       resourcesIssuedAt: team.programmeResourcesBriefId === team.briefId ? team.programmeResourcesIssuedAt : null,
+      warmup: warmup ? { id: warmup.id, status: warmup.status, jobStatus: warmupJob?.status, result: warmup.feedback?.warmup, rejectionReason: warmup.rejectionReason } : null,
       learningComplete, eligibilityIssues: report.challengeIssues,
       inactiveFor14Days: passed && report.canStartChallenge && !final?.submittedAt && activity > 0 && Date.now() - activity >= 14 * 86400000,
       lastBuildActivityAt: activity ? new Date(activity).toISOString() : null,
@@ -156,7 +162,7 @@ export class TeamWorkflowService {
       (SELECT max(j.updated_at) FROM journal_entries j WHERE j.team_id=t.id AND j.deleted_at IS NULL),
       (SELECT max(x.updated_at) FROM submissions x JOIN stages s ON s.id=x.stage_id WHERE x.team_id=t.id AND s.workflow_key='build' AND x.deleted_at IS NULL)) AS "lastActivityAt"
       FROM teams t JOIN stages p ON p.cohort_id=t.cohort_id AND p.workflow_key='proposal' AND p.deleted_at IS NULL
-      JOIN submissions proposal ON proposal.team_id=t.id AND proposal.stage_id=p.id AND proposal.approved_at IS NOT NULL AND proposal.deleted_at IS NULL
+      JOIN submissions proposal ON proposal.team_id=t.id AND proposal.stage_id=p.id AND proposal.submitted_at IS NOT NULL AND proposal.deleted_at IS NULL
       WHERE t.cohort_id=$1 AND t.deleted_at IS NULL AND t.status='active' AND proposal.content->>'briefId'=t.brief_id::text
       AND NOT EXISTS(SELECT 1 FROM submissions x JOIN stages s ON s.id=x.stage_id WHERE x.team_id=t.id AND s.workflow_key='build' AND x.submitted_at IS NOT NULL AND x.status<>'rejected' AND x.deleted_at IS NULL)
       AND GREATEST(t.challenge_started_at, (SELECT max(j.updated_at) FROM journal_entries j WHERE j.team_id=t.id AND j.deleted_at IS NULL),

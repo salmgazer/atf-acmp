@@ -120,6 +120,14 @@ export class Participant extends BaseEntity {
   @Column({ name: "education_level", type: "varchar", length: 150, nullable: true }) educationLevel: string | null;
   @Column({ name: "current_affiliation", type: "varchar", length: 150, nullable: true }) currentAffiliation: string | null;
   @Column({ name: "field_of_study", type: "varchar", length: 255, nullable: true }) fieldOfStudy: string | null;
+  @Column({ name: "preferred_language", type: "varchar", nullable: true }) preferredLanguage: string | null;
+  @Column({ name: "other_language", type: "varchar", nullable: true }) otherLanguage: string | null;
+  @Column({ name: "language_proficiency", type: "varchar", nullable: true }) languageProficiency: string | null;
+  @Column({ name: "development_experience", type: "boolean", nullable: true }) developmentExperience: boolean | null;
+  @Column({ name: "testing_experience", type: "boolean", nullable: true }) testingExperience: boolean | null;
+  @Column({ name: "deployment_experience", type: "boolean", nullable: true }) deploymentExperience: boolean | null;
+  @Column({ name: "builder_confirm", default: false }) builderConfirm: boolean;
+
   @Column({ name: "python_skill", type: "varchar", length: 255, nullable: true }) pythonSkill: string | null;
   @Column({ name: "git_skill", type: "varchar", length: 255, nullable: true }) gitSkill: string | null;
   @Column({ name: "ai_experience", type: "varchar", length: 255, nullable: true }) aiExperience: string | null;

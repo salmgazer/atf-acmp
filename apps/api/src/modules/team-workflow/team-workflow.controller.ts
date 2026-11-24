@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Request, UseGuards, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Request, UseGuards, UseInterceptors } from "@nestjs/common";
 import { Roles } from "@/common/decorators/roles.decorator";
 import { RolesGuard } from "@/auth/guards/roles.guard";
 import { JwtAuthGuard } from "@/auth/guards/jwt-auth.guard";
@@ -14,7 +14,11 @@ import { AuditAction } from "@/database/entities/audit-log.entity";
 @Roles(Role.PARTICIPANT)
 export class TeamWorkflowController {
   constructor(private readonly workflow: TeamWorkflowService) {}
-  @Get() progress(@Request() req: any) { return this.workflow.progressForParticipant(req.user.id); }
+  @Get() async progress(@Request() req: any, @Query("version") version?: string) {
+    const progress = await this.workflow.progressForParticipant(req.user.id);
+    // Keep already-loaded clients usable while API and web roll out in sequence.
+    return version === "2" ? progress : { ...progress, steps: progress.steps.filter(step => step.key !== "warmup").map((step, index) => ({ ...step, number: index + 1 })) };
+  }
   @Get("brief") brief(@Request() req: any) { return this.workflow.ownBrief(req.user.id); }
   @Post("brief") save(@Request() req: any, @Body() dto: SaveTeamBriefDto) { return this.workflow.saveOwnBrief(req.user.id, dto); }
 }

@@ -12,8 +12,9 @@ const unlockMessages: Record<WorkflowStep["key"], string> = {
   team: "Form or join a team to begin.",
   problem: "Form or join a team first.",
   proposal: "Available once your team's problem brief is approved and assigned.",
-  evaluation: "Available after proposal submission and all members complete learning.",
-  build: "Available after ATF approves your proposal and learning checks pass.",
+  warmup: "Available after proposal submission and all members complete learning.",
+  evaluation: "Requires a submitted proposal and a successfully deployed warmup web app.",
+  build: "Available after your proposal is submitted, the warmup passes AI evaluation and learning checks pass.",
 };
 
 export function workflowStepState(step: WorkflowStep) {
@@ -21,7 +22,7 @@ export function workflowStepState(step: WorkflowStep) {
   const locked = !step.completed && (step.status === "locked" || opensLater);
   return {
     locked,
-    label: step.completed ? "Completed" : locked ? "Upcoming · Locked" : step.key === "evaluation" ? "Awaiting ATF review" : "In progress",
+    label: step.completed ? "Completed" : locked ? "Upcoming · Locked" : step.key === "evaluation" ? "Awaiting evaluation" : "In progress",
     explanation: opensLater ? `Opens ${formatUtcDeadline(step.startDate)}` : unlockMessages[step.key],
   };
 }
@@ -29,7 +30,7 @@ export function workflowStepState(step: WorkflowStep) {
 function stepHref(step: WorkflowStep, progress: TeamWorkflowProgress) {
   if (step.key === "team") return "/participant/team";
   if (step.key === "problem") return progress.team?.briefPreference === "own" ? "/participant/briefs/own" : "/participant/briefs";
-  if ((step.key === "proposal" || step.key === "build") && step.stageId) return `/participant/submissions/${step.stageId}`;
+  if ((step.key === "proposal" || step.key === "warmup" || step.key === "build") && step.stageId) return `/participant/submissions/${step.stageId}`;
   return "/participant/submissions";
 }
 
@@ -38,11 +39,11 @@ export function ProgrammeRoadmap({ progress }: { progress: TeamWorkflowProgress 
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div>
         <h2 className="font-semibold">Your programme roadmap</h2>
-        <p className="mt-1 text-sm text-muted-foreground">All five stages, from forming your team to submitting your MVP.</p>
+        <p className="mt-1 text-sm text-muted-foreground">All six stages, from forming your team to submitting your MVP.</p>
       </div>
       <Link href="/participant/submissions" className="inline-flex items-center gap-1 text-sm text-primary hover:underline">View details<ChevronRight aria-hidden="true" className="h-4 w-4" /></Link>
     </div>
-    <ol className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+    <ol className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {progress.steps.map(step => {
         const state = workflowStepState(step);
         const Icon = step.completed ? CheckCircle : state.locked ? Lock : Clock;

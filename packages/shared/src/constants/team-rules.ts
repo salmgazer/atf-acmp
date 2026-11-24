@@ -1,9 +1,10 @@
+import type { BuilderProfile } from "./builder-profile";
 const COUNTRY_NAMES: Record<string, string> = { GH: "Ghana", NG: "Nigeria", KE: "Kenya", ZA: "South Africa" };
 import type { ParticipantMatchingProfile, MatchingSector } from "./participant-matching";
 
 export const ATF_TEAM_MIN = 3;
 export const ATF_TEAM_MAX = 5;
-export interface TeamRuleParticipant {
+export interface TeamRuleParticipant extends BuilderProfile {
   id: string; country: string; cohortId: string; group?: string | null; status?: string; onboardingComplete?: boolean;
   programmeOptedOut?: boolean; codeLabsCompleted?: boolean; pythonSkill?: string | null; fieldOfStudy?: string | null;
   gender?: string | null; institution?: string | null; learningHalfwayReached?: boolean | null;
@@ -26,8 +27,8 @@ export const normalizeTeamCountry = (value?: string | null) => {
   const text = (value || "").trim();
   return Object.entries(COUNTRY_NAMES).find(([code, name]) => code.toLowerCase() === text.toLowerCase() || name.toLowerCase() === text.toLowerCase())?.[1] || text;
 };
-export const isQualifiedBuilder = (p: TeamRuleParticipant) => p.codeLabsCompleted === true ||
-  (/^(intermediate|advanced|expert)\b/i.test((p.pythonSkill || "").trim()) && p.preference?.buildDeployAbility === "confident");
+export const isQualifiedBuilder = <T extends BuilderProfile>(p: T) =>
+  p.developmentExperience === true && p.testingExperience === true && p.deploymentExperience === true;
 export const hasNonComputingStudy = (p: TeamRuleParticipant) => {
   const study = (p.fieldOfStudy || "").trim();
   return !!study && !/^(n\/?a|unknown|not specified|not provided|none|other|prefer not to say)$/i.test(study)
@@ -75,7 +76,7 @@ export function evaluateTeamRules(cohort: TeamRuleCohort, members: TeamRuleParti
   if (!joinDeadline || !Number.isFinite(Date.parse(joinDeadline))) add("joining_stage", "Staff must select a team-joining deadline stage for this cohort");
   else if (!options.registeredAt && now.getTime() > Date.parse(joinDeadline)) add("deadline", "The team joining and registration deadline has passed");
   const builderCount = members.filter(isQualifiedBuilder).length, nonComputingCount = members.filter(hasNonComputingStudy).length;
-  if (!builderCount) add("builder", "Include at least one qualified builder: Intermediate/Advanced/Expert Python with confident build/deploy ability, or staff-verified CodeLabs completion");
+  if (!builderCount) add("builder", "Include at least one qualified builder with development, testing and deployment experience in their preferred programming language");
   if (!nonComputingCount) add("non_computing", "Include at least one member with a confirmed field of study outside Computer Science, IT and Software Engineering");
   if (!canShareTeam(members)) add("group_country", "Members must share a cohort group; every member of a cross-country team must have opted in");
   const countries = [...new Set(members.map(p => normalizeTeamCountry(p.country)).filter(Boolean))];

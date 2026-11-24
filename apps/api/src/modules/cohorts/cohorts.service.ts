@@ -184,13 +184,13 @@ export class CohortsService {
   private async createDefaultStages(cohortId: string, existingCohort?: Cohort): Promise<void> {
     const cohort = existingCohort || await this.cohortRepository.findOne({ where: { id: cohortId } });
     const d = cohort?.deadlines || {} as Cohort["deadlines"];
-    const configured = [d.teamFormationEnd, d.briefSelectionEnd, d.learningCertificationEnd || d.stage1End, d.stage2End, d.stage3End || d.demoDay];
+    const configured = [d.teamFormationEnd, d.briefSelectionEnd, d.learningCertificationEnd || d.stage1End, d.stage2End, d.stage2End, d.stage3End || d.demoDay];
     const stages = this.defaultStages.map((step, index) => this.stageRepository.create({
       cohortId, number: step.number, name: step.name, workflowKey: step.key,
-      description: step.key === "evaluation" ? "ATF reviews proposals; no participant action is required." : step.name,
+      description: step.key === "evaluation" ? "A submitted proposal and successfully evaluated warmup unlock building; no separate participant action is required." : step.name,
       type: StageType.MIXED, deadline: configured[index] ? new Date(configured[index]!) : new Date(Date.now() + 30 * (index + 1) * 86400000),
       weightPercentage: 0, isActive: true, allowLateSubmissions: false, latePenaltyPercentage: 0,
-      sortOrder: step.number, requiresManualApproval: step.key === "proposal",
+      sortOrder: step.number, requiresManualApproval: false, requiresAiEvaluation: step.key === "warmup",
       requirements: step.key === "build" ? { documentRequired: true, githubRequired: true, videoRequired: true, videoMaxSize: 100 } : {},
     }));
     const saved = await this.stageRepository.save(stages);
