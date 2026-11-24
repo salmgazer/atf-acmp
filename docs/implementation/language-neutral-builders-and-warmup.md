@@ -7,7 +7,7 @@
 - [x] Six programme steps, with Team warmup immediately after Submit a proposal, shown on the dashboard and submissions page.
 - [x] Cohort configuration for warmup instructions, exercise URL and dates. Existing stage IDs, deadlines, learning/registration bindings and submissions are preserved.
 - [x] Team leads/co-leads submit a public HTTPS deployment and a separate warmup GitHub repository. Every member must meet the learning and team rules first.
-- [x] AI evaluation uses an independently fetched live HTML page and repository source evidence. Private/internal addresses, unsafe redirects, oversized responses and stale results cannot unlock the build stage.
+- [x] AI evaluation uses an independently fetched live HTML page and repository source evidence. Private/internal addresses, unsafe redirects, oversized responses and stale results cannot unlock the build stage. Source sampling supports PHP, Dart, R, SQL, Kotlin, Swift, Elixir and common web languages, and prioritizes application code over configuration/test files.
 - [x] Submitted proposal plus passed warmup unlocks evaluation/build progression. Proposal scoring is available for staff feedback but is not an extra passing requirement.
 - [x] A PostgreSQL evaluation-job record is saved in the submission transaction; Redis enqueue failures remain pending for reconciliation. Failed evaluations are visible to staff for retry.
 - [x] Final local regression and production-build verification (215 browser tests; full API regressions plus targeted language-mapping tests).
