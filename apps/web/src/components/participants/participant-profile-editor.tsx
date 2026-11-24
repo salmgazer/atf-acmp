@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-const fields = [["country", "Country of residence", 255], ["city", "City", 150], ["locationType", "Location type", 150], ["currentAffiliation", "Current affiliation", 150], ["pythonSkill", "Python skill", 255], ["gitSkill", "Git skill", 255], ["aiExperience", "AI experience", 255], ["githubUsername", "GitHub username", 39]] as const;
+const fields = [["country", "Country of residence", 255], ["city", "City", 150], ["locationType", "Location type", 150], ["currentAffiliation", "Current affiliation", 150], ["gitSkill", "Git skill", 255], ["aiExperience", "AI experience", 255], ["githubUsername", "GitHub username", 39]] as const;
 type Draft = Record<typeof fields[number][0], string>;
 const initial = (p: Participant) => Object.fromEntries(fields.map(([field]) => [field, field === "country" ? normalizeTeamCountry(p.country) : p[field] || ""])) as Draft;
 

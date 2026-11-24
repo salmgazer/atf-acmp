@@ -9,7 +9,7 @@ describe("ATF team formation previews", () => {
   const cohort: any = { id: "cohort", name: "ATF cohort", status: "active", groups: ["A", "B"], teamSizeMin: 3, teamSizeMax: 5, teamJoiningStageId: "join-stage", learningCertificationStageId: "certificate-stage" };
   let service: TeamFormationService, teams: any, members: any, cohorts: any, people: any, preferences: any, briefs: any, query: any;
   const data = new Map<string, any>();
-  const person = (id: string, group = "A", country = "Ghana") => ({ id, participantId: `LMS-${id}`, firstName: "Example", lastName: id, country, cohortId: "cohort", group, status: "ready", onboardingComplete: true, learningHalfwayReached: true, pythonSkill: "Intermediate", fieldOfStudy: "Medicine", skills: ["Python"], interests: [], createdAt: new Date() });
+  const person = (id: string, group = "A", country = "Ghana") => ({ id, participantId: `LMS-${id}`, firstName: "Example", lastName: id, country, cohortId: "cohort", group, status: "ready", onboardingComplete: true, learningHalfwayReached: true, developmentExperience: true, testingExperience: true, deploymentExperience: true, pythonSkill: "Intermediate", fieldOfStudy: "Medicine", skills: ["Python"], interests: [], createdAt: new Date() });
   const preference = (id: string, willing = false) => ({ participantId: id, buildDeployAbility: "confident", preferredRole: "builder", firstChoiceSector: "health", backupSector: "education", teamStatus: "need_team", matchingProfileCompletedAt: new Date(), crossCountryWilling: willing, briefRankings: [] });
   const load = (rows: any[], prefs = rows.map(p => preference(p.id))) => { query.getMany.mockResolvedValue(rows); preferences.find.mockResolvedValue(prefs); };
   beforeEach(() => {
@@ -48,12 +48,12 @@ describe("ATF team formation previews", () => {
     load(rows, rows.map(p => preference(p.id, true))); expect((await service.runTeamFormation("cohort")).proposedTeams[0].isCrossCountry).toBe(true);
   });
   it("does not mistake technical skill tags for a qualified builder", async () => {
-    const rows = [person("a"), person("b"), person("c")].map(p => ({ ...p, pythonSkill: "Beginner", skills: ["Python", "JavaScript"] }));
+    const rows = [person("a"), person("b"), person("c")].map(p => ({ ...p, developmentExperience: false, testingExperience: false, deploymentExperience: false, pythonSkill: "Beginner", skills: ["Python", "JavaScript"] }));
     load(rows); expect((await service.runTeamFormation("cohort")).proposedTeams).toHaveLength(0);
   });
   it("leaves role/mix guidance nonblocking and produces a current-policy cache receipt", async () => {
     load([person("a"), person("b"), person("c")]); const preview = await service.runTeamFormation("cohort");
-    expect(preview.policyVersion).toBe("atf-2026-v5"); expect(preview.proposedTeams[0].eligibility).toMatchObject({ canRegister: true, femaleCount: 0 });
+    expect(preview.policyVersion).toBe("atf-2026-v6"); expect(preview.proposedTeams[0].eligibility).toMatchObject({ canRegister: true, femaleCount: 0 });
     expect(await service.getTeamFormationPreview("cohort")).toEqual(preview); await service.clearFormationPreviewCache("cohort"); expect(await service.getTeamFormationPreview("cohort")).toBeNull();
   });
   it.each(["old", "atf-2026-v4"])("rejects cached previews created before the membership fix (%s)", async policyVersion => {

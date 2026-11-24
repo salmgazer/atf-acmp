@@ -1,3 +1,5 @@
+import { validateBuilderProfile } from "@acmp/shared";
+import { ConfirmBuilderProfileDto } from "./dto/builder-profile.dto";
 import { isPoolBrief } from "@/common/services/team-workflow";
 import { SocketSessionsService } from "@/auth/socket-sessions.service";
 import { applyProgrammeOptOut } from "@/common/services/team-rules";
@@ -659,6 +661,11 @@ export class ParticipantsService {
     participant.country = country;
     participant.githubAccountStatus = dto.profile.githubAccountStatus;
     participant.githubUsername = dto.profile.githubAccountStatus === "has_account" ? dto.profile.githubUsername!.trim() : null;
+    if (dto.builderProfile) {
+      const error = validateBuilderProfile(dto.builderProfile);
+      if (error) throw new BadRequestException(error);
+      Object.assign(participant, dto.builderProfile, { otherLanguage: dto.builderProfile.preferredLanguage === "Other" ? dto.builderProfile.otherLanguage!.trim() : null, builderConfirm: true });
+    }
     participant.skills = dto.skills.skills;
     participant.interests = dto.skills.interests;
     participant.profileConfirmedAt = new Date();
@@ -775,6 +782,22 @@ export class ParticipantsService {
     preference.matchingProfileConsentAt = new Date();
     preference.matchingProfileConsentVersion = MATCHING_CONSENT_VERSION;
     return this.preferenceRepository.save(preference);
+  }
+
+  @Transactional("participant-onboarding")
+  async confirmBuilderProfile(participantId: string, dto: ConfirmBuilderProfileDto): Promise<Participant> {
+    const participant = await this.participantRepository.findOne({ where: { id: participantId }, lock: { mode: "pessimistic_write" } });
+    if (!participant) throw new NotFoundException("Participant not found");
+    if (participant.updatedAt.toISOString() !== new Date(dto.expectedUpdatedAt).toISOString()) throw new ConflictException("Your profile changed. Reload and review the latest answers.");
+    const error = validateBuilderProfile(dto);
+    if (error) throw new BadRequestException(error);
+    const before = Object.fromEntries(["preferredLanguage", "otherLanguage", "languageProficiency", "developmentExperience", "testingExperience", "deploymentExperience", "builderConfirm"].map(key => [key, (participant as any)[key] ?? null]));
+    const { expectedUpdatedAt, ...answers } = dto;
+    Object.assign(participant, answers, { otherLanguage: dto.preferredLanguage === "Other" ? dto.otherLanguage!.trim() : null, builderConfirm: true });
+    await this.participantRepository.save(participant);
+    const manager = this.participantRepository.manager;
+    await manager.save(AuditLog, manager.create(AuditLog, { actorEmail: participant.email, action: AuditAction.UPDATE, entityType: "Participant", entityId: participantId, before, after: { ...answers, builderConfirm: true }, metadata: { source: "builder-confirmation", principalId: participantId, principalRole: "participant" }, description: "Participant confirmed language and builder experience" }));
+    return this.findOne(participantId);
   }
 
   @Transactional("participant-onboarding")

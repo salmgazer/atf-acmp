@@ -1,3 +1,4 @@
+import { EvaluationsModule } from "../evaluations/evaluations.module";
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { Stage, Submission, SubmissionHistory } from "@/database/entities/stage.entity";
@@ -18,6 +19,7 @@ import { NotificationsModule } from "@/modules/notifications/notifications.modul
   imports: [
     TypeOrmModule.forFeature([Stage, Submission, SubmissionHistory, Team, TeamMember, User]),
     UploadModule,
+    EvaluationsModule,
     NotificationsModule,
   ],
   controllers: [

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { BUILD_DEPLOY_OPTIONS, MATCHING_ROLE_OPTIONS, MATCHING_SECTOR_OPTIONS, MATCHING_TEAM_STATUS_OPTIONS } from "@acmp/shared";
+import { MATCHING_ROLE_OPTIONS, MATCHING_SECTOR_OPTIONS, MATCHING_TEAM_STATUS_OPTIONS } from "@acmp/shared";
 import { useUpdateParticipantMatchingProfile, participantKeys, type ParticipantMatchingChanges, type ParticipantPreference } from "@/lib/api/hooks/use-participants";
 import { useVerticals } from "@/lib/api/hooks/use-verticals";
 import { useApprovedBriefs } from "@/lib/api/hooks/use-briefs";
@@ -14,7 +14,6 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 const selectClass = "h-11 w-full rounded-xl border border-input bg-background px-3 text-sm";
 const yesNo = [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }];
 const fields = [
-  ["buildDeployAbility", "Can you build and deploy an application?", BUILD_DEPLOY_OPTIONS],
   ["preferredRole", "Preferred team role", MATCHING_ROLE_OPTIONS],
   ["firstChoiceSector", "First-choice sector", MATCHING_SECTOR_OPTIONS],
   ["backupSector", "Backup sector", MATCHING_SECTOR_OPTIONS],
@@ -24,7 +23,7 @@ const fields = [
 ] as const;
 type Draft = Record<typeof fields[number][0] | "verticalId1" | "verticalId2" | "availabilityNotes", string> & { briefRankings: string[] };
 function initial(preference: ParticipantPreference): Draft {
-  return { buildDeployAbility: preference.buildDeployAbility || "", preferredRole: preference.preferredRole || "", firstChoiceSector: preference.firstChoiceSector || "", backupSector: preference.backupSector || "", teamStatus: preference.teamStatus || "", crossCountryWilling: preference.crossCountryWilling ? "yes" : "no", matchingProfileConsent: preference.matchingProfileConsent == null ? "" : preference.matchingProfileConsent ? "yes" : "no", verticalId1: preference.verticalId1 || "", verticalId2: preference.verticalId2 || "", availabilityNotes: preference.availabilityNotes || "", briefRankings: [...(preference.briefRankings || []), "", "", "", "", ""].slice(0, 5) };
+  return { preferredRole: preference.preferredRole || "", firstChoiceSector: preference.firstChoiceSector || "", backupSector: preference.backupSector || "", teamStatus: preference.teamStatus || "", crossCountryWilling: preference.crossCountryWilling ? "yes" : "no", matchingProfileConsent: preference.matchingProfileConsent == null ? "" : preference.matchingProfileConsent ? "yes" : "no", verticalId1: preference.verticalId1 || "", verticalId2: preference.verticalId2 || "", availabilityNotes: preference.availabilityNotes || "", briefRankings: [...(preference.briefRankings || []), "", "", "", "", ""].slice(0, 5) };
 }
 function normalized(draft: Draft): ParticipantMatchingChanges {
   return { ...Object.fromEntries(fields.map(([field]) => [field, ["crossCountryWilling", "matchingProfileConsent"].includes(field) ? draft[field] === "yes" : draft[field]])), verticalId1: draft.verticalId1 || null, verticalId2: draft.verticalId2 || null, availabilityNotes: draft.availabilityNotes.trim() || null, briefRankings: draft.briefRankings.filter(Boolean) };

@@ -199,7 +199,7 @@ describe("EvaluationsService", () => {
       await expect(service.triggerSingleEvaluation({ teamId: "team-1", stageId: "stage-1" })).rejects.toThrow("Redis unavailable");
       const saved = evaluationJobRepo.save.mock.calls[0][0] as any;
       expect(saved.bullJobId).toBe(saved.id);
-      expect(evaluationJobRepo.update).toHaveBeenCalledWith(saved.id, expect.objectContaining({ status: EvaluationJobStatus.FAILED }));
+      expect(evaluationJobRepo.update).toHaveBeenCalledWith(saved.id, expect.objectContaining({ status: EvaluationJobStatus.PENDING }));
     });
     it("recovers a pending database job missing from Redis", async () => {
       evaluationJobRepo.find.mockResolvedValue([{ ...mockEvaluationJob }]);

@@ -81,6 +81,7 @@ export class GitHubService {
   private readonly cache = new Map<string, { data: any; expiry: number }>();
   private readonly cacheTTL: number;
   private readonly token?: string;
+  private tokenRejected = false;
 
   constructor(private configService: ConfigService) {
     this.token = this.configService.get<string>("GITHUB_TOKEN");
@@ -92,7 +93,7 @@ export class GitHubService {
       Accept: "application/vnd.github.v3+json",
       "User-Agent": "ACMP-Platform",
     };
-    if (this.token) {
+    if (this.token && !this.tokenRejected) {
       headers.Authorization = `Bearer ${this.token}`;
     }
     return headers;
@@ -128,7 +129,15 @@ export class GitHubService {
   }
 
   async getSourceSamples(owner: string, repo: string, tree: GitHubTreeItem[]): Promise<string[]> {
-    const files = tree.filter(file => file.type === "blob" && /\.(ts|tsx|js|jsx|py|go|rs|java|rb|cs|cpp|c)$/.test(file.path) && !/(node_modules|vendor|dist|build|package-lock)/.test(file.path) && (file.size || 0) < 50000).slice(0, 3);
+    const sourceExtension = /\.(ts|tsx|js|jsx|mjs|cjs|py|go|rs|java|rb|cs|cpp|c|h|php|r|sql|dart|kt|kts|swift|ex|exs|erl|clj|cljs|scala|fs|fsx|jl|lua|pl|elm|hs|ml|vue|svelte|astro|html)$/i;
+    const priority = (path: string) => {
+      if (/(?:^|[/.])(test|tests|spec|specs|__tests__)(?:[/.]|$)/i.test(path)) return -10;
+      if (/(?:config|eslint|prettier|webpack|rollup|babel|jest|tailwind|postcss|vite)(?:[./-]|$)/i.test(path)) return -20;
+      return /(?:^|\/)(?:src|app|lib|pages|routes|components)\//i.test(path) ? 10 : /(?:^|\/)(?:app|main|index|server|todo)\./i.test(path) ? 5 : 0;
+    };
+    const files = tree.filter(file => file.type === "blob" && sourceExtension.test(file.path) &&
+      !/(?:^|\/)(?:node_modules|vendor|dist|build|coverage|\.git)(?:\/|$)/.test(file.path) && (file.size || 0) < 50000)
+      .sort((a, b) => priority(b.path) - priority(a.path) || a.path.localeCompare(b.path)).slice(0, 3);
     return Promise.all(files.map(async file => {
       const item = await this.fetchGitHub<{ encoding: string; content: string }>("/repos/" + encodeURIComponent(owner) + "/" + encodeURIComponent(repo) + "/contents/" + file.path.split("/").map(encodeURIComponent).join("/"));
       if (item.encoding !== "base64") throw new Error("Unsupported repository content encoding");
@@ -143,9 +152,13 @@ export class GitHubService {
       return cached;
     }
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      headers: this.getHeaders(),
-    });
+    const headers = this.getHeaders();
+    const response = await fetch(`${this.baseUrl}${endpoint}`, { headers, signal: AbortSignal.timeout(15000) });
+    if (response.status === 401 && headers.Authorization) {
+      if (!this.tokenRejected) this.logger.warn("Configured GitHub credential was rejected; using public repository access");
+      this.tokenRejected = true;
+      return this.fetchGitHub<T>(endpoint);
+    }
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -389,6 +402,11 @@ export class GitHubService {
 
   async getFileStructure(owner: string, repo: string): Promise<GitHubTreeItem[]> {
     return this.getFileTree(owner, repo);
+  }
+
+  clearRepositoryCache(owner: string, repo: string): void {
+    const prefix = this.getCacheKey(`/repos/${owner}/${repo}`);
+    for (const key of this.cache.keys()) if (key === prefix || key.startsWith(prefix + "/") || key.startsWith(prefix + "?")) this.cache.delete(key);
   }
 
   clearCache(): void {

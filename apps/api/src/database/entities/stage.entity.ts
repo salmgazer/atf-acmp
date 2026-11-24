@@ -30,6 +30,7 @@ export enum SubmissionStatus {
 }
 
 export interface StageRequirements {
+  exerciseUrl?: string;
   minimumConsultations?: number;
   documentRequired?: boolean;
   documentMaxSize?: number; // in MB
@@ -209,6 +210,7 @@ export class Submission extends BaseEntity {
 
   @Column({ type: "jsonb", nullable: true })
   feedback?: {
+    warmup?: { passed: boolean; summary: string; deploymentUrl: string; repositoryUrl: string; submissionVersion: number; briefId: string; checkedAt: string; configHash: string };
     proposalScores?: Record<string, number>;
     strengths?: string[];
     improvements?: string[];

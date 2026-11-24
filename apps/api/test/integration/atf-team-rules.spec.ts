@@ -52,11 +52,11 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     const p = await db.getRepository(Participant).save({ participantId: randomUUID(), email: randomUUID() + "@example.test", firstName: "Example", lastName: "Learner", country: "Ghana", cohortId: cohort.id, group: "A", status: ParticipantStatus.READY, onboardingComplete: true, mustChangePassword: false, learningHalfwayReached: true, learningCertificateIssued: false, learningFinishedAllLessons: false, pythonSkill: "Beginner", fieldOfStudy: "Computer Science", ...values });
     await db.getRepository(ParticipantPreference).save({ participantId: p.id, buildDeployAbility: "with_support", firstChoiceSector: "health", backupSector: "education", preferredRole: "sector_specialist", teamStatus: "need_team", matchingProfileCompletedAt: new Date(), crossCountryWilling: false, matchingProfileConsent: true, ...preference }); return p;
   }
-  const builder = () => person({ pythonSkill: "Intermediate" }, { buildDeployAbility: "confident", preferredRole: "builder" });
+  const builder = () => person({ developmentExperience: true, testingExperience: true, deploymentExperience: true, pythonSkill: "Intermediate" }, { buildDeployAbility: "confident", preferredRole: "builder" });
 
   it("shares only the consented matching projection and checks consent again on every request", async () => {
     const viewer = await person();
-    const target = await person({ firstName: "Potential", lastName: "Teammate", email: "teammate-" + randomUUID() + "@example.test", skills: ["Python"], interests: ["Health"], pythonSkill: "Advanced", fieldOfStudy: "Medicine", githubUsername: "octocat", phoneNumber: "+233201234567", lmsEmail: "private-lms@example.test", whatsappNumber: "+233209876543", learningCertificateId: "private-certificate", gender: "private-gender" }, { preferredRole: "builder", buildDeployAbility: "confident", availabilityNotes: "private-notes" });
+    const target = await person({ firstName: "Potential", lastName: "Teammate", email: "teammate-" + randomUUID() + "@example.test", skills: ["Python"], interests: ["Health"], developmentExperience: true, testingExperience: true, deploymentExperience: true, pythonSkill: "Advanced", fieldOfStudy: "Medicine", githubUsername: "octocat", phoneNumber: "+233201234567", lmsEmail: "private-lms@example.test", whatsappNumber: "+233209876543", learningCertificateId: `private-certificate-${randomUUID()}`, gender: "private-gender" }, { preferredRole: "builder", buildDeployAbility: "confident", availabilityNotes: "private-notes" });
     const profile = await teams.getParticipantMatchingProfile(target.id, viewer.id);
     expect(profile).toMatchObject({ id: target.id, firstName: "Potential", country: "Ghana", email: target.email, phoneNumber: "+233201234567", whatsappNumber: "+233209876543", skills: ["Python"], fieldOfStudy: "Medicine", qualifiedBuilder: true, nonComputingStudy: true, githubUsername: "octocat", matching: { preferredRole: "builder", buildDeployAbility: "confident", firstChoiceSector: "health", crossCountryWilling: false } });
     for (const key of ["lmsEmail", "participantId", "passwordHash", "passwordResetToken", "gender", "learningCertificateId", "learningCertificateDate", "programmeOptOutReason", "codeLabsVerifiedBy"]) expect(profile).not.toHaveProperty(key);
@@ -66,7 +66,7 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     await db.getRepository(ParticipantPreference).update({ participantId: target.id }, { matchingProfileConsent: false });
     await expect(teams.getParticipantMatchingProfile(target.id, viewer.id)).rejects.toThrow("not available");
     await db.getRepository(ParticipantPreference).update({ participantId: target.id }, { matchingProfileConsent: true });
-    await db.getRepository(Participant).update(target.id, { githubUsername: "javascript:alert(1)", pythonSkill: "Beginner", phoneNumber: null, whatsappNumber: null });
+    await db.getRepository(Participant).update(target.id, { githubUsername: "javascript:alert(1)", developmentExperience: false, pythonSkill: "Beginner", phoneNumber: null, whatsappNumber: null });
     expect(await teams.getParticipantMatchingProfile(target.id, viewer.id)).toMatchObject({ qualifiedBuilder: false, githubUsername: null, phoneNumber: null, whatsappNumber: null });
   });
 
@@ -249,6 +249,8 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     const current = await db.getRepository(Participant).findOneByOrFail({ id: lead.id });
     await participants.updateStaffProfile(lead.id, { expectedUpdatedAt: current.updatedAt.toISOString(), pythonSkill: "Beginner" }, actor);
     expect((await teams.findOne(team.id)).registeredAt).toEqual(registered.registeredAt);
+    await expect(assertChallengeStarted(db.manager, team.id)).resolves.toBeUndefined();
+    await db.getRepository(Participant).update(lead.id, { deploymentExperience: false });
     await expect(assertChallengeStarted(db.manager, team.id)).rejects.toThrow("qualified builder");
     expect(await db.getRepository(TeamMember).countBy({ teamId: team.id, status: TeamMemberStatus.CONFIRMED })).toBe(3);
   });
@@ -256,9 +258,11 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
   it("requires builder and non-computing coverage, a resident competition country and a problem based in that country", async () => {
     const { team, lead, members } = await roster();
     await expect(teams.registerTeam(team.id, "Kenya")).rejects.toThrow("where at least one member lives");
-    await db.getRepository(Participant).update(lead.id, { pythonSkill: "Beginner" });
+    await db.getRepository(Participant).update(lead.id, { pythonSkill: "Beginner", developmentExperience: false });
     await expect(teams.registerTeam(team.id, "Ghana")).rejects.toThrow("qualified builder");
     await participants.updateProgrammeStatus(lead.id, { codeLabsCompleted: true }, actor.id);
+    await expect(teams.registerTeam(team.id, "Ghana")).rejects.toThrow("qualified builder");
+    await db.getRepository(Participant).update(lead.id, { developmentExperience: true });
     expect((await teams.registerTeam(team.id, "Ghana")).registeredAt).toBeTruthy();
     const wrong = await brief("Nigeria"); await expect(teams.assignBrief(team.id, wrong.id)).rejects.toThrow("problem country");
     for (const p of members) await db.getRepository(Participant).update(p.id, { fieldOfStudy: "Computer Science" });
@@ -458,7 +462,7 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     await db.getRepository(Participant).update(lead.id, { status: ParticipantStatus.READY });
     const waiting = await person({ pythonSkill: "Advanced" }, { buildDeployAbility: "confident", preferredRole: "builder" });
     await db.getRepository(TeamMember).save({ teamId: team.id, participantId: waiting.id, role: TeamRole.MEMBER, status: TeamMemberStatus.PENDING });
-    await person({ pythonSkill: "Intermediate" }, { buildDeployAbility: "confident", preferredRole: "builder", firstChoiceSector: "education" });
+    await person({ developmentExperience: true, testingExperience: true, deploymentExperience: true, pythonSkill: "Intermediate" }, { buildDeployAbility: "confident", preferredRole: "builder", firstChoiceSector: "education" });
     for (let i = 0; i < 3; i++) await person({ fieldOfStudy: "Medicine" }, { firstChoiceSector: "education" });
     const preview = await formation.runTeamFormation(cohort.id);
     const result = await formation.finalizeTeamFormation(cohort.id);

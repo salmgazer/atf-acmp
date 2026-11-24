@@ -3,8 +3,9 @@ export const TEAM_WORKFLOW_STEPS = [
   { key: "team", number: 1, name: "Form a team" },
   { key: "problem", number: 2, name: "Choose a problem" },
   { key: "proposal", number: 3, name: "Submit a proposal" },
-  { key: "evaluation", number: 4, name: "Pass evaluation" },
-  { key: "build", number: 5, name: "Build and submit" },
+  { key: "warmup", number: 4, name: "Team warmup" },
+  { key: "evaluation", number: 5, name: "Pass evaluation" },
+  { key: "build", number: 6, name: "Build and submit" },
 ] as const;
 export type TeamWorkflowStep = typeof TEAM_WORKFLOW_STEPS[number]["key"];
 export type FormAnswers = Record<string, unknown>;

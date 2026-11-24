@@ -94,6 +94,11 @@ export class EvaluationsService {
     return this.enqueue(record);
   }
 
+  async dispatchPendingJob(id: string): Promise<void> {
+    const record = await this.evaluationJobRepo.findOne({ where: { id, status: EvaluationJobStatus.PENDING } });
+    if (record && !await this.evaluationQueue.getJob(record.bullJobId || id)) await this.enqueue(record);
+  }
+
   private async enqueue(record: EvaluationJob): Promise<EvaluationJob> {
     record.bullJobId = record.id;
     await this.evaluationJobRepo.save(record);
@@ -103,7 +108,7 @@ export class EvaluationsService {
         { ...DEFAULT_JOB_OPTIONS, jobId: record.id });
       return record;
     } catch (error) {
-      await this.evaluationJobRepo.update(record.id, { status: EvaluationJobStatus.FAILED, error: "Queue enqueue failed: " + (error as Error).message });
+      await this.evaluationJobRepo.update(record.id, { status: EvaluationJobStatus.PENDING, error: "Queue enqueue failed: " + (error as Error).message });
       throw error;
     }
   }
