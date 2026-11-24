@@ -10,11 +10,11 @@
 - [x] AI evaluation uses an independently fetched live HTML page and repository source evidence. Private/internal addresses, unsafe redirects, oversized responses and stale results cannot unlock the build stage. Source sampling supports PHP, Dart, R, SQL, Kotlin, Swift, Elixir and common web languages, and prioritizes application code over configuration/test files.
 - [x] Submitted proposal plus passed warmup unlocks evaluation/build progression. Proposal scoring is available for staff feedback but is not an extra passing requirement.
 - [x] A PostgreSQL evaluation-job record is saved in the submission transaction; Redis enqueue failures remain pending for reconciliation. Failed evaluations are visible to staff for retry.
-- [x] Final local regression and production-build verification (215 browser tests; full API regressions plus targeted language-mapping tests).
+- [x] Final local regression and production-build verification (216 browser cases, with final confirmation regressions rerun; full API regressions plus targeted language-mapping tests).
 - [ ] Deploy to staging and production when requested.
 - [ ] Add the ATF exercise URL and confirm warmup dates for each live cohort once supplied.
 
-Gemini generation was verified with the existing local key. `GEMINI_API_KEY` and the supported project model `gemini-3.6-flash` are configured through both GitHub deployment environments. Existing Zoom/Resend settings and empty SMTP settings must be retained.
+The complete live Gemini scoring/validation contract was verified with synthetic evidence and the existing local key. Exact rubric IDs are supplied to the model so returned scores pass deterministic validation. `GEMINI_API_KEY` and the supported project model `gemini-3.6-flash` are configured through both GitHub deployment environments. Existing Zoom/Resend settings and empty SMTP settings must be retained.
 
 ## Release notes
 
