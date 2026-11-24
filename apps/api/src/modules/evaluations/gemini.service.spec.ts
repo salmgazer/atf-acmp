@@ -1,9 +1,17 @@
 import "reflect-metadata";
 import { ConfigService } from "@nestjs/config";
 import { GeminiService } from "./gemini.service";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 describe("AI rubric identifier contract", () => {
   const rubric = { criteria: [{ id: "warmup_web_app", name: "Deployed web application", description: "Source and deployment evidence", maxScore: 1, weight: 100 }] };
   const submission = { teamName: "Synthetic team", stageNumber: 4, stageName: "Team warmup" };
+  it("bounds provider requests so stalled evaluations can retry", () => {
+    const model = jest.spyOn(GoogleGenerativeAI.prototype, "getGenerativeModel");
+    try {
+      new GeminiService(new ConfigService({ GEMINI_API_KEY: "synthetic-test-key" })).onModuleInit();
+      expect(model).toHaveBeenCalledWith(expect.objectContaining({ model: expect.any(String) }), { timeout: 60000 });
+    } finally { model.mockRestore(); }
+  });
   it("supplies the exact machine identifiers required by the score validator", () => {
     const prompt = (new GeminiService(new ConfigService()) as any).buildSubmissionEvaluationPrompt(submission, rubric);
     expect(prompt).toContain("ID warmup_web_app: Deployed web application");

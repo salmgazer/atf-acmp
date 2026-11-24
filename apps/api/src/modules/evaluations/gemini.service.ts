@@ -80,7 +80,7 @@ export class GeminiService implements OnModuleInit {
     this.genAI = new GoogleGenerativeAI(apiKey);
     this.model = this.genAI.getGenerativeModel({
       model: modelName,
-    });
+    }, { timeout: 60000 });
     this.isConfigured = true;
     this.logger.log("Gemini AI service initialized");
   }
