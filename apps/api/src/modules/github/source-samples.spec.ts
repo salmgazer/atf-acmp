@@ -15,4 +15,8 @@ describe("Language-neutral warmup source evidence", () => {
     const result = await service().getSourceSamples("owner", "repo", [file("eslint.config.js"), file("vite.config.ts"), file("src/app.test.ts"), file("src/builder.ts"), file("src/Todo.tsx"), file("src/store.ts"), file("node_modules/dep/app.js"), file("dist/app.js"), file("src/oversized.ts", 60000)]);
     expect(result.map(value => value.split("\n")[0]).sort()).toEqual(["src/Todo.tsx", "src/builder.ts", "src/store.ts"].sort());
   });
+  it("excludes vendored browser dependencies at every directory depth", async () => {
+    const result = await service().getSourceSamples("owner", "repo", [file("bower_components/demo/src/app.js"), file("examples/old/bower_components/lib/src/index.js"), file("web_modules/src/index.js"), file("src/app.js")]);
+    expect(result.map(value => value.split("\n")[0])).toEqual(["src/app.js"]);
+  });
 });

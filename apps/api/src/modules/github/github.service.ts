@@ -136,7 +136,7 @@ export class GitHubService {
       return /(?:^|\/)(?:src|app|lib|pages|routes|components)\//i.test(path) ? 10 : /(?:^|\/)(?:app|main|index|server|todo)\./i.test(path) ? 5 : 0;
     };
     const files = tree.filter(file => file.type === "blob" && sourceExtension.test(file.path) &&
-      !/(?:^|\/)(?:node_modules|vendor|dist|build|coverage|\.git)(?:\/|$)/.test(file.path) && (file.size || 0) < 50000)
+      !/(?:^|\/)(?:node_modules|bower_components|web_modules|vendor|dist|build|coverage|\.git)(?:\/|$)/.test(file.path) && (file.size || 0) < 50000)
       .sort((a, b) => priority(b.path) - priority(a.path) || a.path.localeCompare(b.path)).slice(0, 3);
     return Promise.all(files.map(async file => {
       const item = await this.fetchGitHub<{ encoding: string; content: string }>("/repos/" + encodeURIComponent(owner) + "/" + encodeURIComponent(repo) + "/contents/" + file.path.split("/").map(encodeURIComponent).join("/"));
