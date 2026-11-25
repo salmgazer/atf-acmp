@@ -1,4 +1,5 @@
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { readAuthItem } from "@/lib/stores/auth-session-storage";
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import { toast } from "sonner";
 import { rateLimitError } from "./rate-limit";
@@ -59,8 +60,6 @@ async function tryRefreshToken(): Promise<string | null> {
     if (typeof window !== "undefined" && accessToken) {
       useAuthStore.getState().setToken(accessToken);
       useAuthStore.getState().setUser(user);
-      // Also update cookie for middleware
-      document.cookie = `auth_token=present; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
     }
 
     return accessToken;
@@ -95,7 +94,7 @@ const createApiClient = (): AxiosInstance => {
 
       // Get auth token from localStorage if available
       if (typeof window !== "undefined") {
-        const token = localStorage.getItem("auth_token");
+        const token = readAuthItem("auth_token") || useAuthStore.getState().token;
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
@@ -189,10 +188,6 @@ const createApiClient = (): AxiosInstance => {
           // Clear auth data and redirect to login
           if (typeof window !== "undefined") {
             useAuthStore.getState().logout();
-            localStorage.removeItem("auth_token");
-            localStorage.removeItem("refresh_token");
-            localStorage.removeItem("acmp-auth-store");
-            document.cookie = "auth_token=; path=/; max-age=0";
             
             // Determine which portal and redirect accordingly
             const path = window.location.pathname;

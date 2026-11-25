@@ -16,7 +16,7 @@ export function StaffRouteGuard({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
-  const { user, token, updateUser, setUser } = useAuthStore();
+  const { user, token, updateUser, setUser, logout } = useAuthStore();
   const isPublic = publicPaths.includes(pathname);
   const { data: principal, isPending, isError, refetch } = useQuery({
     queryKey: ["staff-principal", token],
@@ -40,7 +40,7 @@ export function StaffRouteGuard({ children }: { children: ReactNode }) {
 
   if (isPublic) return children;
   if (!mounted || !token || isPending) return <div role="status" className="p-8">Loading your account…</div>;
-  if (isError) return <div className="space-y-4 p-8"><p>Unable to verify your access.</p><Button onClick={() => refetch()}>Try again</Button><Link className="block underline" href="/staff/login">Back to login</Link></div>;
+  if (isError) return <div role="alert" className="space-y-4 p-8"><p>Unable to verify your access.</p><Button onClick={() => refetch()}>Try again</Button><a className="block underline" href="/staff/login" onClick={() => logout()}>Back to login</a></div>;
   if (!principal || getPortalFromRole(principal.role) !== "staff") return null;
   if (!user || user.id !== principal.id || user.role !== principal.role) return <div role="status" className="p-8">Updating your access…</div>;
   if (!canAccessStaffPage(principal.role, pathname)) {
