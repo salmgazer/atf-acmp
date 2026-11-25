@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { AUTH_STORAGE_KEY, AUTH_STORAGE_VERSION, authSessionStorage, clearBrowserAuth, removeAuthItem, saveBrowserLogin, writeAuthCookie, writeAuthItem } from "./auth-session-storage";
 
 export type Role =
   | "super_admin"
@@ -65,12 +66,12 @@ export const useAuthStore = create<AuthStore>()(
         set({ token });
         if (typeof window !== "undefined") {
           if (token) {
-            localStorage.setItem("auth_token", token);
+            writeAuthItem("auth_token", token);
             // Also set cookie for middleware
-            document.cookie = `auth_token=present; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
+            writeAuthCookie(`auth_token=present; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`);
           } else {
-            localStorage.removeItem("auth_token");
-            document.cookie = "auth_token=; path=/; max-age=0";
+            removeAuthItem("auth_token");
+            writeAuthCookie("auth_token=; path=/; max-age=0");
           }
         }
       },
@@ -80,6 +81,7 @@ export const useAuthStore = create<AuthStore>()(
       setPortal: (portal) => set({ portal }),
 
       login: (user, token, portal) => {
+        saveBrowserLogin({ user, token, portal, isAuthenticated: true });
         set({
           user,
           token,
@@ -87,12 +89,6 @@ export const useAuthStore = create<AuthStore>()(
           isAuthenticated: true,
           isLoading: false,
         });
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("refresh_token");
-          localStorage.setItem("auth_token", token);
-          document.cookie = `auth_token=present; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
-          document.cookie = `auth_portal=${portal}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
-        }
       },
 
       logout: () => {
@@ -103,12 +99,7 @@ export const useAuthStore = create<AuthStore>()(
           isAuthenticated: false,
           isLoading: false,
         });
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("auth_token");
-          localStorage.removeItem("refresh_token");
-          document.cookie = "auth_token=; path=/; max-age=0";
-          document.cookie = "auth_portal=; path=/; max-age=0";
-        }
+        clearBrowserAuth();
       },
 
       updateUser: (updates) => {
@@ -119,8 +110,9 @@ export const useAuthStore = create<AuthStore>()(
       },
     }),
     {
-      name: "acmp-auth-store",
-      storage: createJSONStorage(() => localStorage),
+      name: AUTH_STORAGE_KEY,
+      version: AUTH_STORAGE_VERSION,
+      storage: createJSONStorage(() => authSessionStorage),
       partialize: (state) => ({
         user: state.user,
         token: state.token,
@@ -133,7 +125,7 @@ export const useAuthStore = create<AuthStore>()(
           state.setLoading(false);
           // Ensure portal cookie is set after hydration (for existing sessions)
           if (typeof window !== "undefined" && state.portal && state.token) {
-            document.cookie = `auth_portal=${state.portal}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`;
+            writeAuthCookie(`auth_portal=${state.portal}; path=/; max-age=${60 * 60 * 24 * 7}; samesite=lax`);
           }
         }
       },
