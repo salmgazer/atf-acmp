@@ -311,6 +311,18 @@ jobs:
       - name: Get short commit hash
         run: echo "IMAGE_TAG=${GITHUB_SHA:0:7}" >> $GITHUB_ENV
 
+      - name: Validate S3 runtime configuration
+        env:
+          ECS_TASK_ROLE_ARN: ${{ vars.ECS_TASK_ROLE_ARN }}
+          AWS_S3_BUCKET: ${{ vars.AWS_S3_BUCKET }}
+        run: |
+          for name in ECS_TASK_ROLE_ARN AWS_S3_BUCKET; do
+            if [ -z "${!name}" ]; then
+              echo "::error::$name is required for application file uploads"
+              exit 1
+            fi
+          done
+
       - name: Validate Zoom configuration
         env:
           ZOOM_ACCOUNT_ID: ${{ vars.ZOOM_ACCOUNT_ID }}

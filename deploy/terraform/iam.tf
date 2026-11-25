@@ -68,17 +68,20 @@ resource "aws_iam_role_policy" "ecs_s3_access" {
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "UploadObjects"
         Effect = "Allow"
         Action = [
           "s3:PutObject",
           "s3:GetObject",
-          "s3:DeleteObject",
-          "s3:ListBucket"
+          "s3:DeleteObject"
         ]
-        Resource = [
-          aws_s3_bucket.uploads.arn,
-          "${aws_s3_bucket.uploads.arn}/*"
-        ]
+        Resource = "${aws_s3_bucket.uploads.arn}/*"
+      },
+      {
+        Sid      = "ListUploadBucket"
+        Effect   = "Allow"
+        Action   = "s3:ListBucket"
+        Resource = aws_s3_bucket.uploads.arn
       }
     ]
   })
