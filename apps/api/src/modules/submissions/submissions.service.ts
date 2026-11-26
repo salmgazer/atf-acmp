@@ -585,8 +585,11 @@ export class SubmissionsService {
       qb.andWhere("submission.status = :status", { status: query.status });
     }
 
-    qb.orderBy("submission.submitted_at", "DESC", "NULLS LAST")
-      .addOrderBy("submission.created_at", "DESC");
+    // Joined pagination resolves entity properties before generating SQL.
+    // Database column names here make TypeORM's DISTINCT ordering fail.
+    qb.orderBy("submission.submittedAt", "DESC", "NULLS LAST")
+      .addOrderBy("submission.createdAt", "DESC")
+      .addOrderBy("submission.id", "DESC");
 
     const [submissions, total] = await qb
       .skip((page - 1) * limit)

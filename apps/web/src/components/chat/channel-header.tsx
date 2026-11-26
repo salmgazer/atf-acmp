@@ -42,12 +42,14 @@ interface ChannelHeaderProps {
   channel: ChatChannel;
   isConnected: boolean;
   onMenuClick: () => void;
+  actions?: React.ReactNode;
 }
 
 export function ChannelHeader({
   channel,
   isConnected,
   onMenuClick,
+  actions,
 }: ChannelHeaderProps) {
   const [showMembers, setShowMembers] = useState(false);
   const { data: members } = useChannelMembers(channel.id);
@@ -79,6 +81,7 @@ export function ChannelHeader({
         )}
       </div>
 
+      {actions}
       {/* Connection status indicator */}
       {isConnected ? (
         <Wifi className="h-3.5 w-3.5 text-green-500" />

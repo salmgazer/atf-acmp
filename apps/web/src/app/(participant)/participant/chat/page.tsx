@@ -18,16 +18,15 @@ import {
   useChatSocket,
   useSendMessage,
   useEditMessage,
-  useMarkAsRead,
   type ChatMessage,
 } from "@/lib/api/hooks/use-chat";
-import { useChatContext } from "@/lib/contexts/chat-context";
+import { ChatEmailPreferences } from "@/components/chat/chat-email-preferences";
 import { Loader2, Menu, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 function ChatContent() {
   const searchParams = useSearchParams();
-  const channelParam = searchParams.get("channel");
+  const channelParam = searchParams.get("channelId") || searchParams.get("channel");
   
   const { token } = useAuthStore();
   const { data: participant, isLoading: participantLoading } = useCurrentParticipant();
@@ -45,8 +44,6 @@ function ChatContent() {
   const { data: channel } = useChannel(selectedChannelId || "");
   const sendMessage = useSendMessage();
   const editMessage = useEditMessage();
-  const markAsRead = useMarkAsRead();
-  const { refreshUnreadCount, setActiveChannelId } = useChatContext();
 
   // Auto-select channel when channels load
   useEffect(() => {
@@ -54,7 +51,7 @@ function ChatContent() {
       // Priority 0: If channel param specified, find by name/slug
       if (channelParam) {
         const targetChannel = channels.find(
-          (c) => c.channel.name.toLowerCase().replace(/\s+/g, "-") === channelParam.toLowerCase()
+          (c) => c.channel.id === channelParam || c.channel.name.toLowerCase().replace(/\s+/g, "-") === channelParam.toLowerCase()
         );
         if (targetChannel) {
           setSelectedChannelId(targetChannel.channel.id);
@@ -98,12 +95,6 @@ function ChatContent() {
     }
   }, [channels, hasAutoSelected, selectedChannelId, channelParam]);
 
-  // Update active channel in context
-  useEffect(() => {
-    setActiveChannelId(selectedChannelId);
-    return () => setActiveChannelId(null);
-  }, [selectedChannelId, setActiveChannelId]);
-
   // WebSocket connection
   const socket = useChatSocket({
     token: token || "",
@@ -132,9 +123,6 @@ function ChatContent() {
   useEffect(() => {
     if (selectedChannelId && socket.isConnected) {
       socket.joinChannel(selectedChannelId);
-      markAsRead.mutate({ channelId: selectedChannelId }, {
-        onSuccess: () => refreshUnreadCount(),
-      });
       return () => socket.leaveChannel(selectedChannelId);
     }
   }, [selectedChannelId, socket.isConnected]);
@@ -217,6 +205,7 @@ function ChatContent() {
                 channel={channel}
                 isConnected={socket.isConnected}
                 onMenuClick={() => setSidebarOpen(true)}
+                actions={<ChatEmailPreferences initiallyOpen={searchParams.get("emailSettings") === "1"} />}
               />
             </div>
 

@@ -51,6 +51,10 @@ export class ChatChannel extends BaseEntity {
   @Column({ name: "is_archived", default: false })
   isArchived: boolean;
 
+  // Existing chat history must not trigger a flood of emails when enabled.
+  @Column({ name: "email_notifications_start_at", type: "timestamp", default: () => "now()" })
+  emailNotificationsStartAt: Date;
+
   @Column({ type: "jsonb", nullable: true })
   metadata?: Record<string, any>;
 
