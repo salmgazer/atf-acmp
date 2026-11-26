@@ -1,3 +1,4 @@
+import { builderRequirementForTeam } from "@acmp/shared";
 import { assertProposalPassed, isPoolBrief } from "@/common/services/team-workflow";
 import { assertParticipantTeamAdmission, assertMemberAdmission, teamRuleContext, clearTeamRegistration } from "@/common/services/team-rules";
 import { ATF_TEAM_MAX, canShareTeam, evaluateTeamRules, normalizeTeamCountry, TeamBriefPreference, isQualifiedBuilder, hasNonComputingStudy, GITHUB_USERNAME_PATTERN, type ParticipantPeerProfile } from "@acmp/shared";
@@ -931,7 +932,7 @@ export class TeamsService {
     const { team, members } = await teamRuleContext(this.teamRepository.manager, id);
     if (team.status === TeamStatus.DISQUALIFIED) throw new BadRequestException("Disqualified teams cannot register");
     const country = normalizeTeamCountry(competitionCountry);
-    const report = evaluateTeamRules(team.cohort, members, { competitionCountry: country, hasBrief: !!team.briefId, problemCountry: team.brief ? briefCountry(team.brief) : undefined });
+    const report = evaluateTeamRules(team.cohort, members, { builderPolicy: builderRequirementForTeam(team.builderPolicy), competitionCountry: country, hasBrief: !!team.briefId, problemCountry: team.brief ? briefCountry(team.brief) : undefined });
     if (!report.canRegister) throw new BadRequestException(report.registrationIssues.map(issue => issue.message).join("; "));
     await this.teamRepository.update(id, { competitionCountry: country, registeredAt: new Date(), challengeStartedAt: null, status: TeamStatus.FORMING });
     return this.findOne(id);

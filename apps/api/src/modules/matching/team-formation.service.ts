@@ -1,8 +1,10 @@
+import { AuditLog, AuditAction } from "@/database/entities/audit-log.entity";
+import { DEFAULT_FORMATION_SETTINGS, builderCoverage, countsAsFormationBuilder, formationBuilderStatus, type FormationSettings, type TeamBuilderPolicy } from "@acmp/shared";
 import { isPoolBrief } from "@/common/services/team-workflow";
 import { resolveCohortTeamDeadlines } from "@/common/services/cohort-team-deadlines";
 import { assertJoiningWindow, assertMemberAdmission, chooseCompetitionCountry, teamRuleContext } from "@/common/services/team-rules";
 import { formAtfTeams, compareMatchingCandidates, matchingGuideScore } from "./atf-team-matcher";
-import { canShareTeam, evaluateTeamRules, hasNonComputingStudy, isQualifiedBuilder, normalizeTeamCountry, participantTeamIssues, TeamBriefPreference } from "@acmp/shared";
+import { canShareTeam, evaluateTeamRules, hasNonComputingStudy, normalizeTeamCountry, participantTeamIssues, TeamBriefPreference } from "@acmp/shared";
 import { resolveCohortGroup } from "@/common/services/cohort-groups";
 import { briefCountry, isBriefCountryAllowed } from "@/common/services/brief-country-access";
 import { Inject } from "@nestjs/common";
@@ -12,6 +14,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
@@ -115,7 +118,7 @@ export class TeamFormationService {
     const warnings = excluded.map(p => `${p.participantId}: ${participantTeamIssues(p, cohort).map(issue => issue.message).join("; ") || "Full-team status: assemble and register the existing team manually"}`);
     const existing = await this.teamRepository.find({ where: { cohortId, status: TeamStatus.FORMING }, relations: ["cohort", "brief", "brief.organization", "members", "members.participant", "members.participant.preference"], order: { createdAt: "ASC", id: "ASC" } });
     const proposedBackfills: ProposedBackfillDto[] = [];
-    for (const team of existing) {
+    for (const team of config.matchingScope === "new" ? [] : existing) {
       const confirmedRows = team.members.filter(m => m.status === TeamMemberStatus.CONFIRMED);
       const confirmed = confirmedRows.map(m => m.participant).filter(Boolean);
       if (!confirmed.length || confirmed.length !== confirmedRows.length || confirmed.some(p => participantTeamIssues(p, cohort).length)) { warnings.push(`Skipped backfill for ${team.name}: existing members need an eligibility review`); continue; }
@@ -124,16 +127,19 @@ export class TeamFormationService {
       for (let slot = 0; slot < slots; slot++) {
         const current = [...confirmed, ...selected];
         const candidates = available.filter(p => (p.group || null) === (team.group || null) && canShareTeam([...current, p]));
-        const needsBuilder = !current.some(isQualifiedBuilder), needsNonComputing = !current.some(hasNonComputingStudy);
-        const required = candidates.filter(p => (needsBuilder && isQualifiedBuilder(p)) || (needsNonComputing && hasNonComputingStudy(p)));
-        const next = (required.length ? required : candidates).sort((a, b) => compareMatchingCandidates(current, a, b))[0];
+        const needsBuilder = builderCoverage(current, config).counted < config.minimumBuilders, needsNonComputing = !current.some(hasNonComputingStudy);
+        const required = candidates.filter(p => (needsBuilder && countsAsFormationBuilder(p, config.builderEligibility)) || (needsNonComputing && hasNonComputingStudy(p)));
+        const reserve = Math.floor(Math.max(0, available.length - 1) / config.teamSizeMin) * Math.max(1, config.minimumBuilders);
+        const spare = available.filter(p => countsAsFormationBuilder(p, config.builderEligibility)).length;
+        const choices = candidates.filter(p => !countsAsFormationBuilder(p, config.builderEligibility) || spare > reserve);
+        const next = (required.length ? required : choices.length ? choices : candidates).sort((a, b) => compareMatchingCandidates(current, a, b, config.teamSizeMax, config))[0];
         if (!next) break;
         selected.push(next); available = available.filter(p => p.id !== next.id);
       }
       if (selected.length) proposedBackfills.push({ teamId: team.id, teamName: team.name, group: team.group, currentMemberCount: confirmed.length, targetSize: Math.min(config.teamSizeMax, 5), participantsToAdd: selected.map(p => { const source = prepared.find(person => person.participant.id === p.id)!; return { id: p.id, participantId: p.participantId, firstName: p.firstName, lastName: p.lastName, country: p.country, skills: p.skills, interests: p.interests, skillProfile: source.skillProfile }; }), briefId: team.briefId || null, verticalPreferences: [], existingCountries: [...new Set(confirmed.map(p => p.country))], addAsPending: true, skillBalanceAfter: this.calculateTeamSkillBalance(prepared.filter(p => [...confirmed, ...selected].some(person => person.id === p.participant.id))), participantIdsToAdd: selected.map(p => p.id), compatibilityScore: matchingGuideScore([...confirmed, ...selected]), introducesCrossCountry: new Set([...confirmed, ...selected].map(p => normalizeTeamCountry(p.country))).size > 1 } as ProposedBackfillDto);
     }
     if (!rows.length) warnings.push("No eligible participants found for team formation");
-    const formed = formAtfTeams(available, config.teamSizeMax);
+    const formed = config.matchingScope === "backfill" ? { teams: [], unassigned: available } : formAtfTeams(available, config.teamSizeMax, config, config.teamSizeMin);
     const approvedBriefs = config.useBriefCentricAssignment ? (await this.briefRepository.find({ where: { cohortId, status: BriefStatus.APPROVED }, relations: ["organization", "vertical"], order: { fitScore: "DESC", impactScore: "DESC", id: "ASC" } })).filter(isPoolBrief) : [];
     const actualCounts = await Promise.all(approvedBriefs.map(brief => this.teamRepository.countBy({ briefId: brief.id, status: Not(TeamStatus.DISQUALIFIED) })));
     const capacity = new Map(approvedBriefs.map((brief, index) => [brief.id, Math.max(0, brief.maxTeams - (actualCounts[index] || 0))]));
@@ -153,10 +159,13 @@ export class TeamFormationService {
       const lead = leadMember.participant, coLead = coLeadMember.participant;
       const brief = config.useBriefCentricAssignment ? matchBrief(people) : undefined;
       const competitionCountry = chooseCompetitionCountry(people, brief ? briefCountry(brief) : undefined);
-      const report = evaluateTeamRules(cohort, people, { competitionCountry, hasBrief: !!brief, problemCountry: brief ? briefCountry(brief) : undefined });
-      const guideScore = matchingGuideScore(people);
+      const coverage = builderCoverage(people, config);
+      const waived = config.minimumBuilders === 0 || coverage.counted < config.minimumBuilders && config.shortageAction === "exception";
+      const report = evaluateTeamRules(cohort, people, { builderPolicy: { ...config, minimumBuilders: waived ? 0 : config.minimumBuilders }, competitionCountry, hasBrief: !!brief, problemCountry: brief ? briefCountry(brief) : undefined });
+      const guideScore = matchingGuideScore(people, config);
       return { proposedTeamId: uuidv4(), suggestedName: `Team ${index + 1}`, group: lead.group || null, participantIds: people.map(p => p.id),
-        participants: preparedMembers.map(p => ({ id: p.participant.id, participantId: p.participant.participantId, firstName: p.participant.firstName, lastName: p.participant.lastName, country: p.participant.country, skills: p.skills, interests: p.interests, isProposedLead: p.participant.id === lead.id, isProposedCoLead: p.participant.id === coLead.id, skillProfile: p.skillProfile })),
+        registrationOutcome: waived ? "exception" : report.canRegister ? "registered" : "draft",
+        participants: preparedMembers.map(p => ({ builderStatus: formationBuilderStatus(p.participant), id: p.participant.id, participantId: p.participant.participantId, firstName: p.participant.firstName, lastName: p.participant.lastName, country: p.participant.country, skills: p.skills, interests: p.interests, isProposedLead: p.participant.id === lead.id, isProposedCoLead: p.participant.id === coLead.id, skillProfile: p.skillProfile })),
         leadParticipantId: lead.id, coLeadParticipantId: coLead.id, compatibilityScore: guideScore, scoreBreakdown: { skillScore: 0, interestScore: 0, verticalScore: 0, countryScore: 0, techBalanceScore: 0, total: guideScore },
         countries: report.countries, isCrossCountry: report.countries.length > 1, verticalPreferences: [...new Set(preparedMembers.flatMap(p => p.verticalPreferences))], skillBalance: this.calculateTeamSkillBalance(preparedMembers),
         assignedBriefId: brief?.id, assignedBriefTitle: brief?.title, assignedVerticalId: brief?.verticalId, competitionCountry, eligibility: report } as ProposedTeamDto;
@@ -176,7 +185,18 @@ export class TeamFormationService {
     statistics.briefAssignmentStats = { totalApprovedBriefs: approvedBriefs.length, briefsAssigned: new Set(assignedBriefs).size, briefsWithoutTeams: approvedBriefs.filter(brief => (capacity.get(brief.id) || 0) > 0).length, existingTeamsAssignedBriefs: proposedBriefAssignments.length, assignmentsByVertical: Object.fromEntries([...new Set(approvedBriefs.map(brief => brief.verticalId).filter(Boolean))].map(id => [id!, assignedBriefs.filter(briefId => approvedBriefs.find(brief => brief.id === briefId)?.verticalId === id).length])) };
     const sourceVersion = (person: Participant) => JSON.stringify([person.updatedAt?.toISOString(), person.preference?.updatedAt?.toISOString()]);
     const sourceVersions = Object.fromEntries([...rows, ...existing.flatMap(team => team.members.map(member => member.participant).filter(Boolean))].map(person => [person.id, sourceVersion(person)]));
-    const preview = { cohortId, cohortName: cohort.name, generatedAt: new Date(), proposedTeams, proposedBackfills, proposedBriefAssignments, unassignedParticipantIds, unassignedBriefIds: approvedBriefs.filter(brief => (capacity.get(brief.id) || 0) > 0).map(brief => brief.id), statistics, configUsed: config, warnings, policyVersion: "atf-2026-v6", deadlineVersion: cohort.teamRuleDeadlineVersion, sourceVersions, cohortVersion: cohort.updatedAt?.toISOString() };
+    const builderSummary = {
+      registeredTeams: proposedTeams.filter(team => team.registrationOutcome === 'registered').length,
+      draftTeams: proposedTeams.filter(team => team.registrationOutcome === 'draft').length,
+      exceptionTeams: proposedTeams.filter(team => team.registrationOutcome === 'exception').length,
+      noBuilderTeams: proposedTeams.filter(team => !team.eligibility?.builderCount).length,
+      confirmedBuilders: proposedTeams.reduce((n, team) => n + (team.eligibility?.builderCoverage?.confirmed || 0), 0),
+      awaitingBuilders: proposedTeams.reduce((n, team) => n + (team.eligibility?.builderCoverage?.awaiting || 0), 0),
+      potentialBuilders: proposedTeams.reduce((n, team) => n + (team.eligibility?.builderCoverage?.potential || 0), 0),
+    };
+    if (builderSummary.draftTeams) warnings.push(`${builderSummary.draftTeams} team(s) will remain drafts until their builder requirement is met`);
+    if (builderSummary.exceptionTeams) warnings.push(`${builderSummary.exceptionTeams} team(s) may register and progress under an explicit staff builder exception`);
+    const preview = { previewId: uuidv4(), builderSummary, cohortId, cohortName: cohort.name, generatedAt: new Date(), proposedTeams, proposedBackfills, proposedBriefAssignments, unassignedParticipantIds, unassignedBriefIds: approvedBriefs.filter(brief => (capacity.get(brief.id) || 0) > 0).map(brief => brief.id), statistics, configUsed: config, warnings, policyVersion: "atf-2026-v7", deadlineVersion: cohort.teamRuleDeadlineVersion, sourceVersions, cohortVersion: cohort.updatedAt?.toISOString() };
     await this.previewStore.set("formation:" + cohortId, preview, 30 * 60 * 1000);
     return preview;
   }
@@ -186,7 +206,7 @@ export class TeamFormationService {
    */
   async getTeamFormationPreview(cohortId: string): Promise<TeamFormationPreviewDto | null> {
     const preview = await this.previewStore.get<TeamFormationPreviewDto>("formation:" + cohortId);
-    return preview?.policyVersion === "atf-2026-v6" ? preview : null;
+    return preview?.policyVersion === "atf-2026-v7" ? preview : null;
   }
 
   /**
@@ -203,15 +223,20 @@ export class TeamFormationService {
   async finalizeTeamFormation(
     cohortId: string,
     dto: FinalizeTeamFormationDto = {},
+    actor?: { id: string; role: string; email?: string },
   ): Promise<{ createdTeamCount: number; backfilledTeamCount: number; briefsAssigned: number; errors: string[] }> {
     const preview = await this.previewStore.get<TeamFormationPreviewDto>("formation:" + cohortId);
-    if (!preview || preview.policyVersion !== "atf-2026-v6") throw new BadRequestException("Run a fresh team formation preview under the current ATF rules before finalizing");
+    if (!preview || preview.policyVersion !== "atf-2026-v7") throw new BadRequestException("Run a fresh team formation preview under the current ATF rules before finalizing");
+    if (dto.previewId && dto.previewId !== preview.previewId) throw new ConflictException("Another preview replaced this one. Reload and review it before finalizing");
     const cohort = await this.cohortRepository.findOneBy({ id: cohortId });
     if (!cohort) throw new NotFoundException("Cohort not found");
     await resolveCohortTeamDeadlines(this.teamRepository.manager, cohort);
     assertJoiningWindow(cohort);
     if (preview.deadlineVersion !== cohort.teamRuleDeadlineVersion) throw new BadRequestException("Cohort stage deadlines changed. Run a fresh formation preview");
     if (preview.cohortVersion && preview.cohortVersion !== cohort.updatedAt.toISOString()) throw new BadRequestException("Cohort settings changed. Run a fresh formation preview");
+    const config = this.normalizeConfig(preview.configUsed, cohort);
+    if ((config.minimumBuilders === 0 || config.shortageAction === "exception") && !actor?.id) throw new BadRequestException("Staff identity is required to authorize builder exceptions");
+    if (config.matchingScope === "backfill" && dto.manualTeams?.length) throw new BadRequestException("This preview only fills existing open slots; run a new-team preview for manual teams");
     const sourceIds = Object.keys(preview.sourceVersions || {});
     const currentPeople = sourceIds.length ? await this.participantRepository.find({ where: { id: In(sourceIds) }, relations: ["preference"] }) : [];
     if (currentPeople.length !== sourceIds.length || currentPeople.some(person => JSON.stringify([person.updatedAt.toISOString(), person.preference?.updatedAt?.toISOString()]) !== preview.sourceVersions?.[person.id])) throw new BadRequestException("Participant data changed. Run a fresh formation preview");
@@ -253,14 +278,15 @@ export class TeamFormationService {
     }
     for (const manual of dto.manualTeams || []) plans.push({ ids: manual.participantIds, name: manual.teamName || `Team ${plans.length + 1}`, lead: manual.leadParticipantId || manual.participantIds[0], coLead: manual.coLeadParticipantId || manual.participantIds.find(id => id !== manual.leadParticipantId) || manual.participantIds[1], briefId: undefined });
     for (const plan of plans) {
-      if (plan.ids.length < 3) { if (plan.ids.length) errors.push(`${plan.name} was skipped: fewer than three members remain after exclusions/overrides`); continue; }
-      if (plan.ids.length > 5 || new Set(plan.ids).size !== plan.ids.length || plan.ids.some(id => used.has(id) || excluded.has(id))) throw new BadRequestException("Every team needs 3 to 5 unique participants, with no participant reused or excluded");
+      if (plan.ids.length < config.teamSizeMin) { if (plan.ids.length) errors.push(`${plan.name} was skipped: fewer than three members remain after exclusions/overrides`); continue; }
+      if (plan.ids.length > config.teamSizeMax || new Set(plan.ids).size !== plan.ids.length || plan.ids.some(id => used.has(id) || excluded.has(id))) throw new BadRequestException("Every team needs 3 to 5 unique participants, with no participant reused or excluded");
       plan.ids.forEach(id => used.add(id));
       const lead = plan.ids.includes(plan.lead) ? plan.lead : plan.ids[0];
       const coLead = plan.ids.includes(plan.coLead) && plan.coLead !== lead ? plan.coLead : plan.ids.find(id => id !== lead)!;
-      await this.createTeamWithMembers(cohortId, plan.name, plan.ids, lead, coLead, plan.briefId);
+      await this.createTeamWithMembers(cohortId, plan.name, plan.ids, lead, coLead, plan.briefId, config, actor);
       createdTeamCount++; newTeamParticipantIds.push(...plan.ids); if (plan.briefId) briefsAssigned++;
     }
+    if (actor?.id) await this.audit(actor, cohortId, "Finalized team formation", { config, createdTeamCount, backfilledTeamCount });
     const assignedBriefIds = new Set([...plans.map(plan => plan.briefId).filter(Boolean), ...preview.proposedBriefAssignments.map(assignment => assignment.briefId)]);
     for (const briefId of assignedBriefIds) await this.briefRepository.update(briefId!, { teamsCount: await this.teamRepository.countBy({ briefId: briefId!, status: Not(TeamStatus.DISQUALIFIED) }) });
     afterCommit(this, async () => {
@@ -402,11 +428,51 @@ export class TeamFormationService {
 
   // ============ Private Methods ============
 
+  private settings(config: Required<TeamFormationConfigDto>): FormationSettings {
+    return { builderEligibility: config.builderEligibility, minimumBuilders: config.minimumBuilders, preferredBuilders: config.preferredBuilders, shortageAction: config.shortageAction, matchingScope: config.matchingScope, exceptionReason: config.exceptionReason };
+  }
+
+  async getFormationDefaults(cohortId: string) {
+    const cohort = await this.cohortRepository.findOneBy({ id: cohortId });
+    if (!cohort) throw new NotFoundException("Cohort not found");
+    return { settings: this.settings(this.normalizeConfig(undefined, cohort)), updatedAt: cohort.updatedAt };
+  }
+
+  @Transactional("formation")
+  async saveFormationDefaults(cohortId: string, dto: { config: TeamFormationConfigDto; expectedUpdatedAt: string }, actor: { id: string; role: string; email?: string }) {
+    const cohort = await this.cohortRepository.findOne({ where: { id: cohortId }, lock: { mode: 'pessimistic_write' } });
+    if (!cohort) throw new NotFoundException("Cohort not found");
+    if (cohort.updatedAt.toISOString() !== new Date(dto.expectedUpdatedAt).toISOString()) throw new ConflictException("Cohort settings changed. Reload before saving defaults");
+    const settings = this.settings(this.normalizeConfig(dto.config, cohort));
+    await this.cohortRepository.update(cohortId, { formationDefaults: settings });
+    await this.audit(actor, cohortId, "Updated formation defaults", { before: cohort.formationDefaults, after: settings });
+    afterCommit(this, () => this.clearFormationPreviewCache(cohortId));
+    return this.getFormationDefaults(cohortId);
+  }
+
+  private async audit(actor: { id: string; role: string; email?: string }, cohortId: string, description: string, metadata: Record<string, unknown>) {
+    await this.teamRepository.manager.save(AuditLog, { actorId: actor.id, actorEmail: actor.email, action: AuditAction.UPDATE, entityType: 'Cohort', entityId: cohortId, description, metadata: { ...metadata, principalId: actor.id, principalRole: actor.role, source: 'team-formation' } });
+  }
+
   private normalizeConfig(
     config: TeamFormationConfigDto | undefined,
     cohort: Cohort,
   ): Required<TeamFormationConfigDto> {
+    const saved = cohort.formationDefaults || DEFAULT_FORMATION_SETTINGS;
+    const settings: FormationSettings = {
+      builderEligibility: config?.builderEligibility ?? saved.builderEligibility,
+      minimumBuilders: config?.minimumBuilders ?? saved.minimumBuilders,
+      preferredBuilders: config?.preferredBuilders ?? saved.preferredBuilders,
+      shortageAction: config?.shortageAction ?? saved.shortageAction,
+      matchingScope: config?.matchingScope ?? saved.matchingScope,
+      exceptionReason: (config?.exceptionReason ?? saved.exceptionReason ?? '').trim(),
+    };
+    if (!['confirmed', 'recorded', 'potential'].includes(settings.builderEligibility) || !['new', 'backfill', 'both'].includes(settings.matchingScope) || !['leave_unassigned', 'draft', 'exception'].includes(settings.shortageAction) || ![0, 1, 2].includes(settings.minimumBuilders) || ![0, 1, 2].includes(settings.preferredBuilders)) throw new BadRequestException("Choose valid formation settings");
+    if (settings.preferredBuilders < settings.minimumBuilders) throw new BadRequestException("The preferred builder count cannot be lower than the required minimum");
+    if ((settings.minimumBuilders === 0 || settings.shortageAction === 'exception') && settings.exceptionReason.length < 10) throw new BadRequestException("Explain the staff builder exception in at least 10 characters");
+    if (settings.exceptionReason.length > 1000) throw new BadRequestException("The builder exception reason is too long");
     return {
+      ...settings,
       skillWeight: config?.skillWeight ?? 0.25,
       interestWeight: config?.interestWeight ?? 0.15,
       verticalWeight: config?.verticalWeight ?? 0.25,
@@ -669,6 +735,8 @@ export class TeamFormationService {
     leadParticipantId: string,
     coLeadParticipantId: string,
     briefId?: string,
+    config: TeamFormationConfigDto = {},
+    actor?: { id: string; role: string; email?: string },
   ): Promise<Team> {
     const cohort = await this.cohortRepository.findOne({ where: { id: cohortId } });
     if (!cohort) throw new BadRequestException("Cohort not found");
@@ -686,8 +754,12 @@ export class TeamFormationService {
     const brief = briefId ? await this.briefRepository.findOne({ where: { id: briefId }, relations: ["organization"] }) : null;
     if (briefId && (!brief || brief.cohortId !== cohortId || brief.status !== BriefStatus.APPROVED || !isPoolBrief(brief))) throw new BadRequestException("Choose an approved brief from this cohort");
     const competitionCountry = chooseCompetitionCountry(participants, brief ? briefCountry(brief) : undefined);
-    const report = evaluateTeamRules(cohort, participants, { competitionCountry, hasBrief: !!briefId, problemCountry: brief ? briefCountry(brief) : undefined });
-    if (!report.canRegister) throw new BadRequestException(report.registrationIssues.map(issue => issue.message).join("; "));
+    const settings = this.normalizeConfig(config, cohort);
+    const coverage = builderCoverage(participants, settings);
+    const waived = settings.minimumBuilders === 0 || coverage.counted < settings.minimumBuilders && settings.shortageAction === 'exception';
+    const report = evaluateTeamRules(cohort, participants, { builderPolicy: { ...settings, minimumBuilders: waived ? 0 : settings.minimumBuilders }, competitionCountry, hasBrief: !!briefId, problemCountry: brief ? briefCountry(brief) : undefined });
+    const blocked = report.registrationIssues.filter(issue => issue.code !== 'builder' || settings.shortageAction !== 'draft');
+    if (blocked.length) throw new BadRequestException(blocked.map(issue => issue.message).join("; "));
     // Generate invite code
     const inviteCode = this.generateInviteCode();
 
@@ -697,7 +769,8 @@ export class TeamFormationService {
       cohortId,
       group,
       status: TeamStatus.FORMING,
-      competitionCountry, registeredAt: new Date(),
+      competitionCountry, registeredAt: report.canRegister ? new Date() : null,
+      builderPolicy: actor?.id ? { version: 1, builderEligibility: settings.builderEligibility, minimumBuilders: settings.minimumBuilders, preferredBuilders: settings.preferredBuilders, exceptionGranted: waived, reason: waived ? settings.exceptionReason : '', authorizedBy: actor.id, authorizedAt: new Date().toISOString() } as TeamBuilderPolicy : null,
       inviteCode,
     };
     

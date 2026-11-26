@@ -1,4 +1,6 @@
 "use client";
+import { FormationSettingsPanel, FormationPolicySummary } from "@/components/teams/formation-settings";
+import { BUILDER_STATUS_LABELS, type FormationSettings } from "@acmp/shared";
 import { InactiveTeams } from "@/components/teams/staff-team-workflow";
 
 import { StaffOnly, useStaffPermission } from "@/components/auth/staff-only";
@@ -198,14 +200,14 @@ function TeamsContent() {
   const participantsReadyForTeams = participantStats?.ready || 0;
 
   // Team Formation handlers
-  const handleRunFormation = async () => {
+  const handleRunFormation = async (settings: FormationSettings) => {
     if (!effectiveCohortId) return;
-    await runFormationMutation.mutateAsync({ cohortId: effectiveCohortId, dto: { config: { useBriefCentricAssignment: false } } });
+    await runFormationMutation.mutateAsync({ cohortId: effectiveCohortId, dto: { config: { ...settings, useBriefCentricAssignment: false } } });
   };
 
   const handleFinalizeFormation = async () => {
     if (!effectiveCohortId) return;
-    await finalizeFormationMutation.mutateAsync({ cohortId: effectiveCohortId });
+    await finalizeFormationMutation.mutateAsync({ cohortId: effectiveCohortId, dto: { previewId: formationPreview?.previewId } });
     setShowFormationDialog(false);
     setShowFormationWorkspace(false);
   };
@@ -589,26 +591,18 @@ function TeamsContent() {
                     </Button>
                   </>
                 )}
-                {!formationPreview && (
-                  <StaffOnly permission="manage"><Button
-                    onClick={handleRunFormation}
-                    disabled={runFormationMutation.isPending || formationLoading}
-                  >
-                    {runFormationMutation.isPending ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Wand2 className="mr-2 h-4 w-4" />
-                    )}
-                    Run Team Formation
-                  </Button></StaffOnly>
-                )}
+
               </div>
             </div>
+
+            {!formationPreview && effectiveCohortId && <FormationSettingsPanel key={effectiveCohortId} cohortId={effectiveCohortId} onRun={handleRunFormation} running={runFormationMutation.isPending || formationLoading} />}
 
             {/* Formation Preview */}
             {formationPreview && (
               <div className="mt-4 min-w-0 space-y-4">
                 <Separator />
+                <FormationPolicySummary settings={formationPreview.configUsed} />
+                {formationPreview.builderSummary && <p className="text-sm" role="status">{formationPreview.builderSummary.registeredTeams} meet the requirement · {formationPreview.builderSummary.draftTeams} draft teams needing builders · {formationPreview.builderSummary.exceptionTeams} staff exceptions · {formationPreview.builderSummary.noBuilderTeams} teams with no counted builder</p>}
                 {formationPreview.configUsed?.useBriefCentricAssignment === true && <p role="alert" className="text-sm text-destructive">This preview includes brief assignments. Clear it and run team formation again to keep the steps separate.</p>}
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   <div className="text-center">
@@ -638,7 +632,7 @@ function TeamsContent() {
                   </div>
                 )}
 
-                {formationPreview.proposedTeams.length > 0 && <div className="overflow-x-auto rounded-lg border"><table className="w-full min-w-[720px] text-sm"><thead><tr>{["Proposed team", "Group / country", "Members", "Builders / non-computing", "Role and mix guidance"].map(label => <th key={label} className="p-3 text-left">{label}</th>)}</tr></thead><tbody>{formationPreview.proposedTeams.map(team => <tr key={team.proposedTeamId} className="border-t"><td className="p-3">{team.suggestedName}</td><td className="p-3">{team.group || "No group"} · {team.competitionCountry || "Choose at registration"}</td><td className="p-3">{team.participants.map(person => `${person.firstName} ${person.lastName}`).join(", ")}</td><td className="p-3">{team.eligibility?.builderCount ?? "—"} / {team.eligibility?.nonComputingCount ?? "—"}</td><td className="p-3"><ul>{team.eligibility?.guidance.map(message => <li key={message}>{message}</li>)}</ul></td></tr>)}</tbody></table></div>}
+                {formationPreview.proposedTeams.length > 0 && <div className="overflow-x-auto rounded-lg border"><table className="w-full min-w-[720px] text-sm"><thead><tr>{["Proposed team", "Group / country", "Members", "Builders / non-computing", "Role and mix guidance"].map(label => <th key={label} className="p-3 text-left">{label}</th>)}</tr></thead><tbody>{formationPreview.proposedTeams.map(team => <tr key={team.proposedTeamId} className="border-t"><td className="p-3">{team.suggestedName}<span className="mt-1 block text-xs">{team.registrationOutcome === "draft" ? "Draft — needs builders" : team.registrationOutcome === "exception" ? "Staff builder exception" : "Ready to register"}{team.eligibility?.builderCount === 0 && " · No builder"}</span></td><td className="p-3">{team.group || "No group"} · {team.competitionCountry || "Choose at registration"}</td><td className="p-3">{team.participants.map(person => <span key={person.id} className="mb-2 block">{person.firstName} {person.lastName}<span className="ml-2 rounded bg-muted px-2 py-0.5 text-xs">{BUILDER_STATUS_LABELS[person.builderStatus || "non_builder"]}</span></span>)}</td><td className="p-3">{team.eligibility?.builderCount ?? "—"} / {team.eligibility?.nonComputingCount ?? "—"}</td><td className="p-3"><ul>{team.eligibility?.guidance.map(message => <li key={message}>{message}</li>)}</ul></td></tr>)}</tbody></table></div>}
 
                 {formationPreview.warnings.length > 0 && (
                   <div className="rounded-md bg-amber-50 dark:bg-amber-950/20 p-3">
@@ -681,9 +675,12 @@ function TeamsContent() {
                   will be added to existing teams.
                 </span>
               )}
+              {!!formationPreview?.builderSummary?.draftTeams && <span className="mt-2 block">{formationPreview.builderSummary.draftTeams} teams will remain drafts needing builders before registration.</span>}
+              {!!formationPreview?.builderSummary?.exceptionTeams && <span className="mt-2 block">{formationPreview.builderSummary.exceptionTeams} teams will receive the staff builder exception shown in the preview.</span>}
               <span className="block mt-2 font-medium">This action cannot be undone.</span>
             </DialogDescription>
           </DialogHeader>
+          {formationPreview && <FormationPolicySummary settings={formationPreview.configUsed} />}
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowFormationDialog(false)}>
               Cancel

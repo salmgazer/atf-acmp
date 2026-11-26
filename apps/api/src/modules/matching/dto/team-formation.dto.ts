@@ -1,4 +1,4 @@
-import type { TeamRuleReport } from "@acmp/shared";
+import type { TeamRuleReport, BuilderStatus } from "@acmp/shared";
 import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import {
   IsUUID,
@@ -9,7 +9,7 @@ import {
   IsBoolean,
   IsArray,
   ValidateNested,
-  IsEnum, IsInt, ArrayMinSize, ArrayMaxSize, ArrayUnique,
+  IsEnum, IsInt, IsIn, IsDefined, IsString, MaxLength, IsDateString, ArrayMinSize, ArrayMaxSize, ArrayUnique,
 } from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
@@ -37,6 +37,13 @@ export type SkillProfile = "technical" | "non-technical" | "hybrid";
  * Configuration for auto team formation algorithm
  */
 export class TeamFormationConfigDto {
+  @IsOptional() @IsIn(['confirmed', 'recorded', 'potential']) builderEligibility?: 'confirmed' | 'recorded' | 'potential';
+  @IsOptional() @IsInt() @Min(0) @Max(2) minimumBuilders?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(2) preferredBuilders?: number;
+  @IsOptional() @IsIn(['leave_unassigned', 'draft', 'exception']) shortageAction?: 'leave_unassigned' | 'draft' | 'exception';
+  @IsOptional() @IsIn(['new', 'backfill', 'both']) matchingScope?: 'new' | 'backfill' | 'both';
+  @IsOptional() @IsString() @MaxLength(1000) exceptionReason?: string;
+
   @ApiPropertyOptional({
     description: "Weight for skill compatibility (0-1)",
     default: 0.3,
@@ -150,6 +157,11 @@ export class TeamFormationConfigDto {
   useBriefCentricAssignment?: boolean = false;
 }
 
+export class SaveFormationDefaultsDto {
+  @IsDateString() expectedUpdatedAt: string;
+  @IsDefined() @ValidateNested() @Type(() => TeamFormationConfigDto) config: TeamFormationConfigDto;
+}
+
 export class RunTeamFormationDto {
   @ApiPropertyOptional({ type: TeamFormationConfigDto })
   @IsOptional()
@@ -189,6 +201,7 @@ export class ManualTeamAssignmentDto {
 }
 
 export class FinalizeTeamFormationDto {
+  @IsOptional() @IsUUID("4") previewId?: string;
   @ApiPropertyOptional({
     description: "Manual team assignments (override algorithm)",
     type: [ManualTeamAssignmentDto],
@@ -213,6 +226,7 @@ export class FinalizeTeamFormationDto {
  * Proposed team in the preview
  */
 export class ProposedTeamDto {
+  registrationOutcome?: "registered" | "draft" | "exception";
   competitionCountry?: string;
   eligibility?: TeamRuleReport;
   @ApiPropertyOptional() group?: string | null;
@@ -235,6 +249,7 @@ export class ProposedTeamDto {
     country: string;
     skills: string[];
     interests: string[];
+    builderStatus?: BuilderStatus;
     isProposedLead: boolean;
     isProposedCoLead: boolean;
     skillProfile: SkillProfile;
@@ -509,6 +524,8 @@ export class ProposedBriefAssignmentDto {
  * Full team formation preview response
  */
 export class TeamFormationPreviewDto {
+  previewId?: string;
+  builderSummary?: { registeredTeams: number; draftTeams: number; exceptionTeams: number; noBuilderTeams: number; confirmedBuilders: number; awaitingBuilders: number; potentialBuilders: number };
   policyVersion?: string;
   deadlineVersion?: string;
   sourceVersions?: Record<string, string>;
