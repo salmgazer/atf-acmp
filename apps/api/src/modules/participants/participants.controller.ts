@@ -62,6 +62,8 @@ import { ParticipantImportService } from "./participant-import.service";
 import { ParticipantImportDto, ApplyParticipantImportDto } from "./dto/participant-import.dto";
 import { StaffParticipantProfileDto } from "./dto/staff-participant-profile.dto";
 import { UpdateParticipantMatchingProfileDto } from "./dto/participant-matching-profile.dto";
+import { BuildersService } from "./builders.service";
+import { BuilderBroadcastDto, BuilderFiltersDto, BuilderQueryDto } from "./dto/builders.dto";
 
 @ApiTags("participants")
 @Controller("participants")
@@ -72,6 +74,7 @@ export class ParticipantsController {
     private readonly uploadService: UploadService,
     private readonly invites: ParticipantInvitesService,
     private readonly imports: ParticipantImportService,
+    private readonly builders: BuildersService,
   ) {}
 
   @Post("import/preview")
@@ -163,6 +166,32 @@ export class ParticipantsController {
   }
 
   // ============ Admin/Staff Endpoints ============
+
+  @Get("builders")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
+  listBuilders(@Query() query: BuilderQueryDto) { return this.builders.list(query); }
+
+  @Get("builders/export")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER, Role.EVALUATOR, Role.VIEWER)
+  exportBuilders(@Query() query: BuilderFiltersDto) { return this.builders.export(query); }
+
+  @Get("builders/audience")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  async builderAudience(@Query() query: BuilderFiltersDto) {
+    const { total, audienceHash } = await this.builders.audience(query);
+    return { total, audienceHash };
+  }
+
+  @Post("builders/broadcasts")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  @BulkThrottle()
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Audit({ action: AuditAction.CREATE, entityType: "BuilderBroadcast", getEntityId: result => result?.id, getDescription: result => `Queued builder broadcast for ${result?.total} recipients` })
+  broadcastBuilders(@Body() dto: BuilderBroadcastDto, @CurrentUser("id") actor: string) { return this.builders.broadcast(dto, actor); }
+
+  @Get("builders/broadcasts/:id")
+  @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)
+  builderBroadcastStatus(@Param("id", ParseUUIDPipe) id: string) { return this.builders.status(id); }
 
   @Post("resend-invites")
   @Roles(Role.SUPER_ADMIN, Role.PROGRAM_MANAGER)

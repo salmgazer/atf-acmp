@@ -17,6 +17,7 @@ import { ParticipantsController } from "@/modules/participants/participants.cont
 import { ParticipantsService } from "@/modules/participants/participants.service";
 import { ParticipantInvitesService } from "@/modules/participants/participant-invites.service";
 import { ParticipantImportService } from "@/modules/participants/participant-import.service";
+import { BuildersService } from "@/modules/participants/builders.service";
 import { BriefsController } from "@/modules/briefs/briefs.controller";
 import { BriefsService } from "@/modules/briefs/briefs.service";
 import { VerticalsService } from "@/modules/verticals/verticals.service";
@@ -33,6 +34,7 @@ describe("Organization HTTP request body parsing", () => {
     apply: jest.fn(async () => ({ created: 1 })),
   };
   const participantImports = { preview: jest.fn(async () => ({ ready: true })), enqueue: jest.fn(async () => ({ id: "batch" })) };
+  const builders = { list: jest.fn(async (_filters: unknown) => ({ data: [], total: 0 })), broadcast: jest.fn(async (_dto: unknown, _actor: string) => ({ id: partnerId, total: 1 })) };
   const participantProfiles = {
     confirmBuilderProfile: jest.fn(async (id: string, dto: any) => ({ id, ...dto, builderConfirm: true })),
     updateStaffProfile: jest.fn(async (id: string, dto: any) => ({ id, city: dto.city })),
@@ -57,6 +59,7 @@ describe("Organization HTTP request body parsing", () => {
         { provide: ParticipantsService, useValue: participantProfiles },
         { provide: ParticipantInvitesService, useValue: {} },
         { provide: ParticipantImportService, useValue: participantImports },
+        { provide: BuildersService, useValue: builders },
         { provide: BriefsService, useValue: briefs },
         { provide: VerticalsService, useValue: {} },
       ],
@@ -78,6 +81,22 @@ describe("Organization HTTP request body parsing", () => {
   const importBody = () => ({ cohortId: partnerId, sourceName: "large.csv", sourceTimezone: "Africa/Accra", csv: "a".repeat(150000) });
 
   const patchSelf = (suffix: string, body: unknown, role = "participant", id = actorId) => fetch(`${base.replace(/organizations$/, "participants")}/${id}${suffix}`, { method: "PATCH", headers: { "Content-Type": "application/json", "x-test-role": role }, body: JSON.stringify(body) });
+  it("parses builder filters and pagination without treating the directory as a participant ID", async () => {
+    const endpoint = `${base.replace(/organizations$/, "participants")}/builders`;
+    const response = await fetch(`${endpoint}?cohortId=${partnerId}&confirmation=pending&assignment=unassigned&ungrouped=true&page=2&limit=10`);
+    expect(response.status).toBe(200);
+    expect(builders.list).toHaveBeenCalledWith(expect.objectContaining({ cohortId: partnerId, confirmation: "pending", assignment: "unassigned", ungrouped: true, page: 2, limit: 10 }));
+    expect((await fetch(`${endpoint}?confirmation=unknown`)).status).toBe(400);
+  });
+  it("validates broadcast JSON and binds the sender to the authenticated staff principal", async () => {
+    const endpoint = `${base.replace(/organizations$/, "participants")}/builders/broadcasts`;
+    const body = { requestId: partnerId, filters: { cohortId: partnerId, confirmation: "pending", assignment: "unassigned" }, audienceHash: "a".repeat(64), subject: " Builder update ", message: " Please confirm your experience. " };
+    const send = (value: unknown, role = "program_manager") => fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json", "x-test-role": role }, body: JSON.stringify(value) });
+    expect((await send(body)).status).toBe(202);
+    expect(builders.broadcast).toHaveBeenCalledWith(expect.objectContaining({ subject: "Builder update", message: "Please confirm your experience.", filters: expect.objectContaining({ confirmation: "pending" }) }), actorId);
+    for (const role of ["viewer", "evaluator", "participant", "organization", "mentor"]) expect((await send(body, role)).status).toBe(403);
+    for (const bad of [{ filters: undefined }, { filters: [] }, { filters: { confirmation: "invalid" } }, { subject: "Update\r\nBcc: other@example.test" }]) expect((await send({ ...body, ...bad })).status).toBe(400);
+  });
   it("binds builder confirmation to the signed-in participant and preserves explicit No answers", async () => {
     const answers = { expectedUpdatedAt: "2026-11-24T08:00:00Z", preferredLanguage: "JavaScript", otherLanguage: "", languageProficiency: "Beginner", developmentExperience: true, testingExperience: false, deploymentExperience: false };
     const response = await patchSelf("/builder-profile", answers, "participant", "me");
