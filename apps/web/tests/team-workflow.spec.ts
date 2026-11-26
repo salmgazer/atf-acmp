@@ -93,6 +93,26 @@ test("proposal fields preserve milestones and use the assigned brief without ask
   expect(state.writes.at(-1)?.body.content).not.toHaveProperty("approved");
 });
 
+for (const response of ["empty-200", "no-content-204", "json-null"] as const) test(`a first proposal opens and saves when its submission lookup returns ${response}`, async ({ page, context }) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  const state = await setup(page, context);
+  state.progress.proposal = null;
+  let saved = false;
+  await page.route("**/api/submissions/my/stage/workflow-stage-proposal", async route => {
+    if (saved) return route.fallback();
+    return route.fulfill(response === "json-null" ? { json: null } : { status: response === "no-content-204" ? 204 : 200, body: "" });
+  });
+  await page.goto("/participant/submissions/workflow-stage-proposal");
+  await expect(page.getByRole("heading", { name: "Team proposal", exact: true }), `Client errors: ${errors.join("; ")}`).toBeVisible();
+  await page.getByLabel("Project name", { exact: true }).fill("First proposal draft");
+  saved = true;
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved successfully" })).toBeVisible();
+  expect(state.writes.at(-1)?.body.content).toMatchObject({ projectName: "First proposal draft", briefId });
+  expect(errors).toEqual([]);
+});
+
 test("MVP uploads require MP4 and PowerPoint and reuse the existing repository", async ({ page, context }) => {
   const state = await setup(page, context, { passed: true }); await page.goto("/participant/submissions/workflow-stage-build");
   await expect(page.getByRole("link", { name: "https://github.com/example/project", exact: true })).toBeVisible();
