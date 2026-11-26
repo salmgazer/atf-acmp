@@ -113,4 +113,41 @@ const url = process.env.ACMP_TEST_DATABASE_URL;
       expect((await runner.query("SELECT to_regclass('team_name_claims') AS name"))[0].name).toBeNull();
     } finally { await runner.rollbackTransaction(); await runner.release(); }
   });
+  it('includes a team committed concurrently while the migration is waiting for writers', async () => {
+    const migration = db.createQueryRunner(), writer = db.createQueryRunner();
+    const schema = 'team_names_race_' + randomUUID().replace(/-/g, '');
+    let pending: Promise<unknown> | undefined;
+    try {
+      await migration.connect(); await writer.connect();
+      await migration.query(`CREATE SCHEMA "${schema}"`);
+      await migration.query(`SET search_path TO "${schema}"`);
+      await writer.query(`SET search_path TO "${schema}"`);
+      await migration.query('CREATE TABLE cohorts (id uuid PRIMARY KEY); CREATE TABLE teams (id uuid PRIMARY KEY, cohort_id uuid NOT NULL, name text NOT NULL, deleted_at timestamptz)');
+      const id = randomUUID(); await migration.query('INSERT INTO cohorts VALUES ($1)', [id]);
+      await writer.startTransaction();
+      await writer.query("INSERT INTO teams VALUES ($1,$2,'Team during migration',NULL)", [randomUUID(), id]);
+      const [{ pid: writerPid }] = await writer.query('SELECT pg_backend_pid() AS pid');
+      const [{ pid: migrationPid }] = await migration.query('SELECT pg_backend_pid() AS pid');
+      await migration.startTransaction();
+      pending = new UniqueTeamNames1795737800000().up(migration).then(() => null, error => error);
+      let blocked = false;
+      for (let attempt = 0; attempt < 200; attempt++) {
+        const [{ blockers }] = await db.query('SELECT pg_blocking_pids($1) AS blockers', [migrationPid]);
+        if (blockers.includes(writerPid)) { blocked = true; break; }
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      expect(blocked).toBe(true);
+      await writer.commitTransaction();
+      const result = await pending; if (result instanceof Error) throw result;
+      await migration.commitTransaction();
+      expect(await migration.query('SELECT name_key, active_team_count FROM team_name_claims')).toEqual([{ name_key: 'team during migration', active_team_count: 1 }]);
+    } finally {
+      if (writer.isTransactionActive) await writer.rollbackTransaction();
+      await pending;
+      if (migration.isTransactionActive) await migration.rollbackTransaction();
+      await migration.query('RESET search_path'); await writer.query('RESET search_path');
+      await db.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+      await writer.release(); await migration.release();
+    }
+  });
 });
