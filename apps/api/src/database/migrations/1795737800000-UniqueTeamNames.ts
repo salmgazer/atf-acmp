@@ -4,6 +4,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 export class UniqueTeamNames1795737800000 implements MigrationInterface {
   async up(q: QueryRunner): Promise<void> {
     await q.query(`
+      LOCK TABLE teams IN SHARE ROW EXCLUSIVE MODE;
       CREATE OR REPLACE FUNCTION acmp_team_name_key(value text) RETURNS text
       LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
         SELECT lower(btrim(regexp_replace(value, '[[:space:]\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+', ' ', 'g')))
