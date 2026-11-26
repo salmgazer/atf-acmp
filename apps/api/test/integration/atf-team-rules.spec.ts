@@ -54,6 +54,44 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
   }
   const builder = () => person({ developmentExperience: true, testingExperience: true, deploymentExperience: true, pythonSkill: "Intermediate" }, { buildDeployAbility: "confident", preferredRole: "builder" });
 
+  it('rejects duplicate manual names without assigning the creator or leaving orphaned memberships', async () => {
+    const a = await person(), b = await person();
+    const first = await teams.create({ name: '  Impact   Nexus ', cohortId: cohort.id, creatorId: a.id });
+    expect(first.name).toBe('Impact Nexus');
+    await expect(teams.create({ name: 'IMPACT NEXUS', cohortId: cohort.id, creatorId: b.id })).rejects.toMatchObject({ driverError: { code: '23505', constraint: 'team_names_cohort_key' } });
+    expect(await db.getRepository(TeamMember).countBy({ participantId: b.id })).toBe(0);
+    expect((await db.getRepository(Participant).findOneByOrFail({ id: b.id })).status).toBe(ParticipantStatus.READY);
+    const second = await teams.create({ name: 'Another team', cohortId: cohort.id, creatorId: b.id });
+    await expect(teams.update(second.id, { name: 'impact nexus' })).rejects.toMatchObject({ driverError: { code: '23505' } });
+    expect((await db.getRepository(Team).findOneByOrFail({ id: second.id })).name).toBe('Another team');
+    expect((await teams.update(first.id, { name: 'IMPACT NEXUS' })).name).toBe('IMPACT NEXUS');
+  });
+
+  it('keeps formation names unique when an existing active team or a later manual creation occupies them', async () => {
+    await builder(); await person({ fieldOfStudy: 'Medicine' }); await person();
+    await db.getRepository(Team).save({ name: 'TEAM 1', cohortId: cohort.id, group: 'A', inviteCode: randomUUID(), status: TeamStatus.ACTIVE });
+    const preview = await formation.runTeamFormation(cohort.id, { config: { matchingScope: 'new' } });
+    expect(preview.proposedTeams[0].suggestedName).toBe('Team 2');
+    await db.getRepository(Team).save({ name: 'Team 2', cohortId: cohort.id, group: 'A', inviteCode: randomUUID() });
+    const result = await formation.finalizeTeamFormation(cohort.id, { previewId: preview.previewId }, actor);
+    expect(result.createdTeamCount).toBe(1);
+    const made = await db.getRepository(Team).findOneByOrFail({ cohortId: cohort.id, name: 'Team 3' });
+    expect(await db.getRepository(TeamMember).countBy({ teamId: made.id })).toBe(3);
+    expect(made.briefId).toBeNull();
+  });
+
+  it('rolls back an entire formation batch if manual overrides reuse a name', async () => {
+    const people = await Promise.all(Array.from({ length: 6 }, () => person({ fieldOfStudy: 'Medicine' })));
+    const preview = await formation.runTeamFormation(cohort.id, { config: { teamSizeMax: 3 } });
+    await expect(formation.finalizeTeamFormation(cohort.id, { previewId: preview.previewId, manualTeams: [
+      { participantIds: people.slice(0, 3).map(person => person.id), teamName: 'Impact Nexus' },
+      { participantIds: people.slice(3).map(person => person.id), teamName: 'IMPACT NEXUS' },
+    ] }, actor)).rejects.toMatchObject({ driverError: { code: '23505', constraint: 'team_names_cohort_key' } });
+    expect(await db.getRepository(Team).countBy({ cohortId: cohort.id })).toBe(0);
+    expect(await db.getRepository(TeamMember).countBy({ participantId: people[0].id })).toBe(0);
+    expect(await db.query('SELECT name_key FROM team_name_claims WHERE cohort_id=$1', [cohort.id])).toEqual([]);
+  });
+
   it("creates builder-free drafts by default, then permits registration once their recorded builder requirement is met", async () => {
     const people = await Promise.all([person({ fieldOfStudy: "Medicine" }), person(), person()]);
     const preview = await formation.runTeamFormation(cohort.id);
@@ -172,7 +210,7 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
   });
   async function roster() {
     const lead = await builder(), specialist = await person({ fieldOfStudy: "Medicine" }), impact = await person({ fieldOfStudy: "Law" }, { preferredRole: "business_impact_lead" });
-    const team = await teams.create({ name: "Draft ATF team", cohortId: cohort.id, creatorId: lead.id });
+    const team = await teams.create({ name: "Draft ATF team " + lead.id, cohortId: cohort.id, creatorId: lead.id });
     await teams.addMember(team.id, { participantId: specialist.id }); await teams.addMember(team.id, { participantId: impact.id });
     return { team, lead, specialist, impact, members: [lead, specialist, impact] };
   }

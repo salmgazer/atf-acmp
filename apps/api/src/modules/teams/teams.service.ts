@@ -1,4 +1,5 @@
 import { builderRequirementForTeam } from "@acmp/shared";
+import { validateTeamName } from "@/common/services/team-names";
 import { assertProposalPassed, isPoolBrief } from "@/common/services/team-workflow";
 import { assertParticipantTeamAdmission, assertMemberAdmission, teamRuleContext, clearTeamRegistration } from "@/common/services/team-rules";
 import { ATF_TEAM_MAX, canShareTeam, evaluateTeamRules, normalizeTeamCountry, TeamBriefPreference, isQualifiedBuilder, hasNonComputingStudy, GITHUB_USERNAME_PATTERN, type ParticipantPeerProfile } from "@acmp/shared";
@@ -106,6 +107,7 @@ export class TeamsService {
 
   @Transactional()
   async create(dto: CreateTeamDto): Promise<Team> {
+    const name = validateTeamName(dto.name);
     // Verify cohort exists
     const cohort = await this.cohortRepository.findOne({
       where: { id: dto.cohortId },
@@ -139,7 +141,7 @@ export class TeamsService {
 
     // Create team
     const team = this.teamRepository.create({
-      name: dto.name,
+      name,
       description: dto.description,
       cohortId: dto.cohortId,
       group: resolveCohortGroup(cohort, creator.group),
@@ -897,6 +899,7 @@ export class TeamsService {
 
   async update(id: string, dto: UpdateTeamDto): Promise<Team> {
     const team = await this.findOne(id);
+    if (dto.name !== undefined) dto = { ...dto, name: validateTeamName(dto.name) };
     Object.assign(team, dto);
     await this.teamRepository.save(team);
     return this.findOne(id);
