@@ -35,6 +35,20 @@ describe('Staff role boundaries', () => {
     await expect(authorize(CohortsController, 'findAll', role)).resolves.toBeDefined();
   });
 
+  it.each(staff)('%s can read and export the builders directory', async role => {
+    await expect(authorize(ParticipantsController, 'listBuilders', role)).resolves.toBeDefined();
+    await expect(authorize(ParticipantsController, 'exportBuilders', role)).resolves.toBeDefined();
+  });
+
+  it.each([Role.EVALUATOR, Role.VIEWER, Role.PARTICIPANT, Role.ORGANIZATION, Role.MENTOR])('%s cannot send builder broadcasts', async role => {
+    await expect(authorize(ParticipantsController, 'broadcastBuilders', role, 'POST')).rejects.toThrow(ForbiddenException);
+  });
+
+  it.each([Role.SUPER_ADMIN, Role.PROGRAM_MANAGER])('%s can review and queue builder broadcasts', async role => {
+    await expect(authorize(ParticipantsController, 'builderAudience', role)).resolves.toBeDefined();
+    await expect(authorize(ParticipantsController, 'broadcastBuilders', role, 'POST')).resolves.toBeDefined();
+  });
+
   it.each(staff)('%s can read evaluations, submissions and stage reports', async role => {
     await expect(authorize(EvaluationsController, 'getEvaluations', role)).resolves.toBeDefined();
     await expect(authorize(EvaluationsController, 'getEvaluation', role, 'GET', { id: 'evaluation' })).resolves.toBeDefined();
