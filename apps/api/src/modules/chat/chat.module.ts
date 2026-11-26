@@ -16,6 +16,8 @@ import {
 import { Team } from "@/database/entities/team.entity";
 import { MentorsModule } from "@/modules/mentors/mentors.module";
 import { NotificationsModule } from "@/modules/notifications/notifications.module";
+import { ChatEmailDigest } from "@/database/entities/chat-email-digest.entity";
+import { ChatEmailService } from "./chat-email.service";
 
 @Module({
   imports: [
@@ -27,12 +29,13 @@ import { NotificationsModule } from "@/modules/notifications/notifications.modul
       MessageReaction,
       TypingIndicator,
       Team,
+      ChatEmailDigest,
     ]),
     forwardRef(() => MentorsModule),
     NotificationsModule,
   ],
   controllers: [ChannelsController],
-  providers: [ChatGateway, ChatService],
+  providers: [ChatGateway, ChatService, ChatEmailService],
   exports: [ChatService, ChatGateway],
 })
 export class ChatModule {}

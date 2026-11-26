@@ -12,11 +12,9 @@ import {
   useChatSocket,
   useSendMessage,
   useEditMessage,
-  useMarkAsRead,
   type ChatMessage,
   type SenderType,
 } from "@/lib/api/hooks/use-chat";
-import { useChatContext } from "@/lib/contexts/chat-context";
 import { Menu, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -54,18 +52,6 @@ export function ChatView({
   const { data: channel } = useChannel(selectedChannelId || "");
   const sendMessage = useSendMessage();
   const editMessage = useEditMessage();
-  const markAsRead = useMarkAsRead();
-  const { refreshUnreadCount, setActiveChannelId } = useChatContext();
-
-  // Update active channel in context when selected channel changes
-  useEffect(() => {
-    setActiveChannelId(selectedChannelId || null);
-    
-    // Clear active channel when component unmounts
-    return () => {
-      setActiveChannelId(null);
-    };
-  }, [selectedChannelId, setActiveChannelId]);
 
   // WebSocket connection
   const socket = useChatSocket({
@@ -98,13 +84,6 @@ export function ChatView({
   useEffect(() => {
     if (selectedChannelId && socket.isConnected) {
       socket.joinChannel(selectedChannelId);
-      // Mark as read when entering channel
-      markAsRead.mutate({ channelId: selectedChannelId }, {
-        onSuccess: () => {
-          // Refresh unread count after marking as read
-          refreshUnreadCount();
-        },
-      });
 
       return () => {
         socket.leaveChannel(selectedChannelId);
