@@ -43,6 +43,7 @@ import {
   GraduationCap,
   SlidersHorizontal,
   X,
+  ArrowRight,
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -380,6 +381,7 @@ function ParticipantsContent() {
           <p className="text-sm text-muted-foreground">
             Manage participants and bulk imports
           </p>
+          <Button asChild variant="outline" className="mt-3"><Link href="/staff/participants/builders">Builders<ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
         </div>
 
         {/* Stats */}

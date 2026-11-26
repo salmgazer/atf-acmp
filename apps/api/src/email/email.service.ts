@@ -222,6 +222,18 @@ The ATF Team`;
     await this.sendEmail(to, subject, html, text);
   }
 
+  async sendBuilderBroadcastEmail(params: { to: string; firstName: string; subject: string; message: string }): Promise<void> {
+    this.requireDeliveryConfiguration();
+    const escape = (value: string) => value.replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]!));
+    const html = `<!doctype html><html><body style="margin:0;background:#f9fafb;font-family:Arial,sans-serif;color:#374151">
+      <table role="presentation" width="100%"><tr><td align="center"><table role="presentation" style="max-width:600px;width:100%;background:white">
+      ${this.getEmailHeader()}<tr><td style="padding:0 32px 32px"><h1 style="font-size:24px;color:#111827">${escape(params.subject)}</h1>
+      <p>Hi ${escape(params.firstName)},</p><div style="font-size:16px;line-height:1.7;overflow-wrap:anywhere">${escape(params.message).replace(/\r?\n/g, "<br />")}</div>
+      </td></tr><tr><td style="padding:24px 32px;border-top:1px solid #e5e7eb;text-align:center">The ATF Team</td></tr>
+      </table></td></tr></table></body></html>`;
+    await this.sendEmail(params.to, params.subject, html, `Hi ${params.firstName},\n\n${params.message}\n\nThe ATF Team`, undefined, true);
+  }
+
   async sendCalendarInvitation(to: string, subject: string, html: string, text: string, calendar: { method: "REQUEST" | "CANCEL"; content: string }): Promise<void> {
     await this.sendEmail(to, subject, html, text, calendar);
   }
