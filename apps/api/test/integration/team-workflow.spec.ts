@@ -84,6 +84,23 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     for (const [index, person] of members.entries()) await db.getRepository(TeamMember).save({ teamId: team.id, participantId: person.id, role: index ? TeamRole.MEMBER : TeamRole.LEAD, status: TeamMemberStatus.CONFIRMED });
   });
   const briefAnswers = () => ({ ...completeAnswers(TEAM_BRIEF_FIELDS), hasOrganization: "No", country: "Ghana", q1: "judgement", q2: "good_records", q3: "hard", q4: "yes", q5: "clear", q6: "very_often", contactSupport: "Yes", contactReviewed: "Yes", conflict: "No", shareWithTeams: false });
+
+  it("lists saved submissions with stage and team relations, paginates reliably and leaves drafts unchanged", async () => {
+    const saved = await db.getRepository(Submission).save([
+      { teamId: team.id, stageId: stages[0].id, content: { projectName: "First saved proposal" }, submittedAt: new Date("2039-11-01T12:00:00Z") },
+      { teamId: team.id, stageId: stages[1].id, content: { projectName: "Second saved proposal" }, submittedAt: new Date("2039-11-02T12:00:00Z") },
+      { teamId: team.id, stageId: stages[2].id, content: { projectName: "Keep this draft", summary: "Previously saved information" }, submittedAt: null as any },
+    ]);
+    const before = await db.getRepository(Submission).findOneByOrFail({ id: saved[2].id });
+    const first = await submissions.getSubmissions({ teamId: team.id, page: 1, limit: 1 });
+    const second = await submissions.getSubmissions({ teamId: team.id, page: 2, limit: 1 });
+    const third = await submissions.getSubmissions({ teamId: team.id, page: 3, limit: 1 });
+    expect(first).toMatchObject({ total: 3, submissions: [{ id: saved[1].id, stage: { id: stages[1].id }, team: { id: team.id } }] });
+    expect(second.submissions[0].id).toBe(saved[0].id);
+    expect(third.submissions[0].id).toBe(saved[2].id);
+    expect((await submissions.getSubmissions({ teamId: team.id, stageId: stages[2].id })).submissions).toMatchObject([{ id: saved[2].id, content: before.content }]);
+    expect(await db.getRepository(Submission).findOneByOrFail({ id: saved[2].id })).toEqual(before);
+  });
   async function approveBrief() {
     const own = await workflow.saveOwnBrief(members[0].id, { answers: briefAnswers(), submit: true });
     await workflow.reviewBrief(own!.id, { action: "approved", feedback: "Evidence and contact checked" }, randomUUID());

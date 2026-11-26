@@ -90,7 +90,12 @@ export function useMySubmissionForStage(stageId: string, poll = false) {
   return useQuery({
     refetchInterval: query => poll && ["submitted", "late"].includes(query.state.data?.status || "") ? 5000 : false,
     queryKey: submissionKeys.myStage(stageId),
-    queryFn: () => api.get<Submission | null>(`/submissions/my/stage/${stageId}`),
+    queryFn: async () => {
+      const submission = await api.get<Submission | null | "">(`/submissions/my/stage/${stageId}`);
+      // Nest returns an empty HTTP body for a nullable handler with no saved
+      // submission. Axios represents that as "", rather than JSON null.
+      return submission === "" ? null : submission;
+    },
     enabled: !!stageId,
   });
 }
