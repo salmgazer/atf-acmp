@@ -49,7 +49,7 @@ describe("Participant import authorization and input boundaries", () => {
   });
   it("does not let the legacy endpoint bypass preview or reset existing accounts", async () => {
     const service = { bulkImport: jest.fn() };
-    const controller = new ParticipantsController(service as any, {} as any, {} as any, {} as any);
+    const controller = new ParticipantsController(service as any, {} as any, {} as any, {} as any, {} as any);
     await expect(controller.bulkImport({ cohortId: "id", participants: [] })).rejects.toThrow(GoneException);
     expect(service.bulkImport).not.toHaveBeenCalled();
   });

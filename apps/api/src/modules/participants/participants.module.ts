@@ -20,6 +20,9 @@ import { ParticipantImportProcessor } from "./participant-import.processor";
 import { ParticipantInviteBatchRecord } from "@/database/entities/participant-invite-batch.entity";
 import { ParticipantInviteLedgerService } from "./participant-invite-ledger.service";
 import { ParticipantQueueRecoveryService } from "./participant-queue-recovery.service";
+import { BuildersService, BUILDER_BROADCAST_QUEUE } from "./builders.service";
+import { BuilderBroadcastProcessor } from "./builder-broadcast.processor";
+import { BuilderBroadcast } from "@/database/entities/builder-broadcast.entity";
 
 @Module({
   imports: [
@@ -35,13 +38,14 @@ import { ParticipantQueueRecoveryService } from "./participant-queue-recovery.se
     }),
     BullModule.registerQueue({ name: PARTICIPANT_INVITES_QUEUE }),
     BullModule.registerQueue({ name: PARTICIPANT_IMPORT_QUEUE }),
-    TypeOrmModule.forFeature([Participant, ParticipantPreference, Cohort, ParticipantInviteBatchRecord]),
+    BullModule.registerQueue({ name: BUILDER_BROADCAST_QUEUE }),
+    TypeOrmModule.forFeature([Participant, ParticipantPreference, Cohort, ParticipantInviteBatchRecord, BuilderBroadcast]),
     NotificationsModule,
     UploadModule,
     CohortsModule,
   ],
   controllers: [ParticipantsController],
-  providers: [ParticipantsService, ParticipantInvitesService, ParticipantInvitesProcessor, ParticipantImportService, ParticipantImportProcessor, ParticipantInviteLedgerService, ParticipantQueueRecoveryService],
+  providers: [ParticipantsService, ParticipantInvitesService, ParticipantInvitesProcessor, ParticipantImportService, ParticipantImportProcessor, ParticipantInviteLedgerService, ParticipantQueueRecoveryService, BuildersService, BuilderBroadcastProcessor],
   exports: [ParticipantsService],
 })
 export class ParticipantsModule {}
