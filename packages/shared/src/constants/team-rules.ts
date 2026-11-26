@@ -1,3 +1,4 @@
+import { builderCoverage, countsAsFormationBuilder, DEFAULT_FORMATION_SETTINGS, type BuilderRequirement } from "./formation-policy";
 import type { BuilderProfile } from "./builder-profile";
 const COUNTRY_NAMES: Record<string, string> = { GH: "Ghana", NG: "Nigeria", KE: "Kenya", ZA: "South Africa" };
 import type { ParticipantMatchingProfile, MatchingSector } from "./participant-matching";
@@ -18,6 +19,7 @@ export interface TeamRuleCohort {
 }
 export interface TeamRuleIssue { code: string; message: string; participantId?: string }
 export interface TeamRuleReport {
+  builderCoverage?: ReturnType<typeof builderCoverage>; builderMinimum?: number; builderEligibility?: string;
   canRegister: boolean; canStartChallenge: boolean; registrationIssues: TeamRuleIssue[]; challengeIssues: TeamRuleIssue[];
   guidance: string[]; builderCount: number; nonComputingCount: number; sectorSpecialistCount: number;
   impactLeadCount: number; femaleCount: number; institutionCount: number; countries: string[];
@@ -62,7 +64,7 @@ export function sectorStudyMatch(p: TeamRuleParticipant, sector?: MatchingSector
   return !!sector && !!p.fieldOfStudy && !!patterns[sector]?.test(p.fieldOfStudy);
 }
 export function evaluateTeamRules(cohort: TeamRuleCohort, members: TeamRuleParticipant[], options: {
-  competitionCountry?: string | null; problemCountry?: string | null; hasBrief?: boolean;
+  builderPolicy?: BuilderRequirement; competitionCountry?: string | null; problemCountry?: string | null; hasBrief?: boolean;
   registeredAt?: string | Date | null; challengeStartedAt?: string | Date | null; now?: Date;
 } = {}): TeamRuleReport {
   const now = options.now || new Date(), registrationIssues = members.flatMap(p => participantTeamIssues(p, cohort));
@@ -75,8 +77,10 @@ export function evaluateTeamRules(cohort: TeamRuleCohort, members: TeamRuleParti
   if (new Set(members.map(p => p.id)).size !== members.length) add("duplicate", "Every team member must be unique");
   if (!joinDeadline || !Number.isFinite(Date.parse(joinDeadline))) add("joining_stage", "Staff must select a team-joining deadline stage for this cohort");
   else if (!options.registeredAt && now.getTime() > Date.parse(joinDeadline)) add("deadline", "The team joining and registration deadline has passed");
-  const builderCount = members.filter(isQualifiedBuilder).length, nonComputingCount = members.filter(hasNonComputingStudy).length;
-  if (!builderCount) add("builder", "Include at least one qualified builder with development, testing and deployment experience in their preferred programming language");
+  const requirement = options.builderPolicy || DEFAULT_FORMATION_SETTINGS;
+  const coverage = builderCoverage(members, requirement);
+  const builderCount = members.filter(person => countsAsFormationBuilder(person, requirement.builderEligibility)).length, nonComputingCount = members.filter(hasNonComputingStudy).length;
+  if (builderCount < requirement.minimumBuilders) add("builder", requirement.minimumBuilders === 1 && requirement.builderEligibility === "recorded" ? "Include at least one qualified builder with development, testing and deployment experience in their preferred programming language" : `Include at least ${requirement.minimumBuilders} builder(s) counted under the team’s ${requirement.builderEligibility} builder policy`);
   if (!nonComputingCount) add("non_computing", "Include at least one member with a confirmed field of study outside Computer Science, IT and Software Engineering");
   if (!canShareTeam(members)) add("group_country", "Members must share a cohort group; every member of a cross-country team must have opted in");
   const countries = [...new Set(members.map(p => normalizeTeamCountry(p.country)).filter(Boolean))];
@@ -103,12 +107,13 @@ export function evaluateTeamRules(cohort: TeamRuleCohort, members: TeamRuleParti
   const femaleCount = members.filter(p => /^(female|woman|f)$/i.test((p.gender || "").trim())).length;
   const institutionCount = new Set(members.map(p => p.institution?.trim().toLowerCase()).filter(Boolean)).size;
   const guidance: string[] = [];
-  if (members.length >= 4 && builderCount < 2) guidance.push("Aim for two builders in a team of 4 or 5");
+  if (members.length >= 4 && builderCount < requirement.preferredBuilders) guidance.push(requirement.preferredBuilders === 2 ? "Aim for two builders in a team of 4 or 5" : `Aim for ${requirement.preferredBuilders} builder(s) where available`);
+  if (coverage.awaiting || coverage.potential) guidance.push("Some builder candidates still need to confirm their experience");
   if (!sectorSpecialistCount) guidance.push("Add a sector specialist whose study background matches the preferred sector where possible");
   if (!impactLeadCount) guidance.push("Aim to include a user, business and impact lead");
   if (!femaleCount) guidance.push("Include at least one female member where possible");
   if (institutionCount < 2) guidance.push("Include members from more than one institution where possible");
-  return { canRegister: !registrationIssues.length, canStartChallenge: !challengeIssues.length, registrationIssues, challengeIssues, guidance,
+  return { builderCoverage: coverage, builderMinimum: requirement.minimumBuilders, builderEligibility: requirement.builderEligibility, canRegister: !registrationIssues.length, canStartChallenge: !challengeIssues.length, registrationIssues, challengeIssues, guidance,
     builderCount, nonComputingCount, sectorSpecialistCount, impactLeadCount, femaleCount, institutionCount, countries,
     teamSize: members.length, joinDeadline, certificateDeadline,
     competitionCountries: options.hasBrief && problemCountry ? countries.filter(country => country.toLowerCase() === problemCountry.toLowerCase()) : countries };

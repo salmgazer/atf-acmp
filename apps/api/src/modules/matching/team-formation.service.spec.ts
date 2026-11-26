@@ -49,11 +49,11 @@ describe("ATF team formation previews", () => {
   });
   it("does not mistake technical skill tags for a qualified builder", async () => {
     const rows = [person("a"), person("b"), person("c")].map(p => ({ ...p, developmentExperience: false, testingExperience: false, deploymentExperience: false, pythonSkill: "Beginner", skills: ["Python", "JavaScript"] }));
-    load(rows); expect((await service.runTeamFormation("cohort")).proposedTeams).toHaveLength(0);
+    load(rows); const preview = await service.runTeamFormation("cohort"); expect(preview.proposedTeams).toHaveLength(1); expect(preview.proposedTeams[0]).toMatchObject({ registrationOutcome: "draft", eligibility: { builderCount: 0, canRegister: false } });
   });
   it("leaves role/mix guidance nonblocking and produces a current-policy cache receipt", async () => {
     load([person("a"), person("b"), person("c")]); const preview = await service.runTeamFormation("cohort");
-    expect(preview.policyVersion).toBe("atf-2026-v6"); expect(preview.proposedTeams[0].eligibility).toMatchObject({ canRegister: true, femaleCount: 0 });
+    expect(preview.policyVersion).toBe("atf-2026-v7"); expect(preview.proposedTeams[0].eligibility).toMatchObject({ canRegister: true, femaleCount: 0 });
     expect(await service.getTeamFormationPreview("cohort")).toEqual(preview); await service.clearFormationPreviewCache("cohort"); expect(await service.getTeamFormationPreview("cohort")).toBeNull();
   });
   it.each(["old", "atf-2026-v4"])("rejects cached previews created before the membership fix (%s)", async policyVersion => {

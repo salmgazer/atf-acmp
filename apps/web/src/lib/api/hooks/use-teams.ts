@@ -49,6 +49,7 @@ export interface TeamMember {
 }
 
 export interface Team {
+  builderPolicy?: import("@acmp/shared").TeamBuilderPolicy | null;
   briefPreference?: TeamBriefPreference;
   competitionCountry?: string | null;
   registeredAt?: string | null;

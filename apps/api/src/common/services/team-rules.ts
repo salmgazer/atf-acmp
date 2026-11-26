@@ -2,7 +2,7 @@ import { assertProposalPassed } from "./team-workflow";
 import { resolveCohortTeamDeadlines } from "./cohort-team-deadlines";
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { EntityManager } from "typeorm";
-import { ATF_TEAM_MAX, canShareTeam, evaluateTeamRules, normalizeTeamCountry, participantTeamIssues, type TeamRuleParticipant } from "@acmp/shared";
+import { builderRequirementForTeam, ATF_TEAM_MAX, canShareTeam, evaluateTeamRules, normalizeTeamCountry, participantTeamIssues, type TeamRuleParticipant } from "@acmp/shared";
 import { Participant, ParticipantStatus } from "@/database/entities/participant.entity";
 import { Team, TeamMember, TeamMemberStatus, TeamRole, TeamStatus, TeamInvitation, InvitationStatus } from "@/database/entities/team.entity";
 import { RefreshToken } from "@/database/entities/refresh-token.entity";
@@ -16,7 +16,7 @@ export async function teamRuleContext(manager: EntityManager, teamId: string) {
   const members = team.members.filter(member => member.status === TeamMemberStatus.CONFIRMED).sort((a, b) => Number(b.role === TeamRole.LEAD) - Number(a.role === TeamRole.LEAD)).map(member => member.participant || Object.assign(new Participant(), { id: member.participantId, cohortId: team.cohortId, country: "", status: ParticipantStatus.INACTIVE, onboardingComplete: false }));
   await resolveCohortTeamDeadlines(manager, team.cohort);
   const problemCountry = team.brief ? briefCountry(team.brief) : undefined;
-  const report = evaluateTeamRules(team.cohort, members, { competitionCountry: team.competitionCountry, problemCountry, hasBrief: !!team.briefId,
+  const report = evaluateTeamRules(team.cohort, members, { builderPolicy: builderRequirementForTeam(team.builderPolicy), competitionCountry: team.competitionCountry, problemCountry, hasBrief: !!team.briefId,
     registeredAt: team.registeredAt, challengeStartedAt: team.challengeStartedAt });
   if (team.briefId && (!team.brief || team.brief.status !== "approved")) {
     report.challengeIssues.push({ code: "brief_approval", message: "The assigned brief must still be approved" }); report.canStartChallenge = false;
