@@ -6,7 +6,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, IsNull, In, MoreThan, LessThan } from "typeorm";
+import { Repository, IsNull, In, LessThan } from "typeorm";
 import {
   ChatChannel,
   ChatMessage,
@@ -18,6 +18,7 @@ import {
 } from "@/database/entities/chat.entity";
 import { Team } from "@/database/entities/team.entity";
 import { OneSignalService } from "@/modules/notifications/onesignal.service";
+import { isUUID } from "class-validator";
 
 export interface CreateChannelDto {
   name: string;
@@ -292,8 +293,9 @@ export class ChatService {
     memberType: SenderType,
     messageId?: string
   ): Promise<void> {
+    if (messageId !== undefined && (typeof messageId !== "string" || !isUUID(messageId))) throw new BadRequestException("Invalid read message ID");
     let member = await this.memberRepository.findOne({
-      where: { channelId, memberId, memberType },
+      where: { channelId, memberId, memberType, leftAt: IsNull() },
     });
 
     // If staff is not a member, auto-add them when they mark as read
@@ -307,13 +309,24 @@ export class ChatService {
       });
     }
 
-    if (member) {
-      member.lastReadAt = new Date();
-      if (messageId) {
-        member.lastReadMessageId = messageId;
-      }
-      await this.memberRepository.save(member);
+    if (!member) throw new ForbiddenException("Not a member of this channel");
+    if (!member.id) member = await this.memberRepository.save(member);
+    const message = await this.messageRepository.findOne({
+      where: { channelId, isDeleted: false, ...(messageId ? { id: messageId } : {}) },
+      order: { createdAt: "DESC", id: "DESC" },
+    });
+    if (!message) {
+      if (messageId) throw new BadRequestException("The read message must belong to this channel");
+      return;
     }
+    // Acknowledge only a message actually displayed by the client, never the
+    // server's current time. Older requests cannot move the read cursor back.
+    // Keep the original PostgreSQL timestamp precision when advancing it.
+    await this.memberRepository.manager.query(`UPDATE channel_members cm
+      SET last_read_at=m.created_at,last_read_message_id=m.id::text,updated_at=now()
+      FROM chat_messages m WHERE cm.id=$1 AND cm.left_at IS NULL AND cm.deleted_at IS NULL
+        AND m.id=$2 AND m.channel_id=cm.channel_id AND m.deleted_at IS NULL AND NOT m.is_deleted
+        AND (cm.last_read_at IS NULL OR cm.last_read_at<=m.created_at)`, [member.id, message.id]);
   }
 
   async getUnreadCount(
@@ -322,7 +335,7 @@ export class ChatService {
     memberType: SenderType
   ): Promise<number> {
     const member = await this.memberRepository.findOne({
-      where: { channelId, memberId, memberType },
+      where: { channelId, memberId, memberType, leftAt: IsNull() },
     });
 
     // If user is not a member of the channel, they have no unread messages
@@ -331,20 +344,14 @@ export class ChatService {
       return 0;
     }
 
-    // If member has never read any messages, count all messages as unread
-    if (!member.lastReadAt) {
-      return this.messageRepository.count({
-        where: { channelId, isDeleted: false },
-      });
-    }
-
-    return this.messageRepository.count({
-      where: {
-        channelId,
-        isDeleted: false,
-        createdAt: MoreThan(member.lastReadAt),
-      },
-    });
+    // Compare the stored PostgreSQL timestamps directly; converting a read
+    // cursor to a JS Date truncates microseconds and can recount the last read.
+    return this.messageRepository.createQueryBuilder("message")
+      .innerJoin(ChannelMember, "membership", "membership.id = :membershipId", { membershipId: member.id })
+      .where("message.channelId = :channelId AND message.isDeleted = false", { channelId })
+      .andWhere("(membership.lastReadAt IS NULL OR message.createdAt > membership.lastReadAt)")
+      .andWhere("(message.senderId != :readerId OR message.senderType != :readerType)", { readerId: memberId, readerType: memberType })
+      .getCount();
   }
 
   // ============ Message Operations ============

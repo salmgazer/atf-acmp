@@ -141,7 +141,7 @@ export function ChatProvider({ children }: ChatProviderProps) {
       // 3. Staff user and message is from a team channel
       const isOwnMessage = message.senderId === userIdRef.current;
       const currentActiveChannel = activeChannelIdRef.current;
-      const isViewingChannel = channelId === currentActiveChannel;
+      const isViewingChannel = channelId === currentActiveChannel && document.visibilityState === "visible" && document.hasFocus();
       const isUserStaff = userRoleRef.current && STAFF_ROLES.includes(userRoleRef.current.toLowerCase());
       const isTeamChannel = channelType === "team";
 
@@ -152,25 +152,8 @@ export function ChatProvider({ children }: ChatProviderProps) {
         setTotalUnreadCount((prev) => prev + 1);
       }
 
-      // If viewing this channel, mark as read immediately so the server-side
-      // unread count stays at 0 when we invalidate queries
-      if (isViewingChannel && !isOwnMessage) {
-        try {
-          await fetch(
-            `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"}/chat/channels/${channelId}/read`,
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${tokenRef.current}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({}),
-            }
-          );
-        } catch (error) {
-          console.error("Failed to mark as read:", error);
-        }
-      }
+      // MessageList acknowledges the last rendered, visible message. Never mark
+      // background deliveries read merely because a socket is connected.
 
       // Invalidate queries so the chat page updates
       queryClient.invalidateQueries({ queryKey: ["chat", "channels"] });

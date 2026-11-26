@@ -234,11 +234,25 @@ The ATF Team`;
     await this.sendEmail(params.to, params.subject, html, `Hi ${params.firstName},\n\n${params.message}\n\nThe ATF Team`, undefined, true);
   }
 
+  async sendMissedChatEmail(params: { to: string; firstName: string; teamName: string; chatUrl: string; preferencesUrl: string; deliveryId: string }): Promise<void> {
+    this.requireDeliveryConfiguration();
+    const escape = (value: string) => value.replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]!));
+    const subject = "You have unread team messages — ATF AI Challenge";
+    const html = `<!doctype html><html><body style="margin:0;background:#f9fafb;font-family:Arial,sans-serif;color:#374151"><table role="presentation" width="100%"><tr><td align="center"><table role="presentation" style="max-width:600px;width:100%;background:white">${this.getEmailHeader()}
+      <tr><td style="padding:0 32px 32px"><h1 style="font-size:24px;color:#111827">Catch up with your team</h1><p>Hi ${escape(params.firstName)},</p>
+      <p>There are unread messages waiting in <strong>${escape(params.teamName)}</strong>’s team chat.</p><p>Open the conversation to catch up and reply to your teammates.</p>
+      <p style="margin:28px 0"><a href="${escape(params.chatUrl)}" style="display:inline-block;padding:14px 24px;background:#111827;color:white;text-decoration:none;border-radius:8px;font-weight:bold">Open team chat</a></p>
+      <p style="font-size:13px;color:#6b7280">You’re receiving this reminder because you haven’t read this team activity. Messages are grouped, with at most one reminder per hour. Reply in the app; replies to this email are not posted to chat.</p>
+      <p style="font-size:13px"><a href="${escape(params.preferencesUrl)}">Manage chat email notifications</a></p></td></tr><tr><td style="padding:24px 32px;border-top:1px solid #e5e7eb;text-align:center">The ATF Team</td></tr></table></td></tr></table></body></html>`;
+    const text = `Hi ${params.firstName},\n\nThere are unread messages waiting in ${params.teamName}'s team chat.\n\nOpen team chat: ${params.chatUrl}\n\nMessages are grouped, with at most one reminder per hour. Reply in the app; replies to this email are not posted to chat.\n\nManage chat email notifications: ${params.preferencesUrl}\n\nThe ATF Team`;
+    await this.sendEmail(params.to, subject, html, text, undefined, true, `team-chat/${params.deliveryId}`);
+  }
+
   async sendCalendarInvitation(to: string, subject: string, html: string, text: string, calendar: { method: "REQUEST" | "CANCEL"; content: string }): Promise<void> {
     await this.sendEmail(to, subject, html, text, calendar);
   }
 
-  private async sendEmail(to: string, subject: string, html: string, text?: string, calendar?: { method: "REQUEST" | "CANCEL"; content: string }, requireDelivery = false): Promise<void> {
+  private async sendEmail(to: string, subject: string, html: string, text?: string, calendar?: { method: "REQUEST" | "CANCEL"; content: string }, requireDelivery = false, idempotencyKey?: string): Promise<void> {
     // Try Resend first (primary email provider)
     if (this.resendClient) {
       try {
@@ -251,10 +265,11 @@ The ATF Team`;
           html,
           text,
           ...(calendar ? { attachments: [{ filename: "invite.ics", content: Buffer.from(calendar.content).toString("base64"), contentType: `text/calendar; charset=utf-8; method=${calendar.method}` }] } : {}),
-        });
+        }, ...(idempotencyKey ? [{ idempotencyKey }] as const : [] as const));
 
         // Resend SDK returns errors in response, not as thrown exceptions
         if (error) {
+          if (idempotencyKey) throw new Error("Chat email delivery failed; retry with the same provider key");
           this.logger.warn(`Resend API error: ${error.message} (${error.name}), trying next provider`);
           // Fall through to try next provider
         } else {
@@ -262,6 +277,9 @@ The ATF Team`;
           return;
         }
       } catch (error) {
+        // A timed-out idempotent request may already have been accepted. Retry
+        // Resend with its original key instead of duplicating it via a fallback.
+        if (idempotencyKey) throw error;
         this.logger.warn(`Resend failed with exception, trying next provider: ${error}`);
       }
     }
@@ -278,6 +296,7 @@ The ATF Team`;
           subject,
           html,
           text,
+          ...(idempotencyKey ? { messageId: `<${idempotencyKey.replace(/[^a-zA-Z0-9-]/g, "-")}@atfchallenge.org>`, headers: { "Resend-Idempotency-Key": idempotencyKey } } : {}),
           ...(calendar ? { icalEvent: { filename: "invite.ics", method: calendar.method, content: calendar.content } } : {}),
         });
 
