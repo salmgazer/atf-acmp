@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { format, isToday, isYesterday, isSameDay } from "date-fns";
 import { cn } from "@/lib/utils";
+import { useChatReadReceipt } from "@/lib/hooks/use-chat-read-receipt";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "🤔", "👀"];
 
@@ -67,6 +68,7 @@ export function MessageList({
   const deleteMessage = useDeleteMessage();
 
   const messages = data?.messages || [];
+  useChatReadReceipt(channelId, messages.at(-1)?.id, !isLoading && !!data, messagesEndRef);
 
   // Refetch when channel changes
   useEffect(() => {
@@ -191,7 +193,7 @@ export function MessageList({
           </div>
         )}
 
-        <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} className="h-px" />
       </div>
     </div>
   );
