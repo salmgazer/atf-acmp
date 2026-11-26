@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import { QueryFailedError } from "typeorm";
 import { Request, Response } from "express";
+import { isTeamNameConflict, TEAM_NAME_TAKEN } from "@/common/services/team-names";
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -35,6 +36,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         errors = responseObj.errors;
         if (status === HttpStatus.TOO_MANY_REQUESTS && Number.isInteger(responseObj.retryAfterSeconds) && responseObj.retryAfterSeconds > 0) retryAfterSeconds = responseObj.retryAfterSeconds;
       }
+    } else if (isTeamNameConflict(exception)) {
+      status = HttpStatus.CONFLICT;
+      message = TEAM_NAME_TAKEN;
     } else if (exception instanceof QueryFailedError && (exception.driverError as any)?.code === "23514") {
       status = HttpStatus.BAD_REQUEST;
       message = (exception.driverError as any).message || "Group assignment is not valid";

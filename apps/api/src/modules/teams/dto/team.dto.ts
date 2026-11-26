@@ -1,6 +1,7 @@
 import { IsInt as QueryIsInt, Min as QueryMin, Max as QueryMax } from "class-validator";
 import { StrictBoolean } from "@/common/decorators/query-value.decorator";
 import { TeamBriefPreference } from "@acmp/shared";
+import { cleanTeamName } from "@/common/services/team-names";
 import {
   IsString,
   IsOptional,
@@ -109,6 +110,7 @@ export class PaginatedTeamsDto {
 
 export class CreateTeamDto {
   @ApiProperty()
+  @Transform(({ value }) => cleanTeamName(value))
   @IsString()
   @MinLength(2)
   @MaxLength(100)
@@ -131,6 +133,7 @@ export class CreateTeamDto {
 
 export class UpdateTeamDto {
   @ApiPropertyOptional()
+  @Transform(({ value }) => cleanTeamName(value))
   @IsOptional()
   @IsString()
   @MinLength(2)

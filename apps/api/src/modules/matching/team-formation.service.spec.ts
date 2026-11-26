@@ -76,4 +76,10 @@ describe("ATF team formation previews", () => {
     expect(preview.proposedTeams[0].assignedBriefId).toBeUndefined();
     expect(briefs.find).not.toHaveBeenCalled();
   });
+  it("avoids names of all existing teams, including active teams, and reserves names within the preview", async () => {
+    load([1, 2, 3, 4, 5, 6].map(id => person(String(id))));
+    teams.find.mockImplementation(async (options: any) => options.select ? [{ name: ' team 1 ' }, { name: 'TEAM 2' }, { name: 'Team 4' }] : []);
+    const preview = await service.runTeamFormation('cohort', { config: { teamSizeMax: 3 } });
+    expect(preview.proposedTeams.map(team => team.suggestedName)).toEqual(['Team 3', 'Team 5']);
+  });
 });
