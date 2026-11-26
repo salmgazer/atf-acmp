@@ -1,3 +1,4 @@
+import type { FormationSettings } from "@acmp/shared";
 import { Entity, Column, OneToMany, Index, ManyToOne, JoinColumn, Relation } from "typeorm";
 import { Stage } from "./stage.entity";
 import { BaseEntity } from "./base.entity";
@@ -44,6 +45,7 @@ export interface LeaderboardConfig {
 @Entity("cohorts")
 @Index(["status"])
 export class Cohort extends BaseEntity {
+  @Column({ name: "formation_defaults", type: "jsonb", nullable: true }) formationDefaults: FormationSettings | null;
   @Column({ name: "team_joining_stage_id", type: "uuid", nullable: true }) teamJoiningStageId: string | null;
   @ManyToOne(() => Stage, { nullable: true, onDelete: "SET NULL" })
   @JoinColumn({ name: "team_joining_stage_id", foreignKeyConstraintName: "cohort_team_joining_stage_fk" }) teamJoiningStage: Relation<Stage> | null;

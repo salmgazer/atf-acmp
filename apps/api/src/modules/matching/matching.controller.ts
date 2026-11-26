@@ -1,3 +1,4 @@
+import { CurrentUser } from "@/common/decorators/current-user.decorator";
 import {
   Controller,
   Get,
@@ -5,6 +6,7 @@ import {
   Body,
   Param,
   Delete,
+  Patch,
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
@@ -30,6 +32,7 @@ import {
   TeamMatchStatusDto,
 } from "./dto/matching.dto";
 import {
+  SaveFormationDefaultsDto,
   RunTeamFormationDto,
   FinalizeTeamFormationDto,
   TeamFormationPreviewDto,
@@ -140,6 +143,12 @@ export class MatchingController {
 
   // ============ Team Formation Endpoints ============
 
+  @Get("formation/defaults")
+  getFormationDefaults(@Param("cohortId", ParseUUIDPipe) cohortId: string) { return this.teamFormationService.getFormationDefaults(cohortId); }
+
+  @Patch("formation/defaults")
+  saveFormationDefaults(@Param("cohortId", ParseUUIDPipe) cohortId: string, @Body() dto: SaveFormationDefaultsDto, @CurrentUser() actor: { id: string; role: string; email?: string }) { return this.teamFormationService.saveFormationDefaults(cohortId, dto, actor); }
+
   @Post("formation/run")
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -199,8 +208,9 @@ export class MatchingController {
   async finalizeTeamFormation(
     @Param("cohortId", ParseUUIDPipe) cohortId: string,
     @Body() dto: FinalizeTeamFormationDto,
+    @CurrentUser() actor: { id: string; role: string; email?: string },
   ): Promise<{ createdTeamCount: number; errors: string[] }> {
-    return this.teamFormationService.finalizeTeamFormation(cohortId, dto);
+    return this.teamFormationService.finalizeTeamFormation(cohortId, dto, actor);
   }
 
   @Get("formation/participant-status")
