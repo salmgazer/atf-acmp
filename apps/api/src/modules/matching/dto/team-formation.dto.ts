@@ -1,5 +1,6 @@
 import type { TeamRuleReport, BuilderStatus } from "@acmp/shared";
 import { StrictBoolean } from "@/common/decorators/query-value.decorator";
+import { cleanTeamName } from "@/common/services/team-names";
 import {
   IsUUID,
   IsOptional,
@@ -9,9 +10,9 @@ import {
   IsBoolean,
   IsArray,
   ValidateNested,
-  IsEnum, IsInt, IsIn, IsDefined, IsString, MaxLength, IsDateString, ArrayMinSize, ArrayMaxSize, ArrayUnique,
+  IsEnum, IsInt, IsIn, IsDefined, IsString, MinLength, MaxLength, IsDateString, ArrayMinSize, ArrayMaxSize, ArrayUnique,
 } from "class-validator";
-import { Type } from "class-transformer";
+import { Type, Transform } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
 /**
@@ -187,6 +188,8 @@ export class ManualTeamAssignmentDto {
 
   @ApiPropertyOptional({ description: "Optional team name" })
   @IsOptional()
+  @Transform(({ value }) => cleanTeamName(value) === '' ? undefined : cleanTeamName(value))
+  @IsString() @MinLength(2) @MaxLength(100)
   teamName?: string;
 
   @ApiPropertyOptional({ description: "Participant ID to be team lead" })

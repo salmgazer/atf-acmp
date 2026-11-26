@@ -1,4 +1,5 @@
 import { AuditLog, AuditAction } from "@/database/entities/audit-log.entity";
+import { availableTeamName, teamNameKey, validateTeamName, saveAutomaticallyNamedTeam } from "@/common/services/team-names";
 import { DEFAULT_FORMATION_SETTINGS, builderCoverage, countsAsFormationBuilder, formationBuilderStatus, type FormationSettings, type TeamBuilderPolicy } from "@acmp/shared";
 import { isPoolBrief } from "@/common/services/team-workflow";
 import { resolveCohortTeamDeadlines } from "@/common/services/cohort-team-deadlines";
@@ -152,6 +153,7 @@ export class TeamFormationService {
       });
       const brief = candidates[0]; if (brief) capacity.set(brief.id, capacity.get(brief.id)! - 1); return brief;
     };
+    const takenNames = new Set((await this.teamRepository.find({ where: { cohortId }, select: { name: true } })).map(team => teamNameKey(team.name)));
     const proposedTeams = formed.teams.map((members, index) => {
       const people = members as Participant[];
       const preparedMembers = prepared.filter(p => people.some(person => person.id === p.participant.id));
@@ -163,7 +165,7 @@ export class TeamFormationService {
       const waived = config.minimumBuilders === 0 || coverage.counted < config.minimumBuilders && config.shortageAction === "exception";
       const report = evaluateTeamRules(cohort, people, { builderPolicy: { ...config, minimumBuilders: waived ? 0 : config.minimumBuilders }, competitionCountry, hasBrief: !!brief, problemCountry: brief ? briefCountry(brief) : undefined });
       const guideScore = matchingGuideScore(people, config);
-      return { proposedTeamId: uuidv4(), suggestedName: `Team ${index + 1}`, group: lead.group || null, participantIds: people.map(p => p.id),
+      return { proposedTeamId: uuidv4(), suggestedName: availableTeamName(`Team ${index + 1}`, takenNames), group: lead.group || null, participantIds: people.map(p => p.id),
         registrationOutcome: waived ? "exception" : report.canRegister ? "registered" : "draft",
         participants: preparedMembers.map(p => ({ builderStatus: formationBuilderStatus(p.participant), id: p.participant.id, participantId: p.participant.participantId, firstName: p.participant.firstName, lastName: p.participant.lastName, country: p.participant.country, skills: p.skills, interests: p.interests, isProposedLead: p.participant.id === lead.id, isProposedCoLead: p.participant.id === coLead.id, skillProfile: p.skillProfile })),
         leadParticipantId: lead.id, coLeadParticipantId: coLead.id, compatibilityScore: guideScore, scoreBreakdown: { skillScore: 0, interestScore: 0, verticalScore: 0, countryScore: 0, techBalanceScore: 0, total: guideScore },
@@ -272,18 +274,18 @@ export class TeamFormationService {
       await this.teamRepository.update(team.id, { briefId: brief.id, competitionCountry: country, challengeStartedAt: null, status: TeamStatus.FORMING });
       briefsAssigned++;
     }
-    const plans = preview.proposedTeams.map(team => ({ ids: team.participantIds.filter(id => !excluded.has(id) && !manualIds.has(id)), name: team.suggestedName, lead: team.leadParticipantId, coLead: team.coLeadParticipantId, briefId: team.assignedBriefId }));
+    const plans = preview.proposedTeams.map(team => ({ ids: team.participantIds.filter(id => !excluded.has(id) && !manualIds.has(id)), name: team.suggestedName, generatedName: true, lead: team.leadParticipantId, coLead: team.coLeadParticipantId, briefId: team.assignedBriefId }));
     for (const manual of dto.manualTeams || []) {
       if ((manual.leadParticipantId && !manual.participantIds.includes(manual.leadParticipantId)) || (manual.coLeadParticipantId && (!manual.participantIds.includes(manual.coLeadParticipantId) || manual.coLeadParticipantId === manual.leadParticipantId))) throw new BadRequestException("Manual team lead and co-lead must be different members of that team");
     }
-    for (const manual of dto.manualTeams || []) plans.push({ ids: manual.participantIds, name: manual.teamName || `Team ${plans.length + 1}`, lead: manual.leadParticipantId || manual.participantIds[0], coLead: manual.coLeadParticipantId || manual.participantIds.find(id => id !== manual.leadParticipantId) || manual.participantIds[1], briefId: undefined });
+    for (const manual of dto.manualTeams || []) plans.push({ ids: manual.participantIds, name: manual.teamName || `Team ${plans.length + 1}`, generatedName: !manual.teamName, lead: manual.leadParticipantId || manual.participantIds[0], coLead: manual.coLeadParticipantId || manual.participantIds.find(id => id !== manual.leadParticipantId) || manual.participantIds[1], briefId: undefined });
     for (const plan of plans) {
       if (plan.ids.length < config.teamSizeMin) { if (plan.ids.length) errors.push(`${plan.name} was skipped: fewer than three members remain after exclusions/overrides`); continue; }
       if (plan.ids.length > config.teamSizeMax || new Set(plan.ids).size !== plan.ids.length || plan.ids.some(id => used.has(id) || excluded.has(id))) throw new BadRequestException("Every team needs 3 to 5 unique participants, with no participant reused or excluded");
       plan.ids.forEach(id => used.add(id));
       const lead = plan.ids.includes(plan.lead) ? plan.lead : plan.ids[0];
       const coLead = plan.ids.includes(plan.coLead) && plan.coLead !== lead ? plan.coLead : plan.ids.find(id => id !== lead)!;
-      await this.createTeamWithMembers(cohortId, plan.name, plan.ids, lead, coLead, plan.briefId, config, actor);
+      await this.createTeamWithMembers(cohortId, plan.name, plan.ids, lead, coLead, plan.briefId, config, actor, plan.generatedName);
       createdTeamCount++; newTeamParticipantIds.push(...plan.ids); if (plan.briefId) briefsAssigned++;
     }
     if (actor?.id) await this.audit(actor, cohortId, "Finalized team formation", { config, createdTeamCount, backfilledTeamCount });
@@ -737,6 +739,7 @@ export class TeamFormationService {
     briefId?: string,
     config: TeamFormationConfigDto = {},
     actor?: { id: string; role: string; email?: string },
+    generatedName = false,
   ): Promise<Team> {
     const cohort = await this.cohortRepository.findOne({ where: { id: cohortId } });
     if (!cohort) throw new BadRequestException("Cohort not found");
@@ -765,7 +768,7 @@ export class TeamFormationService {
 
     // Create team
     const teamData: Partial<Team> = {
-      name: teamName,
+      name: validateTeamName(teamName),
       cohortId,
       group,
       status: TeamStatus.FORMING,
@@ -779,7 +782,7 @@ export class TeamFormationService {
     }
 
     const team = this.teamRepository.create(teamData);
-    const savedTeam = await this.teamRepository.save(team);
+    const savedTeam = generatedName ? await saveAutomaticallyNamedTeam(this.teamRepository, team) : await this.teamRepository.save(team);
 
     // Create team members with appropriate roles
     const members: TeamMember[] = [];
