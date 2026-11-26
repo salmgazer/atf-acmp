@@ -13,6 +13,7 @@ Team policy, matching, registration and challenge activation are enforced by the
 - [x] Save cohort defaults, show candidate badges/outcomes and revalidate the reviewed preview before finalization.
 - [x] Keep teams needing builders as drafts, or record an explicit staff exception allowing registration/progression.
 - [x] Preserve cohort group boundaries across manual and automatic formation.
+- [x] Reserve team names within each cohort, ignoring capitalization and extra whitespace, for manual creation, renaming and automatic formation.
 - [x] Require every member's opt-in before mixing countries.
 - [x] Require a competition country where at least one confirmed member lives, with the assigned problem based there.
 - [x] Apply the ordered matching priorities: first-choice sector, backup sector, role coverage, country, then gender/institution mix.
@@ -52,6 +53,10 @@ Closing a stage does not erase its deadline: an inactive stage remains a valid h
 Existing cohorts need the two stage selections configured explicitly. The local cohort currently contains generic Stage 1, Stage 2, Stage 3 and Demo Day entries, so the migration leaves the selections unset. Staff can create/rename milestones and select their intended deadline stages; a single stage can supply both cutoffs if appropriate.
 
 ## Team lifecycle
+
+Team names are unique within a cohort, including across its groups and countries. Names are trimmed and repeated whitespace is collapsed; capitalization is preserved for display. Manual duplicates return a clear conflict. Automatic previews skip occupied names and reserve distinct names within the batch; finalization checks again and chooses the next available name if a manual creator has taken it meanwhile.
+
+Database name claims protect simultaneous requests, including direct database writers. Renaming or deleting the last team with a name releases it; restoring a deleted team checks availability again. The migration preserves pre-existing duplicate names and reserves them until their last owner leaves. Editing an existing team's other details does not require renaming it.
 
 - **Draft:** people may assemble and recruit; automatically formed teams of 3–5 can also remain drafts while awaiting builders. Admission still requires halfway learning, matching answers, active participation, the same group and mutual cross-country consent. A declared onboarding “Full team” is not an actual registered team; these participants are excluded from automatic regrouping and can assemble manually.
 - **Registered:** the lead/co-lead or staff manager selects a valid competition country and passes all hard registration checks. `registered_at` is recorded; the team remains `forming` until challenge start.
