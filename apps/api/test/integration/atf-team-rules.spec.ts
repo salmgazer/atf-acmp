@@ -54,6 +54,85 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
   }
   const builder = () => person({ developmentExperience: true, testingExperience: true, deploymentExperience: true, pythonSkill: "Intermediate" }, { buildDeployAbility: "confident", preferredRole: "builder" });
 
+  it("creates builder-free drafts by default, then permits registration once their recorded builder requirement is met", async () => {
+    const people = await Promise.all([person({ fieldOfStudy: "Medicine" }), person(), person()]);
+    const preview = await formation.runTeamFormation(cohort.id);
+    expect(preview.builderSummary).toMatchObject({ draftTeams: 1, noBuilderTeams: 1 });
+    expect(preview.proposedTeams[0].registrationOutcome).toBe('draft');
+    await formation.finalizeTeamFormation(cohort.id, { previewId: preview.previewId }, actor);
+    const team = await db.getRepository(Team).findOneByOrFail({ cohortId: cohort.id });
+    expect(team.registeredAt).toBeNull(); expect(team.builderPolicy).toMatchObject({ minimumBuilders: 1, builderEligibility: 'recorded', exceptionGranted: false, authorizedBy: actor.id });
+    await expect(teams.registerTeam(team.id, 'Ghana')).rejects.toThrow('qualified builder');
+    await db.getRepository(Participant).update(people[0].id, { developmentExperience: true, testingExperience: true, deploymentExperience: true });
+    expect((await teams.registerTeam(team.id, 'Ghana')).registeredAt).toBeTruthy();
+    expect((await db.getRepository(Participant).findOneByOrFail({ id: people[0].id })).builderConfirm).toBe(false);
+  });
+
+  it("counts recorded and potential builders only under the selected policy, and revalidates confirmation changes", async () => {
+    const candidate = await person({ fieldOfStudy: 'Medicine' }, { preferredRole: 'builder' }); await person(); await person();
+    expect((await formation.runTeamFormation(cohort.id, { config: { builderEligibility: 'recorded', shortageAction: 'leave_unassigned' } })).proposedTeams).toHaveLength(0);
+    const preview = await formation.runTeamFormation(cohort.id, { config: { builderEligibility: 'potential', shortageAction: 'leave_unassigned' } });
+    expect(preview.proposedTeams).toHaveLength(1); expect(preview.proposedTeams[0].eligibility?.builderCoverage).toMatchObject({ confirmed: 0, awaiting: 0, potential: 1, counted: 1 });
+    await db.getRepository(Participant).update(candidate.id, { developmentExperience: false });
+    await expect(formation.finalizeTeamFormation(cohort.id, {}, actor)).rejects.toThrow('changed');
+    expect((await formation.runTeamFormation(cohort.id, { config: { builderEligibility: 'potential', shortageAction: 'leave_unassigned' } })).proposedTeams).toHaveLength(0);
+  });
+
+  it("persists a staff exception through registration and challenge checks without waiving learning or altering participant answers", async () => {
+    const people = await Promise.all([person({ fieldOfStudy: 'Medicine' }), person(), person()]);
+    const config = { shortageAction: 'exception' as const, exceptionReason: 'ATF authorizes this team to proceed while recruiting a builder.' };
+    const preview = await formation.runTeamFormation(cohort.id, { config });
+    expect(preview.builderSummary?.exceptionTeams).toBe(1);
+    await expect(formation.finalizeTeamFormation(cohort.id)).rejects.toThrow('Staff identity');
+    await formation.finalizeTeamFormation(cohort.id, { previewId: preview.previewId }, actor);
+    const team = await db.getRepository(Team).findOneByOrFail({ cohortId: cohort.id });
+    expect(team.registeredAt).toBeTruthy(); expect(team.builderPolicy).toMatchObject({ exceptionGranted: true, reason: config.exceptionReason, authorizedBy: actor.id });
+    const before = await teams.eligibility(team.id); expect(before.builderCount).toBe(0); expect(before.registrationIssues).toEqual([]); expect(before.challengeIssues.some(issue => issue.code === 'certificate')).toBe(true);
+    const problem = await brief(); await db.getRepository(Team).update(team.id, { briefId: problem.id });
+    await expect(teams.startChallenge(team.id)).rejects.toThrow('certificate');
+    await certify(people); await teams.startChallenge(team.id); await expect(assertChallengeStarted(db.manager, team.id)).resolves.toBeUndefined();
+    expect((await db.getRepository(Participant).findOneByOrFail({ id: people[0].id })).developmentExperience).toBeNull();
+    const audit = await db.getRepository('AuditLog').findOneBy({ entityId: cohort.id, description: 'Finalized team formation' });
+    expect((audit as any).metadata.principalId).toBe(actor.id);
+  });
+
+  it("requires an explicit staff reason for a zero minimum and uses it without inventing builders", async () => {
+    await person({ fieldOfStudy: 'Medicine' }); await person(); await person();
+    await expect(formation.runTeamFormation(cohort.id, { config: { minimumBuilders: 0 } })).rejects.toThrow('at least 10 characters');
+    const preview = await formation.runTeamFormation(cohort.id, { config: { minimumBuilders: 0, exceptionReason: 'ATF has made builders optional for this run.' } });
+    await expect(formation.finalizeTeamFormation(cohort.id, { previewId: randomUUID() }, actor)).rejects.toThrow('replaced');
+    expect(await db.getRepository(Team).countBy({ cohortId: cohort.id })).toBe(0);
+    await formation.finalizeTeamFormation(cohort.id, { previewId: preview.previewId }, actor);
+    const team = await db.getRepository(Team).findOneByOrFail({ cohortId: cohort.id });
+    expect((await teams.eligibility(team.id))).toMatchObject({ canRegister: true, builderCount: 0, builderMinimum: 0 });
+    expect(team.builderPolicy?.exceptionGranted).toBe(true);
+  });
+
+  it("saves cohort defaults with concurrency checks and allows per-run overrides", async () => {
+    const candidate = await builder(); await person({ fieldOfStudy: 'Medicine' }); await person();
+    const defaults = await formation.getFormationDefaults(cohort.id);
+    const saved = await formation.saveFormationDefaults(cohort.id, { expectedUpdatedAt: defaults.updatedAt.toISOString(), config: { builderEligibility: 'confirmed', minimumBuilders: 2, shortageAction: 'leave_unassigned' } }, actor);
+    expect(saved.settings).toMatchObject({ builderEligibility: 'confirmed', minimumBuilders: 2 });
+    await expect(formation.saveFormationDefaults(cohort.id, { expectedUpdatedAt: defaults.updatedAt.toISOString(), config: {} }, actor)).rejects.toThrow('changed');
+    expect((await formation.runTeamFormation(cohort.id)).proposedTeams).toHaveLength(0);
+    const preview = await formation.runTeamFormation(cohort.id, { config: { builderEligibility: 'recorded', minimumBuilders: 1 } }); expect(preview.proposedTeams).toHaveLength(1);
+    await formation.finalizeTeamFormation(cohort.id, { previewId: preview.previewId }, actor);
+    const team = await db.getRepository(Team).findOneByOrFail({ cohortId: cohort.id });
+    expect(team.builderPolicy).toMatchObject({ builderEligibility: 'recorded', minimumBuilders: 1 });
+    expect((await formation.getFormationDefaults(cohort.id)).settings.minimumBuilders).toBe(2);
+    expect((await db.getRepository(Participant).findOneByOrFail({ id: candidate.id })).builderConfirm).toBe(false);
+    expect((await db.driver.createSchemaBuilder().log()).upQueries).toEqual([]);
+  });
+
+  it("separates new-team and backfill runs and leaves existing team policies intact", async () => {
+    const { team } = await roster(); await builder(); await person({ fieldOfStudy: 'Medicine' }); await person();
+    const fresh = await formation.runTeamFormation(cohort.id, { config: { matchingScope: 'new' } }); expect(fresh.proposedBackfills).toHaveLength(0); expect(fresh.proposedTeams).toHaveLength(1);
+    const fill = await formation.runTeamFormation(cohort.id, { config: { matchingScope: 'backfill' } }); expect(fill.proposedTeams).toHaveLength(0); expect(fill.proposedBackfills).toHaveLength(1);
+    await formation.finalizeTeamFormation(cohort.id, { previewId: fill.previewId }, actor);
+    expect((await db.getRepository(TeamMember).findBy({ teamId: team.id, status: TeamMemberStatus.PENDING }))).toHaveLength(2);
+    expect((await db.getRepository(Team).findOneByOrFail({ id: team.id })).builderPolicy).toBeNull();
+  });
+
   it("shares only the consented matching projection and checks consent again on every request", async () => {
     const viewer = await person();
     const target = await person({ firstName: "Potential", lastName: "Teammate", email: "teammate-" + randomUUID() + "@example.test", skills: ["Python"], interests: ["Health"], developmentExperience: true, testingExperience: true, deploymentExperience: true, pythonSkill: "Advanced", fieldOfStudy: "Medicine", githubUsername: "octocat", phoneNumber: "+233201234567", lmsEmail: "private-lms@example.test", whatsappNumber: "+233209876543", learningCertificateId: `private-certificate-${randomUUID()}`, gender: "private-gender" }, { preferredRole: "builder", buildDeployAbility: "confident", availabilityNotes: "private-notes" });
@@ -464,9 +543,9 @@ const databaseUrl = process.env.ACMP_TEST_DATABASE_URL;
     await db.getRepository(TeamMember).save({ teamId: team.id, participantId: waiting.id, role: TeamRole.MEMBER, status: TeamMemberStatus.PENDING });
     await person({ developmentExperience: true, testingExperience: true, deploymentExperience: true, pythonSkill: "Intermediate" }, { buildDeployAbility: "confident", preferredRole: "builder", firstChoiceSector: "education" });
     for (let i = 0; i < 3; i++) await person({ fieldOfStudy: "Medicine" }, { firstChoiceSector: "education" });
-    const preview = await formation.runTeamFormation(cohort.id);
+    const preview = await formation.runTeamFormation(cohort.id, { config: { shortageAction: "leave_unassigned" } });
     const result = await formation.finalizeTeamFormation(cohort.id);
-    expect(result).toMatchObject({ createdTeamCount: 0, backfilledTeamCount: 1, briefsAssigned: 0 });
+    expect(result).toMatchObject({ createdTeamCount: 1, backfilledTeamCount: 1, briefsAssigned: 0 });
     const proposed = [...preview.proposedTeams.flatMap(item => item.participantIds), ...preview.proposedBackfills.flatMap(item => item.participantIdsToAdd)];
     expect(proposed).not.toContain(lead.id); expect(proposed).not.toContain(waiting.id);
     expect(await db.getRepository(TeamMember).countBy({ participantId: waiting.id })).toBe(1);

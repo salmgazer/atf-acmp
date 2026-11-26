@@ -8,7 +8,10 @@ Team policy, matching, registration and challenge activation are enforced by the
 - [x] Require every member to have reached halfway and completed the matching questions.
 - [x] Block opted-out/inactive participants from creation, joins, staff additions, invitations, acceptance and pending-member confirmation.
 - [x] Remove opted-out participants from team rosters, cancel pending invitations, revoke sessions/chat access and select a replacement lead where needed.
-- [x] Require at least one qualified builder and one confirmed non-computing field of study.
+- [x] Apply the saved team builder policy and require one confirmed non-computing field of study.
+- [x] Let staff choose confirmed, recorded or potential builder eligibility, minimum/preferred builder counts, shortage handling and new-team/backfill scope.
+- [x] Save cohort defaults, show candidate badges/outcomes and revalidate the reviewed preview before finalization.
+- [x] Keep teams needing builders as drafts, or record an explicit staff exception allowing registration/progression.
 - [x] Preserve cohort group boundaries across manual and automatic formation.
 - [x] Require every member's opt-in before mixing countries.
 - [x] Require a competition country where at least one confirmed member lives, with the assigned problem based there.
@@ -23,14 +26,24 @@ Team policy, matching, registration and challenge activation are enforced by the
 
 ## Policy decisions
 
-The default hard builder rule is **one qualified builder for every team**. A second builder for teams of 4–5, sector-specialist coverage, an impact lead, female participation and multiple institutions are guidance. This follows ATF's explicit hard-rule list and its instruction not to block registration on the recommended role/mix targets.
+Builder qualification is language-neutral: Development, Testing and Deployment must all be Yes. Any preferred language and proficiency level is accepted. Python level, technical skill tags, preferred role and CodeLabs completion alone do not qualify a builder.
 
-A builder qualifies through either:
+On `/staff/teams`, open **Team formation** to choose:
 
-1. Intermediate, Advanced or Expert Python **and** “Yes, confidently” for building/deploying; or
-2. Staff-verified CodeLabs completion as ATF's permitted proxy.
+- **Who counts:** confirmed builders only; include recorded builders awaiting confirmation; or also count potential builders who selected Builder and have unanswered experience questions. An explicit No answer never counts. Potential/awaiting labels remain distinct from confirmed status.
+- **Minimum builders:** 0, 1 or 2. **Preferred builders:** 0–2, at least the selected minimum; the extra preferred coverage is guidance for teams of 4–5.
+- **Shortage:** leave participants unassigned, form drafts needing builders, or authorize an exception allowing registration and progression.
+- **Scope:** new teams, existing open slots or both. Backfills remain pending until the lead approves; existing members are never moved.
 
-Technical skill tags alone do not establish builder status. Unknown or blank fields of study cannot establish a non-computing background. Source Python descriptions retain their detail; the policy recognizes their leading level labels.
+Defaults are recorded builders, minimum one, preferred two, draft teams on shortage, and both matching scopes. Staff can save cohort defaults or override them for a run. A zero minimum or an exception requires an explained staff reason of at least 10 characters.
+
+Newly formed teams receive an immutable-at-creation builder-policy snapshot with the authorizing staff identity and timestamp. Drafts do not receive a registration timestamp until their saved builder requirement is met. An explained exception waives only that builder minimum; groups, country consent, team size, non-computing coverage, programme eligibility, cohort dates and certification still apply. Participant experience answers and `builder_confirm` are never rewritten by formation.
+
+Existing teams retain their saved policy; legacy teams without a snapshot retain the original minimum of one recorded builder. Saving cohort defaults does not retroactively relax or tighten their requirements. Backfills do not grant exceptions to existing teams. Builder checks read current participant answers, so a draft can become eligible once someone completes/confirms their experience under its saved policy.
+
+Builder candidates are spread across possible teams before surplus builders are added. Matching keeps the sector, role, country and mix priorities. The preview shows individual builder categories, counted coverage, draft/registration/exception outcomes and totals. Its receipt, source versions and cohort settings are checked at finalization; changed answers or defaults require a fresh preview. Decisions and saved defaults are audited.
+
+Unknown or blank fields of study cannot establish a non-computing background.
 
 There are **no fixed calendar dates or fallback cutoffs**. On `/staff/cohorts/:id/stages`, choose the existing stage supplying the **team joining/registration deadline** and the stage supplying the **learning certification deadline**. The cohort stores `teamJoiningStageId` and `learningCertificationStageId`; every rule check reads the referenced stage rows in that same cohort. The selected stage's exact timestamp is respected in UTC, including times that are not end-of-day.
 
@@ -40,7 +53,7 @@ Existing cohorts need the two stage selections configured explicitly. The local 
 
 ## Team lifecycle
 
-- **Draft:** one or two people may assemble and recruit. Admission still requires halfway learning, matching answers, active participation, the same group and mutual cross-country consent. A declared onboarding “Full team” is not an actual registered team; these participants are excluded from automatic regrouping and can assemble manually.
+- **Draft:** people may assemble and recruit; automatically formed teams of 3–5 can also remain drafts while awaiting builders. Admission still requires halfway learning, matching answers, active participation, the same group and mutual cross-country consent. A declared onboarding “Full team” is not an actual registered team; these participants are excluded from automatic regrouping and can assemble manually.
 - **Registered:** the lead/co-lead or staff manager selects a valid competition country and passes all hard registration checks. `registered_at` is recorded; the team remains `forming` until challenge start.
 - **Challenge started:** an approved brief is assigned and all confirmed members pass certification checks. `challenge_started_at` is recorded and status becomes `active`.
 
@@ -90,3 +103,14 @@ Migration `1794056400000-AddAtfTeamRules.ts` follows the learning-import and mat
 Deadline-source follow-up adds `1794078000000-UseCohortStageTeamDeadlines.ts`: nullable stage references, with deletion clearing the reference, plus explicit UTC timestamp storage for stage start/deadline values. It does not choose dates or map existing stages automatically. Cohort read responses derive the displayed team dates from those stages; legacy JSON date copies cannot bypass the rules. Stage editing explicitly sends UTC timestamps, and stage/team/cohort deadline displays use UTC regardless of the browser timezone.
 
 Verification passed: 567 API tests and 29 browser tests. Coverage includes pure-policy/ordered-priority tests, PostgreSQL lifecycle and rollback tests, staff authorization/session revocation checks, browser registration/start/opt-out/preview flows, stage deadline changes, and UTC editing from a browser outside UTC. Workspace type checks and the production web build passed. Lint completed with no errors and existing repository warnings.
+
+## Flexible formation API
+
+- `GET /api/admin/cohorts/:cohortId/matching/formation/defaults`
+- `PATCH /api/admin/cohorts/:cohortId/matching/formation/defaults` with `expectedUpdatedAt` and `config`.
+- Formation preview accepts `config.builderEligibility`, `minimumBuilders`, `preferredBuilders`, `shortageAction`, `matchingScope` and `exceptionReason`.
+- Finalization accepts the reviewed `previewId`. A replacement preview cannot silently finalize different choices in the new staff interface.
+
+These endpoints remain restricted to programme managers and super admins. Ordinary participant/team updates cannot set `builderPolicy`.
+
+Migration `1795737700000-FlexibleFormationPolicy` adds nullable `cohorts.formation_defaults` and `teams.builder_policy`; existing team policies and participant answers are not backfilled or changed.

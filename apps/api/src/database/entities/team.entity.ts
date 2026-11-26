@@ -13,6 +13,7 @@ import { Cohort } from "./cohort.entity";
 import { Brief } from "./brief.entity";
 import { Participant } from "./participant.entity";
 import { Mentor } from "./mentor.entity";
+import type { TeamBuilderPolicy } from "@acmp/shared";
 import { TeamBriefPreference } from "@acmp/shared";
 
 export enum TeamStatus {
@@ -60,6 +61,7 @@ export enum RemovalRequestStatus {
 @Index(["cohortId", "status"])
 @Index(["briefId"])
 export class Team extends BaseEntity {
+  @Column({ name: "builder_policy", type: "jsonb", nullable: true }) builderPolicy: TeamBuilderPolicy | null;
   @Column({ name: "programme_resources_brief_id", type: "uuid", nullable: true }) programmeResourcesBriefId: string | null;
   @Column({ name: "programme_resources_issued_at", type: "timestamptz", nullable: true }) programmeResourcesIssuedAt: Date | null;
   @Column({ name: "programme_resources_issued_by", type: "uuid", nullable: true }) programmeResourcesIssuedBy: string | null;

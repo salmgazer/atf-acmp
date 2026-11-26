@@ -1,3 +1,4 @@
+import { DEFAULT_FORMATION_SETTINGS } from '@acmp/shared';
 import { test, expect, type Page, type BrowserContext } from '@playwright/test';
 const cohortId = 'atf-cohort', participantId = 'atf-lead', teamId = 'atf-team';
 const cohort = { id: cohortId, name: 'ATF cohort', status: 'active', groups: ['A'], countries: ['GH'], teamSizeMin: 3, teamSizeMax: 5, deadlines: {} };
@@ -27,6 +28,7 @@ async function setup(page: Page, context: BrowserContext, options: { staff?: boo
       if (options.failRegister) { await route.fulfill({ status: 409, json: { message: 'Team members changed. Review eligibility again.' } }); return; }
       team.competitionCountry = route.request().postDataJSON().competitionCountry; team.registeredAt = '2026-11-07T12:00:00Z'; data = team;
     } else if (path.endsWith('/teams/' + teamId + '/start-challenge')) { team.challengeStartedAt = '2026-11-07T13:00:00Z'; team.status = 'active'; data = team; }
+    else if (path.endsWith('/formation/defaults')) data = { settings: DEFAULT_FORMATION_SETTINGS, updatedAt: '2026-11-01T00:00:00Z' };
     else if (path.endsWith('/formation/preview')) data = preview;
     else if (path.endsWith('/formation/run') && method === 'POST') { preview = { cohortId, cohortName: cohort.name, generatedAt: participant.createdAt, statistics: { totalEligibleParticipants: 3, proposedTeamCount: 1, averageTeamSize: 3, averageCompatibilityScore: 80, backfillStats: {} }, proposedTeams: [{ proposedTeamId: 'proposal', suggestedName: 'Team 1', competitionCountry: 'Ghana', group: 'A', participants: [{ id: participantId, firstName: 'Example', lastName: 'Lead' }], eligibility: baseReport }], proposedBackfills: [], proposedBriefAssignments: [], unassignedParticipantIds: [], warnings: [] }; data = preview; }
     else if (path.endsWith('/teams')) data = { data: [], total: 0, totalPages: 1 };
@@ -85,7 +87,7 @@ test('staff preview shows each proposed team and its builder/non-computing cover
   await page.getByRole('button', { name: 'Team formation', exact: true }).click();
   await page.getByRole('button', { name: 'Run Team Formation', exact: true }).click();
   await expect(page.getByRole('columnheader', { name: 'Builders / non-computing', exact: true })).toBeVisible();
-  await expect(page.getByRole('cell', { name: 'Team 1', exact: true })).toBeVisible();
+  await expect(page.getByRole('cell', { name: /^Team 1/ })).toBeVisible();
   await expect(page.getByRole('cell', { name: '1 / 2', exact: true })).toBeVisible();
   await expect(page.getByText('Include members from more than one institution where possible', { exact: true })).toBeVisible();
 });

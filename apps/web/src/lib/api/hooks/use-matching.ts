@@ -1,5 +1,5 @@
 "use client";
-import type { TeamRuleReport } from "@acmp/shared";
+import type { TeamRuleReport, FormationSettings, BuilderStatus } from "@acmp/shared";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api/client";
@@ -206,7 +206,7 @@ export function useClearMatchingPreview() {
 
 // ============ Team Formation Types ============
 
-export interface TeamFormationConfig {
+export interface TeamFormationConfig extends Partial<FormationSettings> {
   useBriefCentricAssignment?: boolean;
   targetTeamSize?: number;
   prioritizeSkillDiversity?: boolean;
@@ -221,6 +221,7 @@ export interface RunTeamFormationDto {
 }
 
 export interface FinalizeTeamFormationDto {
+  previewId?: string;
   overrides?: {
     participantId: string;
     assignedTeamIndex: number;
@@ -230,8 +231,8 @@ export interface FinalizeTeamFormationDto {
 
 export interface ProposedTeam {
   proposedTeamId: string; suggestedName: string; group?: string | null; competitionCountry?: string;
-  participantIds: string[]; participants: { id: string; participantId: string; firstName: string; lastName: string; country: string; skills: string[]; interests: string[]; isProposedLead: boolean }[];
-  leadParticipantId: string; coLeadParticipantId: string; compatibilityScore: number; eligibility?: TeamRuleReport;
+  participantIds: string[]; participants: { id: string; participantId: string; firstName: string; lastName: string; country: string; skills: string[]; interests: string[]; isProposedLead: boolean; builderStatus?: BuilderStatus }[];
+  leadParticipantId: string; coLeadParticipantId: string; compatibilityScore: number; eligibility?: TeamRuleReport; registrationOutcome?: "registered" | "draft" | "exception";
 }
 
 export interface TeamFormationStats {
@@ -259,6 +260,8 @@ export interface BackfillStats {
 }
 
 export interface TeamFormationPreview {
+  previewId?: string;
+  builderSummary?: { registeredTeams: number; draftTeams: number; exceptionTeams: number; noBuilderTeams: number; confirmedBuilders: number; awaitingBuilders: number; potentialBuilders: number };
   cohortId: string;
   cohortName: string;
   generatedAt: string;
@@ -389,4 +392,14 @@ export function useClearTeamFormationPreview() {
       queryClient.setQueryData(teamFormationKeys.preview(cohortId), null);
     },
   });
+}
+
+export function useFormationDefaults(cohortId: string) {
+  return useQuery({ queryKey: ['formation-defaults', cohortId], enabled: !!cohortId,
+    queryFn: () => api.get<{ settings: FormationSettings; updatedAt: string }>(`/admin/cohorts/${cohortId}/matching/formation/defaults`) });
+}
+export function useSaveFormationDefaults(cohortId: string) {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: (body: { config: FormationSettings; expectedUpdatedAt: string }) => api.patch<{ settings: FormationSettings; updatedAt: string }>(`/admin/cohorts/${cohortId}/matching/formation/defaults`, body),
+    onSuccess: data => { client.setQueryData(['formation-defaults', cohortId], data); client.setQueryData(teamFormationKeys.preview(cohortId), null); client.invalidateQueries({ queryKey: ['cohorts'] }); } });
 }

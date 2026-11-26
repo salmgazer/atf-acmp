@@ -1,3 +1,4 @@
+import { DEFAULT_FORMATION_SETTINGS } from '@acmp/shared';
 import { test, expect, type Page, type BrowserContext } from '@playwright/test';
 const id = 'brief-plan-lead', cohortId = 'brief-plan-cohort', teamId = 'brief-plan-team', date = '2026-11-18T08:00:00Z';
 async function setup(page: Page, context: BrowserContext, options: { staff?: boolean; role?: string; assigned?: boolean; failSave?: boolean; ready?: number; combined?: boolean } = {}) {
@@ -19,6 +20,7 @@ async function setup(page: Page, context: BrowserContext, options: { staff?: boo
     else if (path.endsWith('/teams/my/' + id) || path.endsWith('/teams/' + teamId)) data = team;
     else if (path.endsWith('/cohorts')) data = { data: [cohort], total: 1 };
     else if (path.endsWith('/cohorts/' + cohortId)) data = cohort;
+    else if (path.endsWith('/formation/defaults')) data = { settings: DEFAULT_FORMATION_SETTINGS, updatedAt: '2026-11-01T00:00:00Z' };
     else if (path.endsWith('/formation/preview')) { if (method === 'DELETE') formation = null; data = formation; }
     else if (path.endsWith('/formation/run')) data = formation = { cohortId, generatedAt: date, configUsed: { useBriefCentricAssignment: false }, statistics: { proposedTeamCount: 1, totalEligibleParticipants: 3, averageTeamSize: 3, averageCompatibilityScore: 80, backfillStats: {} }, proposedTeams: [{ proposedTeamId: 'new-team', suggestedName: 'New formed team', participants: [], eligibility: { guidance: [], builderCount: 1, nonComputingCount: 1 } }], warnings: [] };
     else if (path.endsWith('/formation/finalize')) { formation = null; data = { createdTeamCount: 1, backfilledTeamCount: 0, briefsAssigned: 0, errors: [] }; }
@@ -104,7 +106,7 @@ test('a combined preview from another client cannot silently assign briefs throu
   await expect(page.getByRole('button', { name: 'Finalize (1 teams)', exact: true })).toBeDisabled();
   await page.getByRole('button', { name: 'Clear Preview', exact: true }).click();
   await page.getByRole('button', { name: 'Run Team Formation', exact: true }).click();
-  expect(state.writes.at(-1)?.body).toEqual({ config: { useBriefCentricAssignment: false } });
+  expect(state.writes.at(-1)?.body).toEqual({ config: { ...DEFAULT_FORMATION_SETTINGS, useBriefCentricAssignment: false } });
 });
 
 for (const viewport of [{ width: 1366, height: 900, theme: "light" }, { width: 390, height: 844, theme: "light" }, { width: 1366, height: 900, theme: "dark" }]) test(`teams table stays prominent and formation opens without changes at ${viewport.width}px in ${viewport.theme} mode`, async ({ page, context }) => {
@@ -126,7 +128,7 @@ for (const viewport of [{ width: 1366, height: 900, theme: "light" }, { width: 3
   await expect(workspace.getByRole('button', { name: 'Run Team Formation', exact: true })).toBeVisible();
   expect(state.writes).toHaveLength(0);
   await page.getByRole('button', { name: 'Run Team Formation', exact: true }).click();
-  await expect(workspace.getByRole('cell', { name: 'New formed team', exact: true })).toBeVisible();
+  await expect(workspace.getByRole('cell', { name: /^New formed team/ })).toBeVisible();
   const workspaceBox = await workspace.boundingBox();
   expect(workspaceBox!.x).toBeGreaterThanOrEqual(0);
   expect(workspaceBox!.x + workspaceBox!.width).toBeLessThanOrEqual(viewport.width);
@@ -137,6 +139,6 @@ for (const viewport of [{ width: 1366, height: 900, theme: "light" }, { width: 3
   await expect(table).toBeVisible();
   await expect(page.getByRole('button', { name: 'Team formation', exact: true })).toContainText('Preview ready');
   await page.getByRole('button', { name: 'Team formation', exact: true }).click();
-  await expect(page.getByRole('cell', { name: 'New formed team', exact: true })).toBeVisible();
+  await expect(page.getByRole('cell', { name: /^New formed team/ })).toBeVisible();
   expect(state.writes).toHaveLength(1);
 });
